@@ -1,0 +1,11 @@
+alpaca-py
+yfinance
+pandas
+numpy
+matplotlib
+seaborn
+scipy
+ta
+pytest
+jupyter
+notebook
