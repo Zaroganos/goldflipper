@@ -82,16 +82,6 @@ Directory Overview
     tests/: Includes unit and integration tests to ensure code reliability.
     tools/: This folder contains tools for creating and manipulating trading strategies, such as PlayCreationTool.py.
 
-Contributing
-
-We welcome contributions to the Goldflipper Trading System. Please follow these steps:
-
-    Fork the repository.
-    Create a new branch (git checkout -b feature/your-feature).
-    Commit your changes (git commit -am 'Add some feature').
-    Push to the branch (git push origin feature/your-feature).
-    Open a Pull Request.
-
 License
 
 This project is copyright Purpleaf LLC. All rights reserved.
