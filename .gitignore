@@ -1,4 +1,24 @@
+# Virtual environments
 venv/
+
+# Python bytecode
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Logs
 *.log
+logs/
+
+# Configurations and Secrets
 config/config.py
+.env
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE specific files
+.vscode/
+.idea/
