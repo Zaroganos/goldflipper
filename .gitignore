@@ -22,3 +22,17 @@ Thumbs.db
 # IDE specific files
 .vscode/
 .idea/
+
+# Optional - Test results and coverage reports
+.pytest_cache/
+coverage/
+*.cover
+
+# Optional - Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Optional - Temporary files
+*.tmp
+*.swp
