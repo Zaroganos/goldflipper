@@ -1,12 +1,12 @@
 import os
 import logging
-import time
 from datetime import datetime
 import yfinance as yf
-from goldflipper.json_parser import load_play
-from goldflipper.alpaca_client import get_alpaca_client
+from goldflipper.json_parser import load_play  # Import the JSON parser
+from goldflipper.alpaca_client import get_alpaca_client  # Import Alpaca client connection
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
+
 
 # ==================================================
 # 1. LOGGING CONFIGURATION
@@ -84,81 +84,36 @@ def place_order(symbol, play):
         logging.error(f"Error placing order: {e}")
 
 # ==================================================
-# 5. MOVE PLAY TO CLOSED FOLDER
-# ==================================================
-# Function to move a play file to the closed plays folder after execution.
-
-def move_play_to_closed(play_file):
-    closed_dir = os.path.join(os.path.dirname(play_file), 'closed')
-    if not os.path.exists(closed_dir):
-        os.makedirs(closed_dir)
-    
-    closed_play_file = os.path.join(closed_dir, os.path.basename(play_file))
-    os.rename(play_file, closed_play_file)
-    logging.info(f"Moved executed play to {closed_play_file}")
-
-# ==================================================
-# 6. MAIN TRADE EXECUTION FLOW
+# 5. MAIN TRADE EXECUTION FLOW
 # ==================================================
 # Main function to orchestrate the strategy execution using the loaded plays.
 
 def execute_trade(play_file):
-    logging.info(f"Executing play: {play_file}")
-
+    logging.info("Starting trade execution...")
+    
     play = load_play(play_file)
     if play is None:
-        logging.error(f"Failed to load play {play_file}. Aborting trade execution.")
+        logging.error("Failed to load play. Aborting trade execution.")
         return
 
     symbol = play.get("symbol")
-    if not symbol:
-        logging.error(f"Play {play_file} is missing 'symbol'. Skipping execution.")
-        return
-
-    entry_point = play.get("entry_point")
-    if entry_point is None:
-        logging.error(f"Play {play_file} is missing 'entry_point'. Skipping execution.")
-        return
-
     market_data = get_market_data(symbol)
 
     if evaluate_strategy(symbol, market_data, play):
         place_order(symbol, play)
-        move_play_to_closed(play_file)
     else:
-        logging.info(f"No trade signal generated for play {play_file}.")
-
+        logging.info("No trade signal generated.")
+    
     logging.info("Trade execution finished.")
 
 # ==================================================
-# 7. CONTINUOUS MONITORING AND EXECUTION
+# MAIN SCRIPT EXECUTION
 # ==================================================
-# Monitor the plays directory continuously and execute plays as conditions are met.
-
-def monitor_plays_continuously():
-    # Ensure the path is relative to the script's directory
-    plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plays'))
-    
-    logging.info(f"Monitoring plays directory: {plays_dir}")
-
-    while True:
-        try:
-            logging.info("Checking for new plays...")
-            play_files = [os.path.join(plays_dir, f) for f in os.listdir(plays_dir) if f.endswith('.json')]
-
-            if not play_files:
-                logging.info("No new plays found.")
-                
-            for play_file in play_files:
-                execute_trade(play_file)
-
-            logging.info("Cycle complete. Waiting for the next cycle...")
-
-        except Exception as e:
-            logging.error(f"An error occurred during play monitoring: {e}")
-
-        time.sleep(60)  # Wait for 60 seconds before re-evaluating
-
+# Execute the strategy for each play in the plays directory.
 
 if __name__ == "__main__":
-    monitor_plays_continuously()
+    plays_dir = os.path.abspath(os.path.join(script_dir, '..', 'plays'))
+    play_files = [os.path.join(plays_dir, f) for f in os.listdir(plays_dir) if f.endswith('.json')]
+
+    for play_file in play_files:
+        execute_trade(play_file)

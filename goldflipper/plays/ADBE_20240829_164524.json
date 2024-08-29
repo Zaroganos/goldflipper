@@ -1,0 +1,20 @@
+{
+    "symbol": "ADBE",
+    "trade_type": "PUT",
+    "entry_point": 450.0,
+    "strike_price": 441.5,
+    "expiration_date": "09/14/2024",
+    "take_profit": {
+        "order_type": "limit",
+        "value": 441.5
+    },
+    "stop_loss": {
+        "order_type": "stop_limit",
+        "values": [
+            20.0,
+            25.0
+        ]
+    },
+    "contracts": 10,
+    "order_class": "simple"
+}

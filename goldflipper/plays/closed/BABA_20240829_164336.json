@@ -1,0 +1,19 @@
+{
+    "symbol": "BABA",
+    "trade_type": "CALL",
+    "entry_point": 85.0,
+    "strike_price": 95.0,
+    "expiration_date": "09/01/2024",
+    "take_profit": {
+        "order_type": "market",
+        "value": 100.0
+    },
+    "stop_loss": {
+        "order_type": "stop",
+        "values": [
+            25.0
+        ]
+    },
+    "contracts": 10,
+    "order_class": "simple"
+}
