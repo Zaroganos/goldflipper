@@ -1,37 +1,38 @@
 {
-    "play_id": "test123",
-    "timestamp": "2024-08-28T22:40:17.679334",
-    "status": "active",
-    "strategy": "option swing",
-    "ticker": "META",
-    "trade_type": "CALL",
-    "market_context": "idk",
-    "entry_point": 4.0,
+    "play_id": "aapl",
+    "timestamp": "2024-08-29T14:43:33.397088",
+    "status": "pending",
+    "strategy": "Options Swing",
+    "ticker": "",
+    "trade_type": "",
+    "market_context": "477",
+    "entry_point": 488.0,
     "order_details": {
-        "symbol": "META",
-        "qty": "2",
-        "side": "buy",
-        "type": "2",
-        "time_in_force": "2"
+        "symbol": "",
+        "qty": "10",
+        "side": "sell",
+        "type": "limit",
+        "time_in_force": "day",
+        "limit_price": "589"
     },
     "take_profit": [
         {
             "tp_id": "TP1",
-            "order_type": "2",
-            "price": 2.0,
-            "contracts": 2
+            "order_type": "8567",
+            "price": 8759.0,
+            "contracts": 10
         },
         {
             "tp_id": "TP2",
-            "order_type": "2",
-            "price": 2.0,
-            "contracts": 2
+            "order_type": "market",
+            "price": 75990.0,
+            "contracts": 10
         }
     ],
     "stop_loss": {
         "order_type": "stop",
-        "price": "2",
-        "contracts": "2"
+        "price": "-35%",
+        "contracts": "10"
     },
     "comments": {
         "play_id": "Unique identifier for the play",
