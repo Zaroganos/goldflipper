@@ -1,0 +1,19 @@
+{
+    "symbol": "aapl",
+    "trade_type": "call",
+    "entry_point": 100.0,
+    "strike_price": 110.0,
+    "expiration_date": "01/01/2025",
+    "take_profit": {
+        "order_type": "market",
+        "value": 45.0
+    },
+    "stop_loss": {
+        "order_type": "stop",
+        "values": [
+            80.0
+        ]
+    },
+    "contracts": 10,
+    "order_class": "simple"
+}
