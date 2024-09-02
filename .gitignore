@@ -4,6 +4,11 @@ venv/
 env/
 .env/
 
+# Plays folder (change if need to keep some set of plays shared)
+goldflipper/plays/open
+goldflipper/plays/closed
+goldflipper/plays/old
+
 # Python bytecode
 __pycache__/
 *.py[cod]
@@ -14,7 +19,7 @@ __pycache__/
 *.log
 logs/
 
-# Configurations and Secrets
+# Configurations and Secrets -- this doesn't appear to be configured properly yet. set this later on (dir needs to be changed likely)
 config/config.py
 .env
 
