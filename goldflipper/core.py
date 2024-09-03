@@ -173,9 +173,9 @@ def close_position(play):
         return False
 
 # ==================================================
-# 5. MOVE PLAY TO CLOSED FOLDER
+# 5. MOVE PLAY TO APPROPRIATE FOLDER
 # ==================================================
-# Function to move a play file to the closed plays folder after execution.
+# Function to move a play file to the appropriate plays folder after execution.
 
 def move_play_to_open(play_file):
     open_dir = os.path.join(os.path.dirname(play_file), '..', 'open')
