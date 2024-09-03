@@ -1,0 +1,19 @@
+{
+    "symbol": "BA",
+    "trade_type": "CALL",
+    "entry_point": 100.0,
+    "strike_price": 110.0,
+    "expiration_date": "09/14/2024",
+    "take_profit": {
+        "order_type": "market",
+        "value": 10.0
+    },
+    "stop_loss": {
+        "order_type": "stop",
+        "values": [
+            30.0
+        ]
+    },
+    "contracts": 10,
+    "order_class": "simple"
+}

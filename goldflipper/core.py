@@ -2,33 +2,59 @@ import os
 import logging
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import yfinance as yf
 from goldflipper.json_parser import load_play
 from goldflipper.alpaca_client import get_alpaca_client
-from alpaca.trading.requests import MarketOrderRequest
-from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.trading.requests import (
+    GetOptionContractsRequest,
+    MarketOrderRequest
+)
+from alpaca.trading.enums import (
+    OrderSide,
+    OrderType,
+    TimeInForce,
+    AssetStatus
+)
 
 # ==================================================
 # 1. LOGGING CONFIGURATION
 # ==================================================
-# Configure logging to ensure information is recorded both in the console and a log file.
+# Configure logging to ensure information is recorded both in the console and log files.
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-logs_dir = os.path.join(script_dir, '../logs')
+def setup_logging():
+    # Get the absolute path to the goldflipper directory
+    goldflipper_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    logs_dir = os.path.join(goldflipper_dir, 'logs')
 
-if not os.path.exists(logs_dir):
-    os.makedirs(logs_dir)
+    # Create logs directory if it doesn't exist
+    if not os.path.exists(logs_dir):
+        os.makedirs(logs_dir)
 
-log_file = os.path.join(logs_dir, 'app.log')
+    # Configure root logger
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)s - %(levelname)s - %(message)s',
+                        handlers=[logging.StreamHandler()])
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file),
-        logging.StreamHandler()
-    ]
-)
+    # Create file handlers
+    info_handler = logging.FileHandler(os.path.join(logs_dir, 'app.log'))
+    info_handler.setLevel(logging.INFO)
+    error_handler = logging.FileHandler(os.path.join(logs_dir, 'error.log'))
+    error_handler.setLevel(logging.ERROR)
+
+    # Create formatters and add it to handlers
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    info_handler.setFormatter(formatter)
+    error_handler.setFormatter(formatter)
+
+    # Add handlers to the root logger
+    logging.getLogger('').addHandler(info_handler)
+    logging.getLogger('').addHandler(error_handler)
+
+    logging.info("Logging initialized successfully")
+
+# Call the setup_logging function at the beginning of the script
+setup_logging()
 
 # ==================================================
 # 2. MARKET DATA RETRIEVAL
@@ -46,17 +72,31 @@ def get_market_data(symbol):
 # ==================================================
 # Function to evaluate whether the market conditions meet the strategy criteria.
 
-def evaluate_strategy(symbol, market_data, play):
-    logging.info(f"Evaluating strategy for {symbol} using play data...")
+def evaluate_opening_strategy(symbol, market_data, play):
+    logging.info(f"Evaluating opening strategy for {symbol} using play data...")
     
     entry_point = play.get("entry_point", 0)
     last_price = market_data["Close"].iloc[-1]
 
     if last_price <= entry_point:
-        logging.info(f"Condition met: Current price {last_price} <= entry point {entry_point}")
+        logging.info(f"Opening condition met: Current price {last_price} <= entry point {entry_point}")
         return True
     else:
-        logging.info(f"Condition not met: Current price {last_price} > entry point {entry_point}")
+        logging.info(f"Opening condition not met: Current price {last_price} > entry point {entry_point}")
+        return False
+
+def evaluate_closing_strategy(symbol, market_data, play):
+    logging.info(f"Evaluating closing strategy for {symbol} using play data...")
+    
+    take_profit = play.get("take_profit", {}).get("value", 0)
+    stop_loss = play.get("stop_loss", {}).get("values", [])[-1]  # Use the last stop loss value
+    last_price = market_data["Close"].iloc[-1]
+
+    if last_price >= take_profit or last_price <= stop_loss:
+        logging.info(f"Closing condition met: Current price {last_price}, Take profit {take_profit}, Stop loss {stop_loss}")
+        return True
+    else:
+        logging.info(f"Closing condition not met: Current price {last_price}")
         return False
 
 # ==================================================
@@ -64,71 +104,125 @@ def evaluate_strategy(symbol, market_data, play):
 # ==================================================
 # Function to place an order through the Alpaca API.
 
-def place_order(symbol, play):
-    logging.info(f"Placing order for {play['contracts']} contracts of {symbol}...")
+def get_option_contract(play):
     client = get_alpaca_client()
+    symbol = play['symbol']
+    expiration_date = datetime.strptime(play['expiration_date'], "%m/%d/%Y").date()
+    
+    req = GetOptionContractsRequest(
+        underlying_symbols=[symbol],
+        expiration_date=expiration_date,
+        strike_price=play['strike_price'],
+        type=play['trade_type'].lower(),
+        status=AssetStatus.ACTIVE
+    )
+    
+    contracts = client.get_option_contracts(req)
+    if contracts.option_contracts:
+        return contracts.option_contracts[0]
+    else:
+        logging.error(f"No option contract found for {symbol} with given parameters")
+        return None
 
+def open_position(play):
+    client = get_alpaca_client()
+    contract = get_option_contract(play)
+    
+    if not contract:
+        return False
+    
+    logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}...")
+    
     try:
-        # Create the MarketOrderRequest with the required parameters
-        order_details = MarketOrderRequest(
-            symbol=symbol,
+        order_req = MarketOrderRequest(
+            symbol=contract.symbol,
             qty=play['contracts'],
-            side=OrderSide.BUY if play['trade_type'].upper() == 'CALL' else OrderSide.SELL,
-            time_in_force=TimeInForce.GTC  # Good Till Canceled
+            side=OrderSide.BUY,
+            type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY
         )
-
-        # Submit the order via the Alpaca client
-        client.submit_order(order_details)
-        logging.info(f"Order placed successfully for {play['contracts']} contracts of {symbol}.")
+        order = client.submit_order(order_req)
+        logging.info(f"Position opened successfully for {play['contracts']} contracts of {contract.symbol}.")
+        return True
     except Exception as e:
-        logging.error(f"Error placing order: {e}")
+        logging.error(f"Error opening position: {e}")
+        return False
+
+def close_position(play):
+    client = get_alpaca_client()
+    contract = get_option_contract(play)
+    
+    if not contract:
+        return False
+    
+    logging.info(f"Closing position for {play['contracts']} contracts of {contract.symbol}...")
+    
+    try:
+        order_req = MarketOrderRequest(
+            symbol=contract.symbol,
+            qty=play['contracts'],
+            side=OrderSide.SELL,
+            type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY
+        )
+        order = client.submit_order(order_req)
+        logging.info(f"Position closed successfully for {play['contracts']} contracts of {contract.symbol}.")
+        return True
+    except Exception as e:
+        logging.error(f"Error closing position: {e}")
+        return False
 
 # ==================================================
 # 5. MOVE PLAY TO CLOSED FOLDER
 # ==================================================
 # Function to move a play file to the closed plays folder after execution.
 
+def move_play_to_open(play_file):
+    open_dir = os.path.join(os.path.dirname(play_file), '..', 'open')
+    os.makedirs(open_dir, exist_ok=True)
+    new_path = os.path.join(open_dir, os.path.basename(play_file))
+    os.rename(play_file, new_path)
+    logging.info(f"Moved play to open folder: {new_path}")
+
 def move_play_to_closed(play_file):
-    closed_dir = os.path.join(os.path.dirname(play_file), 'closed')
-    if not os.path.exists(closed_dir):
-        os.makedirs(closed_dir)
-    
-    closed_play_file = os.path.join(closed_dir, os.path.basename(play_file))
-    os.rename(play_file, closed_play_file)
-    logging.info(f"Moved executed play to {closed_play_file}")
+    closed_dir = os.path.join(os.path.dirname(play_file), '..', 'closed')
+    os.makedirs(closed_dir, exist_ok=True)
+    new_path = os.path.join(closed_dir, os.path.basename(play_file))
+    os.rename(play_file, new_path)
+    logging.info(f"Moved play to closed folder: {new_path}")
 
 # ==================================================
 # 6. MAIN TRADE EXECUTION FLOW
 # ==================================================
 # Main function to orchestrate the strategy execution using the loaded plays.
 
-def execute_trade(play_file):
-    logging.info(f"Executing play: {play_file}")
+def execute_trade(play_file, play_type):
+    logging.info(f"Executing {play_type} play: {play_file}")
 
     play = load_play(play_file)
     if play is None:
         logging.error(f"Failed to load play {play_file}. Aborting trade execution.")
-        return
+        return False
 
     symbol = play.get("symbol")
     if not symbol:
         logging.error(f"Play {play_file} is missing 'symbol'. Skipping execution.")
-        return
-
-    entry_point = play.get("entry_point")
-    if entry_point is None:
-        logging.error(f"Play {play_file} is missing 'entry_point'. Skipping execution.")
-        return
+        return False
 
     market_data = get_market_data(symbol)
 
-    if evaluate_strategy(symbol, market_data, play):
-        place_order(symbol, play)
-        move_play_to_closed(play_file)
-    else:
-        logging.info(f"No trade signal generated for play {play_file}.")
+    if play_type == "new":
+        if evaluate_opening_strategy(symbol, market_data, play):
+            if open_position(play):
+                move_play_to_open(play_file)
+                return True
+    elif play_type == "open":
+        if evaluate_closing_strategy(symbol, market_data, play):
+            if close_position(play):
+                move_play_to_closed(play_file)
+                return True
 
-    logging.info("Trade execution finished.")
+    return False
 
 # ==================================================
 # 7. CONTINUOUS MONITORING AND EXECUTION
@@ -136,29 +230,31 @@ def execute_trade(play_file):
 # Monitor the plays directory continuously and execute plays as conditions are met.
 
 def monitor_plays_continuously():
-    # Ensure the path is relative to the script's directory
     plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plays'))
     
     logging.info(f"Monitoring plays directory: {plays_dir}")
 
     while True:
         try:
-            logging.info("Checking for new plays...")
-            play_files = [os.path.join(plays_dir, f) for f in os.listdir(plays_dir) if f.endswith('.json')]
-
-            if not play_files:
-                logging.info("No new plays found.")
+            logging.info("Checking for new and open plays...")
+            
+            for play_type in ['new', 'open']:
+                play_dir = os.path.join(plays_dir, play_type)
+                play_files = [os.path.join(play_dir, f) for f in os.listdir(play_dir) if f.endswith('.json')]
                 
-            for play_file in play_files:
-                execute_trade(play_file)
+                for play_file in play_files:
+                    if execute_trade(play_file, play_type):
+                        logging.info(f"Successfully executed {play_type} play: {play_file}")
+                    else:
+                        logging.info(f"Conditions not met for {play_type} play: {play_file}")
 
             logging.info("Cycle complete. Waiting for the next cycle...")
 
         except Exception as e:
             logging.error(f"An error occurred during play monitoring: {e}")
 
-        time.sleep(60)  # Wait for 60 seconds before re-evaluating
-
+        time.sleep(30)  # Wait for 30 seconds before re-evaluating
 
 if __name__ == "__main__":
     monitor_plays_continuously()
+

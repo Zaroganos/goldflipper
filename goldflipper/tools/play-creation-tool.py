@@ -101,7 +101,8 @@ def create_play():
         error_message="Invalid order class. Please enter 'simple' or 'OCO'."
     )
 
-    plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays')
+    # Update the plays directory path
+    plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'new')
     os.makedirs(plays_dir, exist_ok=True)
 
     filename = f"{play['symbol']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"

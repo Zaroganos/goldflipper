@@ -8,7 +8,9 @@ from goldflipper.core import monitor_plays_continuously
 # Configure logging and set up necessary paths.
 
 def setup_logging():
-    log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+    # Get the path to the directory containing the 'goldflipper' folder
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    log_dir = os.path.join(base_dir, 'logs')
     os.makedirs(log_dir, exist_ok=True)
 
     log_file = os.path.join(log_dir, 'app_run.log')
