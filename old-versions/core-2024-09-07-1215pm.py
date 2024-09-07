@@ -6,9 +6,16 @@ from zoneinfo import ZoneInfo
 import yfinance as yf
 from goldflipper.json_parser import load_play
 from goldflipper.alpaca_client import get_alpaca_client
-from alpaca.trading.requests import GetOptionContractsRequest, LimitOrderRequest, StopOrderRequest
-from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
-from alpaca.common.exceptions import APIError
+from alpaca.trading.requests import (
+    GetOptionContractsRequest,
+    MarketOrderRequest
+)
+from alpaca.trading.enums import (
+    OrderSide,
+    OrderType,
+    TimeInForce,
+    AssetStatus
+)
 
 # ==================================================
 # 1. LOGGING CONFIGURATION
@@ -110,33 +117,11 @@ def get_option_contract(play):
         status=AssetStatus.ACTIVE
     )
     
-    res = client.get_option_contracts(req)
-    contracts = res.option_contracts
-    if contracts:
-        logging.info(f"Option contract found: {contracts[0]}")
-        return contracts[0]
+    contracts = client.get_option_contracts(req)
+    if contracts.option_contracts:
+        return contracts.option_contracts[0]
     else:
         logging.error(f"No option contract found for {symbol} with given parameters")
-        return None
-
-def calculate_limit_buy_price(contract):
-    try:
-        option_ticker = yf.Ticker(contract.root_symbol)
-        option_data = option_ticker.option_chain(contract.expiration_date.strftime('%Y-%m-%d'))
-
-        options = option_data.calls if contract.type == 'call' else option_data.puts
-        option = options[(options['strike'] == contract.strike_price) & (options['contractSymbol'] == contract.symbol)]
-        if not option.empty:
-            bid = option.iloc[0]['bid']
-            ask = option.iloc[0]['ask']
-            limit_buy_price = bid + (ask - bid) * 0.25  # Set limit buy price to 25% above the bid price
-            logging.info(f"Calculated limit buy price for {contract.symbol}: {limit_buy_price}")
-            return limit_buy_price
-        else:
-            logging.error(f"No option data found for {contract.symbol}")
-            return None
-    except Exception as e:
-        logging.error(f"Error calculating limit buy price for {contract.symbol}: {str(e)}")
         return None
 
 def open_position(play):
@@ -146,21 +131,15 @@ def open_position(play):
     if not contract:
         return False
     
-    limit_buy_price = calculate_limit_buy_price(contract)
-    if limit_buy_price is None:
-        logging.error(f"Failed to calculate limit buy price for {contract.symbol}. Skipping.")
-        return False
-
     logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}...")
     
     try:
-        order_req = LimitOrderRequest(
+        order_req = MarketOrderRequest(
             symbol=contract.symbol,
             qty=play['contracts'],
             side=OrderSide.BUY,
-            type=OrderType.LIMIT,
-            time_in_force=TimeInForce.DAY,
-            limit_price=limit_buy_price
+            type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY
         )
         order = client.submit_order(order_req)
         logging.info(f"Position opened successfully for {play['contracts']} contracts of {contract.symbol}.")
@@ -179,8 +158,7 @@ def close_position(play):
     logging.info(f"Closing position for {play['contracts']} contracts of {contract.symbol}...")
     
     try:
-        # Use market order for closing to ensure execution
-        order_req = LimitOrderRequest(
+        order_req = MarketOrderRequest(
             symbol=contract.symbol,
             qty=play['contracts'],
             side=OrderSide.SELL,
@@ -193,62 +171,6 @@ def close_position(play):
     except Exception as e:
         logging.error(f"Error closing position: {e}")
         return False
-
-def monitor_and_manage_position(play, entry_price):
-    client = get_alpaca_client()
-    contract = get_option_contract(play)
-    
-    if not contract:
-        return False
-
-    tp_price = play['take_profit']['value']
-    sl_price = play['stop_loss']['values'][-1]  # Use the last stop loss value
-    tp_order_placed = False
-    sl_order_placed = False
-
-    while True:
-        try:
-            position = client.get_open_position(contract.symbol)
-            if position is None:
-                logging.info(f"Position {contract.symbol} closed.")
-                break
-
-            current_price = float(client.get_latest_trade(contract.symbol).price)
-            logging.info(f"Current price for {contract.symbol}: {current_price}")
-
-            if not tp_order_placed and current_price >= tp_price:
-                tp_order = LimitOrderRequest(
-                    symbol=contract.symbol,
-                    qty=play['contracts'],
-                    side=OrderSide.SELL,
-                    type=OrderType.LIMIT,
-                    time_in_force=TimeInForce.DAY,
-                    limit_price=tp_price,
-                )
-                client.submit_order(tp_order)
-                logging.info(f"Take profit order placed for {contract.symbol}")
-                tp_order_placed = True
-
-            if not sl_order_placed and current_price <= sl_price:
-                sl_order = StopOrderRequest(
-                    symbol=contract.symbol,
-                    qty=play['contracts'],
-                    side=OrderSide.SELL,
-                    type=OrderType.STOP,
-                    time_in_force=TimeInForce.GTC,
-                    stop_price=sl_price,
-                )
-                client.submit_order(sl_order)
-                logging.info(f"Stop loss order placed for {contract.symbol}")
-                sl_order_placed = True
-
-            if tp_order_placed or sl_order_placed:
-                break
-
-            time.sleep(10)  # Wait for 10s before checking again
-        except Exception as e:
-            logging.error(f"Error monitoring position {contract.symbol}: {str(e)}")
-            break
 
 # ==================================================
 # 5. MOVE PLAY TO APPROPRIATE FOLDER
@@ -292,7 +214,6 @@ def execute_trade(play_file, play_type):
     if play_type == "new":
         if evaluate_opening_strategy(symbol, market_data, play):
             if open_position(play):
-                monitor_and_manage_position(play, play['entry_point'])
                 move_play_to_open(play_file)
                 return True
     elif play_type == "open":
