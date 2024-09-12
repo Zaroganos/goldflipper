@@ -81,15 +81,15 @@ def evaluate_opening_strategy(symbol, market_data, play):
 def evaluate_closing_strategy(symbol, market_data, play):
     logging.info(f"Evaluating closing strategy for {symbol} using play data...")
     
-    take_profit = play.get("take_profit", {}).get("value", 0)
-    stop_loss = play.get("stop_loss", {}).get("values", [])[-1]  # Use the last stop loss value
+    take_profit = play['take_profit']['stock_price']  # Changed from play.get("take_profit", {}).get("value", 0)
+    stop_loss = play['stop_loss']['stock_price']  # Changed from play.get("stop_loss", {}).get("values", [])[-1]
     last_price = market_data["Close"].iloc[-1]
 
     if last_price >= take_profit or last_price <= stop_loss:
-        logging.info(f"Closing condition met: Current price {last_price}, Take profit {take_profit}, Stop loss {stop_loss}")
+        logging.info(f"Closing condition met: Current stock price {last_price}, Take profit {take_profit}, Stop loss {stop_loss}")
         return True
     else:
-        logging.info(f"Closing condition not met: Current price {last_price}")
+        logging.info(f"Closing condition not met: Current stock price {last_price}")
         return False
 
 # ==================================================

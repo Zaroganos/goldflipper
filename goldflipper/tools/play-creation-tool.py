@@ -54,7 +54,7 @@ def create_play():
         error_message="Invalid trade type. Please enter 'CALL' or 'PUT'."
     )
 
-    play['entry_point'] = get_input("Enter the entry price: ", float, error_message="Please enter a valid number for the entry price.")
+    play['entry_point'] = get_input("Enter the entry price (stock price): ", float, error_message="Please enter a valid number for the entry price.")
 
     play['strike_price'] = get_input("Enter the strike price: ", float, error_message="Please enter a valid number for the strike price.")
 
@@ -65,41 +65,35 @@ def create_play():
         error_message="Please enter a valid date in MM/DD/YYYY format."
     )
 
+    # Take profit section
+    take_profit_stock_price = get_input(
+        "Enter take profit stock price: ",
+        float,
+        validation=lambda x: x > 0,
+        error_message="Please enter a valid positive number for the take profit stock price."
+    )
+
     play['take_profit'] = {
-        'order_type': get_input(
-            "Enter take profit order type (market or limit): ",
-            str,
-            validation=lambda x: validate_choice(x, ["MARKET", "LIMIT"]),
-            error_message="Invalid order type. Please enter 'market' or 'limit'."
-        ),
-        'value': get_input("Enter take profit value (percentage or price): ", float, error_message="Please enter a valid number for the take profit value.")
+        'stock_price': take_profit_stock_price,
+        'order_type': 'market'
     }
 
-    stop_loss_values = get_input(
-        "Enter stop loss values (separate multiple values with semicolon ';'): ",
-        str,
-        validation=lambda x: all(v.strip().isdigit() for v in x.split(';')),
-        error_message="Please enter valid numbers separated by semicolons for stop loss values."
-    ).split(';')
-    
+    # Stop loss section
+    stop_loss_stock_price = get_input(
+        "Enter stop loss stock price: ",
+        float,
+        validation=lambda x: x > 0,
+        error_message="Please enter a valid positive number for the stop loss stock price."
+    )
+
     play['stop_loss'] = {
-        'order_type': get_input(
-            "Enter stop loss order type (stop or stop_limit): ",
-            str,
-            validation=lambda x: validate_choice(x, ["STOP", "STOP_LIMIT"]),
-            error_message="Invalid order type. Please enter 'stop' or 'stop_limit'."
-        ),
-        'values': [float(value) for value in stop_loss_values]
+        'stock_price': stop_loss_stock_price,
+        'order_type': 'market'
     }
 
     play['contracts'] = get_input("Enter the number of contracts: ", int, validation=lambda x: x > 0, error_message="Please enter a positive integer for the number of contracts.")
 
-    play['order_class'] = get_input(
-        "Enter the order class (simple or OCO): ",
-        str,
-        validation=lambda x: validate_choice(x, ["SIMPLE", "OCO"]),
-        error_message="Invalid order class. Please enter 'simple' or 'OCO'."
-    )
+    play['order_class'] = 'simple'  # Simplified to always use 'simple' order class
 
     # Update the plays directory path
     plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'new')

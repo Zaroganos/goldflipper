@@ -5,13 +5,13 @@
   "strike_price": 0.0,
   "expiration_date": "MM/DD/YYYY",
   "take_profit": {
-    "order_type": "market or limit",
-    "value": 0.0
+    "stock_price": 0.0,
+    "order_type": "market"
   },
   "stop_loss": {
-    "order_type": "stop or stop_limit",
-    "values": [0.0]
+    "stock_price": 0.0,
+    "order_type": "market"
   },
   "contracts": 0,
-  "order_class": "simple or OCO"
+  "order_class": "simple"
 }
