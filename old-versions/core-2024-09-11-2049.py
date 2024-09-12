@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import yfinance as yf
 from goldflipper.json_parser import load_play
 from goldflipper.alpaca_client import get_alpaca_client
-from alpaca.trading.requests import GetOptionContractsRequest, LimitOrderRequest, StopOrderRequest, MarketOrderRequest
+from alpaca.trading.requests import GetOptionContractsRequest, LimitOrderRequest, StopOrderRequest
 from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 
@@ -144,30 +144,26 @@ def open_position(play):
     contract = get_option_contract(play)
     
     if not contract:
-        logging.error("Failed to retrieve option contract. Aborting order placement.")
         return False
     
-    logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
+    limit_buy_price = calculate_limit_buy_price(contract)
+    if limit_buy_price is None:
+        logging.error(f"Failed to calculate limit buy price for {contract.symbol}. Skipping.")
+        return False
+
+    logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}...")
     
     try:
-        # Default to market order unless explicitly set to limit
-        order_type = play.get('order_type', 'market').lower()
-        
-        if order_type == 'limit':
-            logging.info("Limit order requested, but not implemented yet. Defaulting to market order.")
-            # TODO: Implement limit order logic here in the future
-        
-        # Use market order for all cases for now
-        order_req = MarketOrderRequest(
+        order_req = LimitOrderRequest(
             symbol=contract.symbol,
             qty=play['contracts'],
             side=OrderSide.BUY,
-            type=OrderType.MARKET,
-            time_in_force=TimeInForce.DAY
+            type=OrderType.LIMIT,
+            time_in_force=TimeInForce.DAY,
+            limit_price=limit_buy_price
         )
-        
         order = client.submit_order(order_req)
-        logging.info(f"Position opened successfully for {play['contracts']} contracts of {contract.symbol} using MARKET order.")
+        logging.info(f"Position opened successfully for {play['contracts']} contracts of {contract.symbol}.")
         return True
     except Exception as e:
         logging.error(f"Error opening position: {e}")
