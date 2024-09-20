@@ -1,8 +1,8 @@
 import os
 
 # Alpaca API credentials
-ALPACA_API_KEY = 'PKXOAGZUFVGUCADCFQGG'
-ALPACA_SECRET_KEY = 'n0S5BLEdjr7JQJxkqk084dnwmvKn531yeY5iVKY1'
+ALPACA_API_KEY = 'PKH99UN0312N5SJ3OW35'
+ALPACA_SECRET_KEY = 'vvnhwyZFq7tuzNHKgMfZOfc5FUfNMdQOrSuSnUbR'
 ALPACA_BASE_URL = 'https://paper-api.alpaca.markets'  # Use the paper trading URL for testing
 
 # Data paths

@@ -70,13 +70,22 @@ def evaluate_opening_strategy(symbol, market_data, play):
     
     entry_point = play.get("entry_point", 0)
     last_price = market_data["Close"].iloc[-1]
+    trade_type = play.get("trade_type", "").upper()
 
-    if last_price <= entry_point:
-        logging.info(f"Opening condition met: Current price {last_price} <= entry point {entry_point}")
-        return True
+    if trade_type == "CALL":
+        condition_met = last_price >= entry_point
+        comparison = ">=" if condition_met else "<"
+    elif trade_type == "PUT":
+        condition_met = last_price <= entry_point
+        comparison = "<=" if condition_met else ">"
     else:
-        logging.info(f"Opening condition not met: Current price {last_price} > entry point {entry_point}")
+        logging.error(f"Invalid trade type: {trade_type}. Must be CALL or PUT.")
         return False
+
+    logging.info(f"Opening condition {'met' if condition_met else 'not met'}: "
+                 f"Current price {last_price} {comparison} entry point {entry_point} for {trade_type}")
+    
+    return condition_met
 
 def evaluate_closing_strategy(symbol, market_data, play):
     logging.info(f"Evaluating closing strategy for {symbol} using play data...")
@@ -296,8 +305,8 @@ def execute_trade(play_file, play_type):
     if play_type == "new":
         if evaluate_opening_strategy(symbol, market_data, play):
             if open_position(play):
-                monitor_and_manage_position(play, play['entry_point'])
-                move_play_to_open(play_file)
+                move_play_to_open(play_file)  # Move this line here immediately after opening the position
+                monitor_and_manage_position(play, play['entry_point'])  # Continue monitoring after moving
                 return True
     elif play_type == "open":
         if evaluate_closing_strategy(symbol, market_data, play):
