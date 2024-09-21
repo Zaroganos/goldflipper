@@ -56,7 +56,8 @@ def create_play():
 
     play['entry_point'] = get_input("Enter the entry price (stock price): ", float, error_message="Please enter a valid number for the entry price.")
 
-    play['strike_price'] = get_input("Enter the strike price: ", float, error_message="Please enter a valid number for the strike price.")
+    # Save strike price as a string
+    play['strike_price'] = str(get_input("Enter the strike price: ", float, error_message="Please enter a valid number for the strike price."))
 
     play['expiration_date'] = get_input(
         "Enter the expiration date (MM/DD/YYYY): ",

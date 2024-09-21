@@ -110,11 +110,13 @@ def get_option_contract(play):
     client = get_alpaca_client()
     symbol = play['symbol']
     expiration_date = datetime.strptime(play['expiration_date'], "%m/%d/%Y").date()
-    
+    strike_price = play['strike_price']  # Strike price must be a string
+
     req = GetOptionContractsRequest(
         underlying_symbols=[symbol],
         expiration_date=expiration_date,
-        strike_price=play['strike_price'],
+        strike_price_gte=strike_price,
+        strike_price_lte=strike_price,
         type=play['trade_type'].lower(),
         status=AssetStatus.ACTIVE
     )

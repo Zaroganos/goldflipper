@@ -1,0 +1,17 @@
+{
+  "symbol": "SPY",
+  "trade_type": "CALL",
+  "entry_point": 562,
+  "strike_price": "562",
+  "expiration_date": "09/25/2024",
+  "take_profit": {
+    "stock_price": 572,
+    "order_type": "market"
+  },
+  "stop_loss": {
+    "stock_price": 552,
+    "order_type": "market"
+  },
+  "contracts": 1,
+  "order_class": "simple"
+}
