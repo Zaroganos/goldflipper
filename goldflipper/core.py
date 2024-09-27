@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import yfinance as yf
 from goldflipper.json_parser import load_play
 from goldflipper.alpaca_client import get_alpaca_client
-from alpaca.trading.requests import GetOptionContractsRequest, LimitOrderRequest, StopOrderRequest, MarketOrderRequest
+from alpaca.trading.requests import GetOptionContractsRequest, LimitOrderRequest, StopOrderRequest, MarketOrderRequest, ClosePositionRequest
 from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 
@@ -185,28 +185,47 @@ def open_position(play):
         return False
 
 def close_position(play):
+    """
+    Close an existing position by selling the specified number of option contracts.
+
+    Parameters:
+    - play (dict): A dictionary containing play details such as symbol, contracts, etc.
+
+    Returns:
+    - bool: True if the position was closed successfully, False otherwise.
+    """
     client = get_alpaca_client()
     contract = get_option_contract(play)
-    
+
     if not contract:
+        logging.error("Failed to retrieve option contract. Aborting position closure.")
         return False
-    
-    logging.info(f"Closing position for {play['contracts']} contracts of {contract.symbol}...")
-    
+
+    symbol = contract.symbol
+    qty = play.get('contracts', 1)  # Default to 1 if not specified
+
+    logging.info(f"Attempting to close position: {qty} contracts of {symbol}")
+
     try:
-        # Use market order for closing to ensure execution
-        order_req = LimitOrderRequest(
-            symbol=contract.symbol,
-            qty=play['contracts'],
-            side=OrderSide.SELL,
-            type=OrderType.MARKET,
-            time_in_force=TimeInForce.DAY
+        # Create a ClosePositionRequest with the desired quantity
+        close_req = ClosePositionRequest(
+            qty=qty  # Ensure qty is an integer
         )
-        order = client.submit_order(order_req)
-        logging.info(f"Position closed successfully for {play['contracts']} contracts of {contract.symbol}.")
+
+        # Utilize the high-level close_position method from Alpaca-py
+        response = client.close_position(
+            symbol_or_asset_id=symbol,
+            close_options=close_req
+        )
+
+        logging.info(f"Successfully closed position: {qty} contracts of {symbol}")
         return True
+
+    except APIError as api_err:
+        logging.error(f"API Error closing position for {symbol}: {api_err}")
+        return False
     except Exception as e:
-        logging.error(f"Error closing position: {e}")
+        logging.error(f"Unexpected error closing position for {symbol}: {e}")
         return False
 
 def monitor_and_manage_position(play, entry_price):
