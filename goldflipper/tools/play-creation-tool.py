@@ -38,6 +38,18 @@ def validate_choice(choice, options):
     """
     return choice.upper() in options
 
+def create_option_contract_symbol(symbol, expiration_date, strike_price, trade_type):
+    """
+    Generate the option contract symbol based on user inputs.
+    Format: {SYMBOL}{YYMMDD}{C/P}{STRIKE_PRICE_PADDED}
+    Example: SPY240621C00450000
+    """
+    exp_date = datetime.strptime(expiration_date, "%m/%d/%Y")
+    formatted_date = exp_date.strftime("%y%m%d")
+    option_type = "C" if trade_type.upper() == "CALL" else "P"
+    padded_strike = f"{float(strike_price):08.0f}".replace(".", "")
+    return f"{symbol.upper()}{formatted_date}{option_type}{padded_strike}"
+
 def create_play():
     """
     Interactive tool to create a play for options trading, following the minimal template.
@@ -45,14 +57,14 @@ def create_play():
 
     play = {}
 
-    play['symbol'] = get_input("Enter the ticker symbol (e.g., BA): ", str, validation=lambda x: len(x) > 0, error_message="Ticker symbol cannot be empty.")
+    play['symbol'] = get_input("Enter the ticker symbol (e.g., SPY): ", str, validation=lambda x: len(x) > 0, error_message="Ticker symbol cannot be empty.").upper()
 
     play['trade_type'] = get_input(
         "Enter the trade type (CALL or PUT): ",
         str,
         validation=lambda x: validate_choice(x, ["CALL", "PUT"]),
         error_message="Invalid trade type. Please enter 'CALL' or 'PUT'."
-    )
+    ).upper()
 
     play['entry_point'] = get_input("Enter the entry price (stock price): ", float, error_message="Please enter a valid number for the entry price.")
 
@@ -65,6 +77,15 @@ def create_play():
         validation=lambda x: datetime.strptime(x, "%m/%d/%Y"),
         error_message="Please enter a valid date in MM/DD/YYYY format."
     )
+
+    # Automatically generate the option contract symbol
+    play['option_contract_symbol'] = create_option_contract_symbol(
+        play['symbol'],
+        play['expiration_date'],
+        play['strike_price'],
+        play['trade_type']
+    )
+    print(f"Generated option contract symbol: {play['option_contract_symbol']}")
 
     # Take profit section
     take_profit_stock_price = get_input(

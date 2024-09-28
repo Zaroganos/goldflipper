@@ -2,8 +2,9 @@
   "symbol": "string",
   "trade_type": "CALL or PUT",
   "entry_point": 0.0,
-  "strike_price": 0.0,
+  "strike_price": "0.0",
   "expiration_date": "MM/DD/YYYY",
+  "option_contract_symbol": "string",
   "take_profit": {
     "stock_price": 0.0,
     "order_type": "market"

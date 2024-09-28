@@ -150,7 +150,7 @@ def calculate_limit_buy_price(contract):
         logging.error(f"Error calculating limit buy price for {contract.symbol}: {str(e)}")
         return None
 
-def open_position(play):
+def open_position(play, play_file):
     client = get_alpaca_client()
     contract = get_option_contract(play)
     
@@ -174,114 +174,79 @@ def open_position(play):
             qty=play['contracts'],
             side=OrderSide.BUY,
             type=OrderType.MARKET,
-            time_in_force=TimeInForce.DAY
+            time_in_force=TimeInForce.DAY,
         )
-        
-        order = client.submit_order(order_req)
-        logging.info(f"Position opened successfully for {play['contracts']} contracts of {contract.symbol} using MARKET order.")
-        return True
-    except Exception as e:
-        logging.error(f"Error opening position: {e}")
-        return False
+        response = client.submit_order(order_req)
+        logging.info(f"Order submitted: {response}")
 
-def close_position(play):
-    """
-    Close an existing position by selling the specified number of option contracts.
-
-    Parameters:
-    - play (dict): A dictionary containing play details such as symbol, contracts, etc.
-
-    Returns:
-    - bool: True if the position was closed successfully, False otherwise.
-    """
-    client = get_alpaca_client()
-    contract = get_option_contract(play)
-
-    if not contract:
-        logging.error("Failed to retrieve option contract. Aborting position closure.")
-        return False
-
-    symbol = contract.symbol
-    qty = play.get('contracts', 1)  # Default to 1 if not specified
-
-    logging.info(f"Attempting to close position: {qty} contracts of {symbol}")
-
-    try:
-        # Create a ClosePositionRequest with the desired quantity
-        close_req = ClosePositionRequest(
-            qty=qty  # Ensure qty is an integer
-        )
-
-        # Utilize the high-level close_position method from Alpaca-py
-        response = client.close_position(
-            symbol_or_asset_id=symbol,
-            close_options=close_req
-        )
-
-        logging.info(f"Successfully closed position: {qty} contracts of {symbol}")
         return True
 
     except APIError as api_err:
-        logging.error(f"API Error closing position for {symbol}: {api_err}")
+        logging.error(f"API Error placing order: {api_err}")
         return False
     except Exception as e:
-        logging.error(f"Unexpected error closing position for {symbol}: {e}")
+        logging.error(f"Unexpected error placing order: {e}")
         return False
 
-def monitor_and_manage_position(play, entry_price):
+def close_position(play):
     client = get_alpaca_client()
-    contract = get_option_contract(play)
-    
-    if not contract:
+    contract_symbol = play.get('option_contract_symbol')  # This should be the full option symbol
+
+    if not contract_symbol:
+        logging.error("Option contract symbol not found in play. Cannot close position.")
         return False
 
-    tp_price = play['take_profit']['value']
-    sl_price = play['stop_loss']['values'][-1]  # Use the last stop loss value
-    tp_order_placed = False
-    sl_order_placed = False
+    qty = play.get('contracts', 1)  # Default to 1 if not specified
+
+    logging.info(f"Attempting to close position: {qty} contracts of {contract_symbol}")
+
+    try:
+        close_req = ClosePositionRequest(qty=qty)
+        response = client.close_position(
+            symbol_or_asset_id=contract_symbol,
+            close_options=close_req
+        )
+        logging.info(f"Successfully closed position: {qty} contracts of {contract_symbol}")
+        return True
+    except APIError as api_err:
+        logging.error(f"API Error closing position for {contract_symbol}: {api_err}")
+        return False
+    except Exception as e:
+        logging.error(f"Unexpected error closing position for {contract_symbol}: {e}")
+        return False
+
+def monitor_and_manage_position(play, play_file):
+    client = get_alpaca_client()
+    contract_symbol = play.get('option_contract_symbol')  # Full option symbol
+    underlying_symbol = play.get('symbol')  # Underlying stock symbol
+    
+    if not contract_symbol or not underlying_symbol:
+        logging.error("Option contract symbol or underlying symbol not found. Cannot monitor position.")
+        return False
+
+    tp_price = play['take_profit']['stock_price']
+    sl_price = play['stop_loss']['stock_price']
 
     while True:
         try:
-            position = client.get_open_position(contract.symbol)
+            position = client.get_open_position(contract_symbol)
             if position is None:
-                logging.info(f"Position {contract.symbol} closed.")
+                logging.info(f"Position {contract_symbol} closed.")
                 break
 
-            current_price = float(client.get_latest_trade(contract.symbol).price)
-            logging.info(f"Current price for {contract.symbol}: {current_price}")
+            # Note: We're using the underlying symbol to get the latest trade price
+            current_price = float(client.get_latest_trade(underlying_symbol).price)
+            logging.info(f"Current price for {underlying_symbol}: {current_price}")
 
-            if not tp_order_placed and current_price >= tp_price:
-                tp_order = LimitOrderRequest(
-                    symbol=contract.symbol,
-                    qty=play['contracts'],
-                    side=OrderSide.SELL,
-                    type=OrderType.LIMIT,
-                    time_in_force=TimeInForce.DAY,
-                    limit_price=tp_price,
-                )
-                client.submit_order(tp_order)
-                logging.info(f"Take profit order placed for {contract.symbol}")
-                tp_order_placed = True
-
-            if not sl_order_placed and current_price <= sl_price:
-                sl_order = StopOrderRequest(
-                    symbol=contract.symbol,
-                    qty=play['contracts'],
-                    side=OrderSide.SELL,
-                    type=OrderType.STOP,
-                    time_in_force=TimeInForce.GTC,
-                    stop_price=sl_price,
-                )
-                client.submit_order(sl_order)
-                logging.info(f"Stop loss order placed for {contract.symbol}")
-                sl_order_placed = True
-
-            if tp_order_placed or sl_order_placed:
+            if current_price >= tp_price or current_price <= sl_price:
+                logging.info(f"{'Take profit' if current_price >= tp_price else 'Stop loss'} condition met for {contract_symbol}. Closing position.")
+                if close_position(play):
+                    move_play_to_closed(play_file)
                 break
 
             time.sleep(10)  # Wait for 10s before checking again
         except Exception as e:
-            logging.error(f"Error monitoring position {contract.symbol}: {str(e)}")
+            logging.error(f"Error monitoring position {contract_symbol}: {e}")
             break
 
 # ==================================================
@@ -325,9 +290,9 @@ def execute_trade(play_file, play_type):
 
     if play_type == "new":
         if evaluate_opening_strategy(symbol, market_data, play):
-            if open_position(play):
+            if open_position(play, play_file):
                 move_play_to_open(play_file)  # Move this line here immediately after opening the position
-                monitor_and_manage_position(play, play['entry_point'])  # Continue monitoring after moving
+                monitor_and_manage_position(play, play_file)  # Continue monitoring after moving
                 return True
     elif play_type == "open":
         if evaluate_closing_strategy(symbol, market_data, play):
