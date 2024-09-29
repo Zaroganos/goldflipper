@@ -1,8 +1,9 @@
 import os
 import json
+import re
 from datetime import datetime
 
-def get_input(prompt, input_type=str, validation=None, error_message="Invalid input. Please try again."):
+def get_input(prompt, input_type=str, validation=None, error_message="Invalid input. Please try again.", optional=False):
     """
     Helper function to get validated input from the user.
 
@@ -11,17 +12,21 @@ def get_input(prompt, input_type=str, validation=None, error_message="Invalid in
     - input_type (type): The type to convert the input into (e.g., int, float, str).
     - validation (function): A function that takes the input and returns True if valid, False otherwise.
     - error_message (str): The message to show if validation fails.
+    - optional (bool): If True, allows the user to skip input by entering nothing.
 
     Returns:
-    - The validated input converted to input_type.
+    - The validated input converted to input_type, or None if optional and skipped.
     """
     while True:
+        user_input = input(prompt).strip()
+        if optional and user_input == "":
+            return None
         try:
-            user_input = input_type(input(prompt).strip())
-            if validation and not validation(user_input):
+            converted_input = input_type(user_input)
+            if validation and not validation(converted_input):
                 print(error_message)
             else:
-                return user_input
+                return converted_input
         except ValueError:
             print(error_message)
 
@@ -38,17 +43,49 @@ def validate_choice(choice, options):
     """
     return choice.upper() in options
 
+def sanitize_filename(name):
+    """
+    Sanitize the filename by removing or replacing invalid characters.
+
+    Parameters:
+    - name (str): The original filename.
+
+    Returns:
+    - str: The sanitized filename.
+    """
+    # Remove any character that is not alphanumeric, underscore, or hyphen
+    sanitized = re.sub(r'[^\w\-]', '_', name)
+    return sanitized
+
 def create_option_contract_symbol(symbol, expiration_date, strike_price, trade_type):
     """
     Generate the option contract symbol based on user inputs.
     Format: {SYMBOL}{YYMMDD}{C/P}{STRIKE_PRICE_PADDED}
-    Example: SPY240621C00450000
+    Example: SPY240621P00550000 (for $550.00 strike price)
     """
-    exp_date = datetime.strptime(expiration_date, "%m/%d/%Y")
-    formatted_date = exp_date.strftime("%y%m%d")
+    try:
+        # Parse and format the expiration date
+        exp_date = datetime.strptime(expiration_date, "%m/%d/%Y")
+        formatted_date = exp_date.strftime("%y%m%d")
+    except ValueError:
+        raise ValueError("Invalid expiration date format. Please use MM/DD/YYYY.")
+
+    # Determine the option type (Call or Put)
     option_type = "C" if trade_type.upper() == "CALL" else "P"
-    padded_strike = f"{float(strike_price):08.0f}".replace(".", "")
-    return f"{symbol.upper()}{formatted_date}{option_type}{padded_strike}"
+
+    try:
+        # Convert strike price to tenths of cents by multiplying by 1000
+        strike_tenths_cents = int(round(float(strike_price) * 1000))
+    except ValueError:
+        raise ValueError("Invalid strike price. Please enter a numeric value.")
+
+    # Format as an 8-digit number with leading zeros
+    padded_strike = f"{strike_tenths_cents:08d}"
+
+    # Assemble the final option contract symbol
+    final_symbol = f"{symbol.upper()}{formatted_date}{option_type}{padded_strike}"
+
+    return final_symbol
 
 def create_play():
     """
@@ -57,7 +94,12 @@ def create_play():
 
     play = {}
 
-    play['symbol'] = get_input("Enter the ticker symbol (e.g., SPY): ", str, validation=lambda x: len(x) > 0, error_message="Ticker symbol cannot be empty.").upper()
+    play['symbol'] = get_input(
+        "Enter the ticker symbol (e.g., SPY): ",
+        str,
+        validation=lambda x: len(x) > 0,
+        error_message="Ticker symbol cannot be empty."
+    ).upper()
 
     play['trade_type'] = get_input(
         "Enter the trade type (CALL or PUT): ",
@@ -66,10 +108,18 @@ def create_play():
         error_message="Invalid trade type. Please enter 'CALL' or 'PUT'."
     ).upper()
 
-    play['entry_point'] = get_input("Enter the entry price (stock price): ", float, error_message="Please enter a valid number for the entry price.")
+    play['entry_point'] = get_input(
+        "Enter the entry price (stock price): ",
+        float,
+        error_message="Please enter a valid number for the entry price."
+    )
 
     # Save strike price as a string
-    play['strike_price'] = str(get_input("Enter the strike price: ", float, error_message="Please enter a valid number for the strike price."))
+    play['strike_price'] = str(get_input(
+        "Enter the strike price: ",
+        float,
+        error_message="Please enter a valid number for the strike price."
+    ))
 
     play['expiration_date'] = get_input(
         "Enter the expiration date (MM/DD/YYYY): ",
@@ -78,14 +128,37 @@ def create_play():
         error_message="Please enter a valid date in MM/DD/YYYY format."
     )
 
-    # Automatically generate the option contract symbol
-    play['option_contract_symbol'] = create_option_contract_symbol(
-        play['symbol'],
-        play['expiration_date'],
-        play['strike_price'],
-        play['trade_type']
+    # Prompt for an optional play name
+    play_name_input = get_input(
+        "Enter the play's name (optional, press Enter to skip): ",
+        str,
+        validation=lambda x: True,  # No specific validation
+        error_message="Invalid input.",
+        optional=True
     )
-    print(f"Generated option contract symbol: {play['option_contract_symbol']}")
+
+    # Automatically generate the option contract symbol
+    try:
+        play['option_contract_symbol'] = create_option_contract_symbol(
+            play['symbol'],
+            play['expiration_date'],
+            play['strike_price'],
+            play['trade_type']
+        )
+        print(f"Generated option contract symbol: {play['option_contract_symbol']}")
+    except ValueError as ve:
+        print(f"Error generating option contract symbol: {ve}")
+        return  # Exit the function if there's an error
+
+    # Determine the play's name
+    if play_name_input:
+        play['play_name'] = play_name_input
+        filename = sanitize_filename(play['play_name']) + ".json"
+    else:
+        system_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+        default_name = f"{play['option_contract_symbol']}_{system_time}"
+        play['play_name'] = default_name
+        filename = default_name + ".json"
 
     # Take profit section
     take_profit_stock_price = get_input(
@@ -113,7 +186,12 @@ def create_play():
         'order_type': 'market'
     }
 
-    play['contracts'] = get_input("Enter the number of contracts: ", int, validation=lambda x: x > 0, error_message="Please enter a positive integer for the number of contracts.")
+    play['contracts'] = get_input(
+        "Enter the number of contracts: ",
+        int,
+        validation=lambda x: x > 0,
+        error_message="Please enter a positive integer for the number of contracts."
+    )
 
     play['order_class'] = 'simple'  # Simplified to always use 'simple' order class
 
@@ -121,7 +199,6 @@ def create_play():
     plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'new')
     os.makedirs(plays_dir, exist_ok=True)
 
-    filename = f"{play['symbol']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     filepath = os.path.join(plays_dir, filename)
     with open(filepath, 'w') as f:
         json.dump(play, f, indent=4)
