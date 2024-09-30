@@ -201,7 +201,8 @@ def close_position(play):
     logging.info(f"Attempting to close position: {qty} contracts of {contract_symbol}")
 
     try:
-        close_req = ClosePositionRequest(qty=qty)
+        # Convert qty to string as ClosePositionRequest expects a string
+        close_req = ClosePositionRequest(qty=str(qty))
         response = client.close_position(
             symbol_or_asset_id=contract_symbol,
             close_options=close_req
@@ -335,4 +336,3 @@ def monitor_plays_continuously():
 
 if __name__ == "__main__":
     monitor_plays_continuously()
-
