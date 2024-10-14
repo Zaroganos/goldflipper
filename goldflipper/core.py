@@ -76,8 +76,9 @@ def evaluate_opening_strategy(symbol, market_data, play):
         condition_met = last_price >= entry_point
         comparison = ">=" if condition_met else "<"
     elif trade_type == "PUT":
-        condition_met = last_price <= entry_point
-        comparison = "<=" if condition_met else ">"
+        # Updated condition: Ensure last_price is greater than or equal to entry_point
+        condition_met = last_price >= entry_point
+        comparison = ">=" if condition_met else "<"
     else:
         logging.error(f"Invalid trade type: {trade_type}. Must be CALL or PUT.")
         return False
@@ -101,6 +102,7 @@ def evaluate_closing_strategy(symbol, market_data, play):
         comparison_profit = ">="
         comparison_loss = "<="
     elif trade_type == "PUT":
+        # Take Profit and Stop Loss conditions remain as per standard PUT logic
         profit_condition = last_price <= take_profit
         loss_condition = last_price >= stop_loss
         comparison_profit = "<="
@@ -263,6 +265,7 @@ def monitor_and_manage_position(play, play_file):
                 loss_condition = current_price <= sl_price
                 condition_met = profit_condition or loss_condition
             elif trade_type == "PUT":
+                # Take Profit and Stop Loss remain as per standard PUT logic
                 profit_condition = current_price <= tp_price
                 loss_condition = current_price >= sl_price
                 condition_met = profit_condition or loss_condition
