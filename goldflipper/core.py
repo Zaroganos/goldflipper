@@ -72,20 +72,22 @@ def evaluate_opening_strategy(symbol, market_data, play):
     last_price = market_data["Close"].iloc[-1]
     trade_type = play.get("trade_type", "").upper()
 
-    if trade_type == "CALL":
-        condition_met = last_price >= entry_point
-        comparison = ">=" if condition_met else "<"
-    elif trade_type == "PUT":
-        # Updated condition: Ensure last_price is greater than or equal to entry_point
-        condition_met = last_price >= entry_point
-        comparison = ">=" if condition_met else "<"
+    # Define a buffer of 5 cents
+    buffer = 0.05
+    lower_bound = entry_point - buffer
+    upper_bound = entry_point + buffer
+
+    if trade_type == "CALL" or trade_type == "PUT":
+        # Check if the last price is within ±5 cents of the entry point
+        condition_met = lower_bound <= last_price <= upper_bound
+        comparison = f"between {lower_bound:.2f} and {upper_bound:.2f}" if condition_met else f"not within ±{buffer:.2f} of entry point {entry_point:.2f}"
     else:
         logging.error(f"Invalid trade type: {trade_type}. Must be CALL or PUT.")
         return False
 
     logging.info(f"Opening condition {'met' if condition_met else 'not met'}: "
-                 f"Current price {last_price} {comparison} entry point {entry_point} for {trade_type}")
-    
+                 f"Current price {last_price:.2f} is {comparison} for {trade_type}")
+
     return condition_met
 
 def evaluate_closing_strategy(symbol, market_data, play):
@@ -112,14 +114,14 @@ def evaluate_closing_strategy(symbol, market_data, play):
         return False
 
     if profit_condition:
-        logging.info(f"Take profit condition met: Current stock price {last_price} {comparison_profit} take profit {take_profit} for {trade_type}")
+        logging.info(f"Take profit condition met: Current stock price {last_price:.2f} {comparison_profit} take profit {take_profit} for {trade_type}")
     if loss_condition:
-        logging.info(f"Stop loss condition met: Current stock price {last_price} {comparison_loss} stop loss {stop_loss} for {trade_type}")
+        logging.info(f"Stop loss condition met: Current stock price {last_price:.2f} {comparison_loss} stop loss {stop_loss} for {trade_type}")
 
     if profit_condition or loss_condition:
         return True
     else:
-        logging.info(f"Closing conditions not met: Current stock price {last_price} for {trade_type}")
+        logging.info(f"Closing conditions not met: Current stock price {last_price:.2f} for {trade_type}")
         return False
 
 # ==================================================
@@ -162,7 +164,7 @@ def calculate_limit_buy_price(contract):
             bid = option.iloc[0]['bid']
             ask = option.iloc[0]['ask']
             limit_buy_price = bid + (ask - bid) * 0.25  # Set limit buy price to 25% above the bid price
-            logging.info(f"Calculated limit buy price for {contract.symbol}: {limit_buy_price}")
+            logging.info(f"Calculated limit buy price for {contract.symbol}: {limit_buy_price:.2f}")
             return limit_buy_price
         else:
             logging.error(f"No option data found for {contract.symbol}")
@@ -258,14 +260,14 @@ def monitor_and_manage_position(play, play_file):
                 break
 
             current_price = float(client.get_latest_trade(underlying_symbol).price)
-            logging.info(f"Current price for {underlying_symbol}: {current_price}")
+            logging.info(f"Current price for {underlying_symbol}: {current_price:.2f}")
 
             if trade_type == "CALL":
                 profit_condition = current_price >= tp_price
                 loss_condition = current_price <= sl_price
                 condition_met = profit_condition or loss_condition
             elif trade_type == "PUT":
-                # Take Profit and Stop Loss remain as per standard PUT logic
+                # Take Profit and Stop Loss conditions remain as per standard PUT logic
                 profit_condition = current_price <= tp_price
                 loss_condition = current_price >= sl_price
                 condition_met = profit_condition or loss_condition
