@@ -63,11 +63,11 @@ def get_market_data(symbol):
 # ==================================================
 # 3. STRATEGY EVALUATION
 # ==================================================
-# Function to evaluate whether the market conditions meet the strategy criteria.
+# Functions to evaluate whether the market conditions meet the strategy criteria based on trade type.
 
 def evaluate_opening_strategy(symbol, market_data, play):
     logging.info(f"Evaluating opening strategy for {symbol} using play data...")
-    
+
     entry_point = play.get("entry_point", 0)
     last_price = market_data["Close"].iloc[-1]
     trade_type = play.get("trade_type", "").upper()
@@ -90,15 +90,34 @@ def evaluate_opening_strategy(symbol, market_data, play):
 def evaluate_closing_strategy(symbol, market_data, play):
     logging.info(f"Evaluating closing strategy for {symbol} using play data...")
     
-    take_profit = play['take_profit']['stock_price']  # Changed from play.get("take_profit", {}).get("value", 0)
-    stop_loss = play['stop_loss']['stock_price']  # Changed from play.get("stop_loss", {}).get("values", [])[-1]
+    take_profit = play['take_profit']['stock_price']
+    stop_loss = play['stop_loss']['stock_price']
     last_price = market_data["Close"].iloc[-1]
+    trade_type = play.get("trade_type", "").upper()
 
-    if last_price >= take_profit or last_price <= stop_loss:
-        logging.info(f"Closing condition met: Current stock price {last_price}, Take profit {take_profit}, Stop loss {stop_loss}")
+    if trade_type == "CALL":
+        profit_condition = last_price >= take_profit
+        loss_condition = last_price <= stop_loss
+        comparison_profit = ">="
+        comparison_loss = "<="
+    elif trade_type == "PUT":
+        profit_condition = last_price <= take_profit
+        loss_condition = last_price >= stop_loss
+        comparison_profit = "<="
+        comparison_loss = ">="
+    else:
+        logging.error(f"Invalid trade type: {trade_type}. Must be CALL or PUT.")
+        return False
+
+    if profit_condition:
+        logging.info(f"Take profit condition met: Current stock price {last_price} {comparison_profit} take profit {take_profit} for {trade_type}")
+    if loss_condition:
+        logging.info(f"Stop loss condition met: Current stock price {last_price} {comparison_loss} stop loss {stop_loss} for {trade_type}")
+
+    if profit_condition or loss_condition:
         return True
     else:
-        logging.info(f"Closing condition not met: Current stock price {last_price}")
+        logging.info(f"Closing conditions not met: Current stock price {last_price} for {trade_type}")
         return False
 
 # ==================================================
@@ -220,7 +239,8 @@ def monitor_and_manage_position(play, play_file):
     client = get_alpaca_client()
     contract_symbol = play.get('option_contract_symbol')  # Full option symbol
     underlying_symbol = play.get('symbol')  # Underlying stock symbol
-    
+    trade_type = play.get("trade_type", "").upper()
+
     if not contract_symbol or not underlying_symbol:
         logging.error("Option contract symbol or underlying symbol not found. Cannot monitor position.")
         return False
@@ -235,12 +255,24 @@ def monitor_and_manage_position(play, play_file):
                 logging.info(f"Position {contract_symbol} closed.")
                 break
 
-            # Note: We're using the underlying symbol to get the latest trade price
             current_price = float(client.get_latest_trade(underlying_symbol).price)
             logging.info(f"Current price for {underlying_symbol}: {current_price}")
 
-            if current_price >= tp_price or current_price <= sl_price:
-                logging.info(f"{'Take profit' if current_price >= tp_price else 'Stop loss'} condition met for {contract_symbol}. Closing position.")
+            if trade_type == "CALL":
+                profit_condition = current_price >= tp_price
+                loss_condition = current_price <= sl_price
+                condition_met = profit_condition or loss_condition
+            elif trade_type == "PUT":
+                profit_condition = current_price <= tp_price
+                loss_condition = current_price >= sl_price
+                condition_met = profit_condition or loss_condition
+            else:
+                logging.error(f"Invalid trade type: {trade_type}. Cannot monitor position effectively.")
+                break
+
+            if condition_met:
+                condition = 'Take profit' if profit_condition else 'Stop loss'
+                logging.info(f"{condition} condition met for {contract_symbol}. Closing position.")
                 if close_position(play):
                     move_play_to_closed(play_file)
                 break
@@ -253,7 +285,7 @@ def monitor_and_manage_position(play, play_file):
 # ==================================================
 # 5. MOVE PLAY TO APPROPRIATE FOLDER
 # ==================================================
-# Function to move a play file to the appropriate plays folder after execution.
+# Functions to move a play file to the appropriate plays folder after execution.
 
 def move_play_to_open(play_file):
     open_dir = os.path.join(os.path.dirname(play_file), '..', 'open')
@@ -283,8 +315,9 @@ def execute_trade(play_file, play_type):
         return False
 
     symbol = play.get("symbol")
-    if not symbol:
-        logging.error(f"Play {play_file} is missing 'symbol'. Skipping execution.")
+    trade_type = play.get("trade_type", "").upper()
+    if not symbol or trade_type not in ["CALL", "PUT"]:
+        logging.error(f"Play {play_file} is missing 'symbol' or has invalid 'trade_type'. Skipping execution.")
         return False
 
     market_data = get_market_data(symbol)
@@ -292,8 +325,8 @@ def execute_trade(play_file, play_type):
     if play_type == "new":
         if evaluate_opening_strategy(symbol, market_data, play):
             if open_position(play, play_file):
-                move_play_to_open(play_file)  # Move this line here immediately after opening the position
-                monitor_and_manage_position(play, play_file)  # Continue monitoring after moving
+                move_play_to_open(play_file)
+                monitor_and_manage_position(play, play_file)
                 return True
     elif play_type == "open":
         if evaluate_closing_strategy(symbol, market_data, play):
