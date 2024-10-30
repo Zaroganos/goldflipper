@@ -1,0 +1,101 @@
+from textual.app import App, ComposeResult
+from textual.containers import Container
+from textual.widgets import Header, Footer, Button, Static
+from textual.screen import Screen
+import subprocess
+import sys
+import os
+from pathlib import Path
+
+class WelcomeScreen(Screen):
+    BINDINGS = [("q", "quit", "Quit")]
+    
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Container(
+            Static(" Welcome to Goldflipper Trading System ", id="welcome"),
+            Button("Create New Play", variant="primary", id="create_play"),
+            Button("Start Trading Monitor", variant="primary", id="start_monitor"),
+            Button("Exit", variant="error", id="exit"),
+            classes="container",
+        )
+        yield Footer()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "create_play":
+            self.run_play_creation_tool()
+        elif event.button.id == "start_monitor":
+            self.run_trading_monitor()
+        elif event.button.id == "exit":
+            self.app.exit()
+
+    def run_play_creation_tool(self):
+        try:
+            # Get absolute paths
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            tools_dir = os.path.join(current_dir, "tools")
+            
+            if os.name == 'nt':  # Windows
+                # Create the command without string interpolation
+                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'play-creation-tool.py']
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:  # Unix-like systems
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'play-creation-tool.py'], 
+                               cwd=tools_dir)
+        except Exception as e:
+            self.notify(f"Error: {str(e)}", severity="error")
+
+    def run_trading_monitor(self):
+        try:
+            if os.name == 'nt':  # Windows
+                cmd = 'python -m goldflipper.run'
+                subprocess.Popen(['cmd', '/k', cmd],
+                               creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:  # Unix-like systems
+                subprocess.Popen(['gnome-terminal', '--', 'python', '-m', 'goldflipper.run'])
+        except Exception as e:
+            self.notify(f"Error: {str(e)}", severity="error")
+
+class GoldflipperTUI(App):
+    CSS = """
+    Screen {
+        align: center middle;
+        background: $surface;
+    }
+
+    #welcome {
+        margin: 1;
+        padding: 2;
+        text-align: center;
+        width: 100%;
+        color: gold;
+        background: $surface;
+        text-style: bold;
+        border: heavy $accent;
+    }
+    
+    .container {
+        width: 80%;
+        height: auto;
+        align: center middle;
+        background: $surface-darken-2;
+        border: panel $primary;
+        padding: 2;
+    }
+    
+    Button {
+        width: 30;
+        margin: 1;
+    }
+
+    Button:hover {
+        background: $accent;
+    }
+    """
+
+    def on_mount(self) -> None:
+        self.push_screen(WelcomeScreen())
+
+if __name__ == "__main__":
+    app = GoldflipperTUI()
+    app.run()

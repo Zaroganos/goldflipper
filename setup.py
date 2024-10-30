@@ -39,6 +39,7 @@ setup(
         'alpaca-py',  # Alpaca trading API v2
         'yfinance',  # Yahoo Finance API for market data
         'pandas',  # Data analysis and manipulation library
+        'textual>=0.38.1',  # Add this line
         # Add any other dependencies here
     ],
 

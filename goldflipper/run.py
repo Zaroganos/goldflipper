@@ -15,6 +15,7 @@ ascii_art = """\
 Revision: 0.1
 Welcome to Project Goldflipper.
 """
+
 print(ascii_art)
 import os
 import logging
