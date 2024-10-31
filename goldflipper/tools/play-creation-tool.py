@@ -2,6 +2,8 @@ import os
 import json
 import re
 from datetime import datetime
+import platform
+import subprocess
 
 def get_input(prompt, input_type=str, validation=None, error_message="Invalid input. Please try again.", optional=False):
     """
@@ -204,6 +206,18 @@ def create_play():
         json.dump(play, f, indent=4)
 
     print(f"Play saved to {filepath}")
+
+    # Open the file in text editor
+    try:
+        if platform.system() == "Windows":
+            subprocess.run(["notepad.exe", filepath])
+        elif platform.system() == "Darwin":  # macOS
+            subprocess.run(["open", "-t", filepath])
+        else:  # Linux
+            subprocess.run(["xdg-open", filepath])
+        print("Opening play file in text editor...")
+    except Exception as e:
+        print(f"Could not open file automatically: {e}")
 
 if __name__ == "__main__":
     create_play()

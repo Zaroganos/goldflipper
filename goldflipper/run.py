@@ -12,8 +12,10 @@ ascii_art = """\
  `.__. |  `.__.'  (___)  `.__,'   (___)     (___) (___)  | \__.'   | \__.'   `.__.'  (___)       
  ( `-' ;                                                 | |       | |                           
   `.__.                                                 (___)     (___)                          
-Revision: 0.1
+
 Welcome to Project Goldflipper.
+
+Loading, please wait...
 """
 
 print(ascii_art)
