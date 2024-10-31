@@ -17,7 +17,7 @@ class WelcomeScreen(Screen):
             Horizontal(
                 Container(
                     Button("Create New Play", variant="primary", id="create_play"),
-                    Button("Start Trading Monitor", variant="primary", id="start_monitor"),
+                    Button("Launch Trading System", variant="success", id="start_monitor"),
                     Button("Exit", variant="error", id="exit"),
                     classes="button-column",
                 ),
@@ -143,6 +143,15 @@ class GoldflipperTUI(App):
     Button {
         width: 30;
         margin: 1;
+    }
+
+    Button.success {
+        background: #2ea043;
+        color: white;
+    }
+
+    Button.success:hover {
+        background: #3fb950;
     }
 
     Button:hover {
