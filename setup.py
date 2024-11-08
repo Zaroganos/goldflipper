@@ -32,14 +32,21 @@ setup(
     },
 
     # Specify the Python version compatibility
-    python_requires='>=3.6',
+    python_requires='>=3.8',
 
     # Dependencies required for your package
     install_requires=[
-        'alpaca-py',  # Alpaca trading API v2
-        'yfinance',  # Yahoo Finance API for market data
-        'pandas',  # Data analysis and manipulation library
-        'textual>=0.38.1',  # Add this line
+        'alpaca-py>=0.8.0', # Alpaca trading API v2
+        'yfinance>=0.2.0', # Yahoo Finance API for market data
+        'pandas>=2.0.0',  # Data analysis and manipulation library
+        'numpy>=1.24.0',  # Numerical computing library
+        'matplotlib>=3.7.0',  # Data visualization library
+        'seaborn>=0.12.0',  # Data visualization library
+        'scipy>=1.10.0',  # Scientific computing library
+        'ta>=0.10.0',  # Technical analysis library
+        'textual>=0.38.1',  # TUI library
+        'psutil>=5.9.0',  # System monitoring library
+        'nest-asyncio>=1.5.0' # Asynchronous library
         # Add any other dependencies here
     ],
 
