@@ -37,7 +37,7 @@ setup(
     # Dependencies required for your package
     install_requires=[
         'alpaca-py>=0.8.0', # Alpaca trading API v2
-        'yfinance>=0.2.0', # Yahoo Finance API for market data
+        'yfinance==0.2.37', # Yahoo Finance API for market data !! KEEP AT THIS VERSION !! latest version is not working
         'pandas>=2.0.0',  # Data analysis and manipulation library
         'numpy>=1.24.0',  # Numerical computing library
         'matplotlib>=3.7.0',  # Data visualization library
