@@ -194,6 +194,13 @@ def create_play():
         validation=lambda x: x > 0,
         error_message="Please enter a positive integer for the number of contracts."
     )
+        # Add this line to the create_play function
+    play['play_expiration_date'] = get_input(
+        "Enter the play expiration date (MM/DD/YYYY): ",
+        str,
+        validation=lambda x: datetime.strptime(x, "%m/%d/%Y"),
+        error_message="Please enter a valid date in MM/DD/YYYY format."
+    )
 
     play['order_class'] = 'simple'  # Simplified to always use 'simple' order class
 
