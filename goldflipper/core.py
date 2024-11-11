@@ -348,13 +348,28 @@ def execute_trade(play_file, play_type):
 
 def monitor_plays_continuously():
     plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plays'))
+    expired_dir = os.path.join(plays_dir, 'expired')  # Directory for expired plays
+    os.makedirs(expired_dir, exist_ok=True)  # Create expired directory if it doesn't exist
     
     logging.info(f"Monitoring plays directory: {plays_dir}")
 
     while True:
         try:
             logging.info("Checking for new and open plays...")
+
+            # Check for expired plays in the "new" folder
+            new_play_dir = os.path.join(plays_dir, 'new')
+            play_files = [os.path.join(new_play_dir, f) for f in os.listdir(new_play_dir) if f.endswith('.json')]
+            current_date = datetime.now().date()  # Get the current date
             
+            for play_file in play_files:
+                play = load_play(play_file)
+                if play and 'play_expiration_date' in play:
+                    expiration_date = datetime.strptime(play['play_expiration_date'], "%m/%d/%Y").date()
+                    if expiration_date < current_date:
+                        move_play_to_expired(play_file, expired_dir)  # Move expired play
+                        logging.info(f"Moved expired play to expired folder: {play_file}")
+
             for play_type in ['new', 'open']:
                 play_dir = os.path.join(plays_dir, play_type)
                 play_files = [os.path.join(play_dir, f) for f in os.listdir(play_dir) if f.endswith('.json')]
@@ -371,6 +386,16 @@ def monitor_plays_continuously():
             logging.error(f"An error occurred during play monitoring: {e}")
 
         time.sleep(30)  # Wait for 30 seconds before re-evaluating
+
+# ==================================================
+# 8. MOVE PLAY TO EXPIRED FOLDER
+# ==================================================
+# Function to move a play file to the expired plays folder.
+
+def move_play_to_expired(play_file, expired_dir):
+    new_path = os.path.join(expired_dir, os.path.basename(play_file))
+    os.rename(play_file, new_path)
+    logging.info(f"Moved play to expired folder: {new_path}")
 
 if __name__ == "__main__":
     monitor_plays_continuously()
