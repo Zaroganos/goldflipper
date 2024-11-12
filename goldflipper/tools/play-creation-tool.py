@@ -124,7 +124,7 @@ def create_play():
     ))
 
     play['expiration_date'] = get_input(
-        "Enter the expiration date (MM/DD/YYYY): ",
+        "Enter the option contract expiration date (MM/DD/YYYY): ",
         str,
         validation=lambda x: datetime.strptime(x, "%m/%d/%Y"),
         error_message="Please enter a valid date in MM/DD/YYYY format."
