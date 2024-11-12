@@ -5,10 +5,16 @@ env/
 .env/
 
 # Plays folder (change if need to keep some set of plays shared)
-goldflipper/plays/new/
-goldflipper/plays/open/
-goldflipper/plays/closed/
-goldflipper/plays/old/
+goldflipper/plays/new/*
+goldflipper/plays/open/*
+goldflipper/plays/closed/*
+goldflipper/plays/expired/*
+goldflipper/plays/old/*
+!goldflipper/plays/new/
+!goldflipper/plays/open/
+!goldflipper/plays/closed/
+!goldflipper/plays/expired/
+!goldflipper/plays/old/
 
 # Python bytecode
 __pycache__/
