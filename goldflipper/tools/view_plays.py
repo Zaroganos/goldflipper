@@ -51,7 +51,7 @@ def view_plays():
     print("===================")
     
     # Define folders to check
-    folders = ['New', 'Open', 'Closed']
+    folders = ['New', 'Open', 'Closed', 'Expired']
     
     for folder in folders:
         folder_path = os.path.join(plays_dir, folder)
@@ -67,17 +67,12 @@ def view_plays():
         for play in plays:
             data = play['data']
             print(f"\n📄 {play['filename']}")
-            print(f"   Symbol: {data.get('symbol', 'N/A')}")
-            print(f"   Strategy: {data.get('strategy', 'N/A')}")
-            print(f"   Entry Price: ${data.get('entry_price', 'N/A')}")
-            if 'exit_price' in data:
-                print(f"   Exit Price: ${data['exit_price']}")
-            if 'profit_loss' in data:
-                pl = data['profit_loss']
-                color = '🟢' if pl > 0 else '🔴'
-                print(f"   P/L: {color} ${pl:.2f}")
-            print(f"   Date: {data.get('date', 'N/A')}")
+            print(f"   Symbol: ${data.get('symbol', 'N/A')}")
+            print(f"   Strategy: {data.get('strategy', 'Option Swings')}")
+            print(f"   Entry Price: ${data.get('entry_point', 0.00):.2f}")
+            print(f"   Creation Date: {data.get('creation_date', 'N/A')}")
             print("   " + "-" * 30)
+            # TODO: Add more details to the play view🟢🔴
 
 if __name__ == "__main__":
     view_plays() 

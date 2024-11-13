@@ -16,5 +16,7 @@
     "order_type": "market"
   },
   "contracts": 0,
-  "order_class": "simple"
+  "order_class": "SIMPLE or COMPLEX",
+  "strategy": "string",
+  "creation_date": "MM/DD/YYYY"
 }
