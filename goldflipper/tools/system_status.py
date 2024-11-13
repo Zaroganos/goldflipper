@@ -29,12 +29,12 @@ def check_system_status():
     """
     print("System Status and Upkeep Tool")
     print("--------------------------")
-    
-    # Update alpaca-py package first
-    update_alpaca()
-    
+
     # Check alpaca-py version
     print(f"\nCurrent alpaca-py version: {alpaca.__version__}")
+
+    # Update alpaca-py package first
+    update_alpaca()
     
     # Initialize trading client using existing setup
     try:
