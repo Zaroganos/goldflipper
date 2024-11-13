@@ -13,7 +13,15 @@ def display_license():
     except FileNotFoundError:
         print("LICENSE file not found. Please contact Purpleaf LLC for licensing information.")
     
-    input("\nBy proceeding, you acknowledge and agree to the terms of the license.\nPress Enter to continue...")
+    while True:
+        choice = input("\nDo you agree to the terms of the license? Enter Y for yes or N for no, (Y/N): ").strip().upper()
+        if choice == 'Y':
+            os.system('cls' if os.name == 'nt' else 'clear')  # Clear screen
+            break
+        elif choice == 'N':
+            print("Exiting the program. You must agree to the terms to proceed.")
+            sys.exit()
+        print("Invalid choice. Please enter Y or N.")
 
 def get_trading_environment():
     """Get user choice for trading environment."""

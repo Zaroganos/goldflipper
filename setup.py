@@ -9,11 +9,11 @@ setup(
     name='goldflipper',  # The name of your package
     version='0.1.0',  # Initial version number (follow semantic versioning)
     author='Yaroshevskiy, Iliya',  # Replace with your name
-    author_email='your.email@example.com',  # Replace with your email
+    author_email='purpleafmanagement@gmail.com',  # Replace with your email
     description='A Python package for algorithmic trading using Alpaca.',
     long_description=long_description,  # Long description from README.md
     long_description_content_type="text/markdown",  # The format of the long description
-    url='https://github.com/yourusername/goldflipper',  # URL to the project homepage
+    url='https://github.com/Zaroganos/goldflipper',  # URL to the project homepage
     license='Proprietary. Copyright Purpleaf LLC. All rights reserved.',  # License under which the package is distributed
 
     # Package structure
