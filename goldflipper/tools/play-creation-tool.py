@@ -202,9 +202,10 @@ def create_play():
             error_message="Please enter a valid date in MM/DD/YYYY format."
         )
 
-        play['order_class'] = 'simple'  # Simplified to always use 'simple' order class
+        play['play_class'] = 'simple'  # Simplified to always use 'simple' order class
 
         play['strategy'] = 'Option Swings' # Default strategy; more strategies to be added later
+        # TODO: Implement "Branching Brackets Option Swings" strategy
 
         play['creation_date'] = datetime.now().strftime('%Y-%m-%d')  # Automatically populate play's creation date
 
