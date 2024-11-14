@@ -56,7 +56,7 @@ setup_logging()
 
 def get_market_data(symbol):
     logging.info(f"Fetching market data for {symbol}...")
-    data = yf.download(symbol, period="1d", interval="1m")
+    data = yf.download(symbol, period="1d", interval="1m") #DOUBLE CHECK THIS! CAN INTERVAL BE DECREASED??
     logging.info(f"Market data for {symbol} fetched successfully.")
     return data
 
@@ -230,7 +230,7 @@ def close_position(play):
             symbol_or_asset_id=contract_symbol,
             close_options=close_req
         )
-        logging.info(f"Successfully closed position: {qty} contracts of {contract_symbol}")
+        logging.info(f"🟢 Successfully closed position: {qty} contracts of {contract_symbol}")
         return True
     except APIError as api_err:
         logging.error(f"API Error closing position for {contract_symbol}: {api_err}")
@@ -297,14 +297,14 @@ def move_play_to_open(play_file):
     os.makedirs(open_dir, exist_ok=True)
     new_path = os.path.join(open_dir, os.path.basename(play_file))
     os.rename(play_file, new_path)
-    logging.info(f"Moved play to open folder: {new_path}")
+    logging.info(f"Moved play to OPEN folder: {new_path}")
 
 def move_play_to_closed(play_file):
     closed_dir = os.path.join(os.path.dirname(play_file), '..', 'closed')
     os.makedirs(closed_dir, exist_ok=True)
     new_path = os.path.join(closed_dir, os.path.basename(play_file))
     os.rename(play_file, new_path)
-    logging.info(f"Moved play to closed folder: {new_path}")
+    logging.info(f"Moved play to CLOSED folder: {new_path}")
 
 # ==================================================
 # 6. MAIN TRADE EXECUTION FLOW
