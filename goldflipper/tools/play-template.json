@@ -16,7 +16,7 @@
     "order_type": "market"
   },
   "contracts": 0,
-  "play_class": "SIMPLE or COMPLEX",
+  "play_class": "SIMPLE or OCO or OTO",
   "strategy": "string",
   "creation_date": "MM/DD/YYYY"
 }

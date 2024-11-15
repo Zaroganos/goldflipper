@@ -202,7 +202,15 @@ def create_play():
             error_message="Please enter a valid date in MM/DD/YYYY format."
         )
 
-        play['play_class'] = 'simple'  # Simplified to always use 'simple' order class
+        play['play_class'] = (get_input(
+            "Enter the complex play class (OCO or OTO), or press Enter for Simple: ",
+            str,
+            validation=lambda x: validate_choice(x, [True, "OCO", "OTO"]),
+            error_message="Invalid play class. Please press Enter or enter 'OCO', or 'OTO'.",
+            optional=True
+        ) or "Simple").upper()  #Simple by default
+
+            
 
         play['strategy'] = 'Option Swings' # Default strategy; more strategies to be added later
         # TODO: Implement "Branching Brackets Option Swings" strategy
