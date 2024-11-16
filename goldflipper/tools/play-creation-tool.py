@@ -203,13 +203,12 @@ def create_play():
         )
 
         play['play_class'] = (get_input(
-            "Enter the complex play class (OCO or OTO), or press Enter for Simple: ",
+            "Enter the complex play class (Primary or --> OCO or OTO), or press Enter for Simple: ",
             str,
-            validation=lambda x: validate_choice(x, [True, "OCO", "OTO"]),
-            error_message="Invalid play class. Please press Enter or enter 'OCO', or 'OTO'.",
+            validation=lambda x: validate_choice(x, [True, "PRIMARY", "OCO", "OTO"]),
+            error_message="Invalid play class. Please press Enter or enter 'PRIMARY', 'OCO', or 'OTO'.",
             optional=True
         ) or "Simple").upper()  #Simple by default
-
             
 
         play['strategy'] = 'Option Swings' # Default strategy; more strategies to be added later
@@ -238,6 +237,8 @@ def create_play():
             print("Opening play file in text editor...")
         except Exception as e:
             print(f"Could not open file automatically: {e}")
+
+        
 
         # Ask the user if they want to create another play
         another_play = get_input(
