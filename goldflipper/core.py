@@ -326,19 +326,31 @@ def execute_trade(play_file, play_type):
         return False
 
     market_data = get_market_data(symbol)
-
+    # OPENING a Play
     if play_type == "new":
         if evaluate_opening_strategy(symbol, market_data, play):
             if open_position(play, play_file):
                 move_play_to_open(play_file)
                 monitor_and_manage_position(play, play_file)
                 return True
+    # CONDITIONAL PLAYS: Activate OCO / OTO upon play opening for PRIMARY plays
+        if play.get("class") == "PRIMARY":
+            if  "OCO_trigger" in play:
+                oco_trigger_play = play["OCO_trigger"]
+            move_play_to_expired(oco_trigger_play)  # Move to expired folder
+            logging.info(f"Moved OCO_trigger play to expired folder: {oco_trigger_play}")
+
+            if "OTO_trigger" in play:
+                oto_trigger_play = play["OTO_trigger"]
+            move_play_to_open(oto_trigger_play)  # Move to new folder
+            logging.info(f"Moved OTO_trigger play to new folder: {oto_trigger_play}")
+    # CLOSING a Play
     elif play_type == "open":
         if evaluate_closing_strategy(symbol, market_data, play):
             if close_position(play):
                 move_play_to_closed(play_file)
                 return True
-
+    
     return False
 
 # ==================================================
