@@ -130,6 +130,8 @@ def create_play():
             error_message="Please enter a valid date in MM/DD/YYYY format."
         )
 
+
+
         # Prompt for an optional play name
         play_name_input = get_input(
             "Enter the play's name (optional, press Enter to skip): ",
@@ -194,30 +196,56 @@ def create_play():
             validation=lambda x: x > 0,
             error_message="Please enter a positive integer for the number of contracts."
         )
-            # Add this line to the create_play function
+
         play['play_expiration_date'] = get_input(
-            "Enter the play expiration date (MM/DD/YYYY): ",
+            f"Enter the play's expiration date (MM/DD/YYYY), or press Enter to make it {play['expiration_date']} by default.): ",
             str,
-            validation=lambda x: datetime.strptime(x, "%m/%d/%Y"),
-            error_message="Please enter a valid date in MM/DD/YYYY format."
+            optional=True  # Allow the user to skip input
         )
+        # Set default to previously entered expiration_date if no input is provided
+        if not play['play_expiration_date']:
+            play['play_expiration_date'] = play['expiration_date']
+        else:
+            # Validate the new input
+            datetime.strptime(play['play_expiration_date'], "%m/%d/%Y")  # This will raise an error if invalid
 
         play['play_class'] = (get_input(
-            "Enter the complex play class (Primary or --> OCO or OTO), or press Enter for Simple: ",
+            "Enter the conditional play class (PRIMARY, or --> OCO or OTO), or press Enter for Simple: ",
             str,
             validation=lambda x: validate_choice(x, [True, "PRIMARY", "OCO", "OTO"]),
             error_message="Invalid play class. Please press Enter or enter 'PRIMARY', 'OCO', or 'OTO'.",
             optional=True
         ) or "Simple").upper()  #Simple by default
-            
+        
+        if play['play_class'] == 'PRIMARY':
+                        # Prompt user to choose an existing play from "new" or "OTO" folders
+            existing_play = get_input(
+                "Link a conditional play to this primary play. Choose an existing play from 'new' or 'OTO' folders (provide the full play name, including the .json extension. Hint: view current plays): ",
+                str,
+                validation=lambda x: os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'new', x)) or 
+                                    os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'OTO', x)),
+                error_message="Play not found in 'new' or 'OTO' folders."
+            )
 
-        play['strategy'] = 'Option Swings' # Default strategy; more strategies to be added later
+            # Check which folder the play is in and set the appropriate field
+            if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'new', existing_play)):
+                play['conditional_plays'] = {'OCO_trigger': existing_play}
+            elif os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'OTO', existing_play)):
+                play['conditional_plays'] = {'OTO_trigger': existing_play}
+
+        play['strategy'] = (
+            'Option Swings' if play['play_class'] == 'SIMPLE' else
+            'Branching Brackets Option Swings'
+        )
         # TODO: Implement "Branching Brackets Option Swings" strategy
 
         play['creation_date'] = datetime.now().strftime('%Y-%m-%d')  # Automatically populate play's creation date
 
         # Update the plays directory path
-        plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'new')
+        if play['play_class'] == 'OTO':
+            plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'OTO')
+        else:
+            plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'new')
         os.makedirs(plays_dir, exist_ok=True)
 
         filepath = os.path.join(plays_dir, filename)

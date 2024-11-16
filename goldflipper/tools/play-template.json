@@ -16,11 +16,11 @@
     "order_type": "market"
   },
   "contracts": 0,
-  "play_class": "SIMPLE or PRIMARY or OCO or OTO",
+  "play_class": "SIMPLE, or if conditional: PRIMARY or OCO or OTO",
   "strategy": "string",
   "creation_date": "MM/DD/YYYY",
-  "complex plays": {
-    "OCO_trigger": "play name of the conditional play",
-    "OTO_trigger": "play name of the conditional play"
+  "conditional_plays": {
+    "OCO_trigger": "play name of the corresponding OCO conditional play",
+    "OTO_trigger": "play name of the corresponding OTO conditional play"
   }
 }
