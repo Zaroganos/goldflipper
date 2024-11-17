@@ -130,7 +130,12 @@ def create_play():
             error_message="Please enter a valid date in MM/DD/YYYY format."
         )
 
-
+        play['contracts'] = get_input(
+            "Enter the number of contracts: ",
+            int,
+            validation=lambda x: x > 0,
+            error_message="Please enter a positive integer for the number of contracts."
+        )
 
         # Prompt for an optional play name
         play_name_input = get_input(
@@ -172,6 +177,9 @@ def create_play():
             error_message="Please enter a valid positive number for the take profit stock price."
         )
 
+        # MULTIPLE TAKE PROFITS work here
+
+        # Take Profit section
         play['take_profit'] = {
             'stock_price': take_profit_stock_price,
             'order_type': 'market'
@@ -190,12 +198,7 @@ def create_play():
             'order_type': 'market'
         }
 
-        play['contracts'] = get_input(
-            "Enter the number of contracts: ",
-            int,
-            validation=lambda x: x > 0,
-            error_message="Please enter a positive integer for the number of contracts."
-        )
+
 
         play['play_expiration_date'] = get_input(
             f"Enter the play's expiration date (MM/DD/YYYY), or press Enter to make it {play['expiration_date']} by default.): ",
@@ -209,6 +212,7 @@ def create_play():
             # Validate the new input
             datetime.strptime(play['play_expiration_date'], "%m/%d/%Y")  # This will raise an error if invalid
 
+        # CONSIDER CHANGING THIS...
         play['play_class'] = (get_input(
             "Enter the conditional play class (PRIMARY, or --> OCO or OTO), or press Enter for Simple: ",
             str,
@@ -218,7 +222,7 @@ def create_play():
         ) or "Simple").upper()  #Simple by default
         
         if play['play_class'] == 'PRIMARY':
-                        # Prompt user to choose an existing play from "new" or "OTO" folders
+            # Prompt user to choose an existing play from "new" or "temp" folders
             existing_play = get_input(
                 "Link a conditional play to this primary play. Choose an existing play from ['new' if OCO], or ['temp' if OTO], folders (provide the full play name, including the .json extension. Hint: view current plays): ",
                 str,
@@ -237,7 +241,6 @@ def create_play():
             'Option Swings' if play['play_class'] == 'SIMPLE' else
             'Branching Brackets Option Swings'
         )
-        # TODO: Implement "Branching Brackets Option Swings" strategy
 
         play['creation_date'] = datetime.now().strftime('%Y-%m-%d')  # Automatically populate play's creation date
 
