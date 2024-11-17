@@ -16,7 +16,7 @@
     "order_type": "market"
   },
   "contracts": 0,
-  "play_class": "SIMPLE, or if conditional: PRIMARY or OCO or OTO",
+  "play_class": "SIMPLE, or if conditional: PRIMARY or OTO (if OCO, simply enter it as SIMPLE)",
   "strategy": "string",
   "creation_date": "MM/DD/YYYY",
   "conditional_plays": {

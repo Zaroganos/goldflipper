@@ -51,7 +51,7 @@ def view_plays():
     print("===================")
     
     # Define folders to check
-    folders = ['New', 'Open', 'Closed', 'Expired']
+    folders = ['New', 'Open', 'Closed', 'Temp', 'Expired'] # Not checking 'Old' folder
     
     for folder in folders:
         folder_path = os.path.join(plays_dir, folder)
@@ -68,10 +68,10 @@ def view_plays():
             data = play['data']
             print(f"\n📄 {play['filename']}")
             print(f"   Symbol: ${data.get('symbol', 'N/A')}")
+            print(f"   Created On: {data.get('creation_date', 'N/A')} -> Play Expiration: {data.get('play_expiration_date', 'N/A')} -> Contract Expiration: {data.get('expiration_date', 'N/A')}")
+            print(f"   Entry Price: ${data.get('entry_point', 0.00):.2f} -> Strike Price: ${data.get('strike_price', 'N/A')} -> TP: ${data.get('take_profit', {}).get('stock_price', 0.00):.2f} | SL: ${data.get('stop_loss', {}).get('stock_price', 0.00):.2f}")
             print(f"   Strategy: {data.get('strategy', 'Option Swings')}")
-            print(f"   Entry Price: ${data.get('entry_point', 0.00):.2f}")
-            print(f"   Creation Date: {data.get('creation_date', 'N/A')}")
-            print("   " + "-" * 30)
+            print("   " + "-" * 30) # Prints a separator line '-----'
             # TODO: Add more details to the play view🟢🔴
 
 if __name__ == "__main__":

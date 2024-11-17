@@ -72,7 +72,7 @@ def evaluate_opening_strategy(symbol, market_data, play):
     last_price = market_data["Close"].iloc[-1]
     trade_type = play.get("trade_type", "").upper()
 
-    # Define a buffer of 5 cents
+    # Define a buffer of ±5 cents
     buffer = 0.05
     lower_bound = entry_point - buffer
     upper_bound = entry_point + buffer
@@ -153,6 +153,7 @@ def get_option_contract(play):
         logging.error(f"No option contract found for {symbol} with given parameters")
         return None
 
+# LIMIT BUY orders... CURRENTLY INACTIVE!
 def calculate_limit_buy_price(contract):
     try:
         option_ticker = yf.Ticker(contract.root_symbol)
@@ -290,8 +291,17 @@ def monitor_and_manage_position(play, play_file):
 # ==================================================
 # 5. MOVE PLAY TO APPROPRIATE FOLDER
 # ==================================================
-# Functions to move a play file to the appropriate plays folder after execution.
+# Functions to move a play file to the appropriate plays folder after execution or upon conditional trigger.
 
+# Move to NEW (for OTO triggered plays)
+def move_play_to_new(play_file):
+    new_dir = os.path.join(os.path.dirname(play_file), '..', 'new')
+    os.makedirs(new_dir, exist_ok=True)
+    new_path = os.path.join(new_dir, os.path.basename(play_file))
+    os.rename(play_file, new_path)
+    logging.info(f"Moved play to NEW folder: {new_path}")
+
+# Move to OPEN (for plays whose BUY condition has hit)
 def move_play_to_open(play_file):
     open_dir = os.path.join(os.path.dirname(play_file), '..', 'open')
     os.makedirs(open_dir, exist_ok=True)
@@ -299,6 +309,7 @@ def move_play_to_open(play_file):
     os.rename(play_file, new_path)
     logging.info(f"Moved play to OPEN folder: {new_path}")
 
+# Move to CLOSED (for plays whose TP or SL condition has hit)
 def move_play_to_closed(play_file):
     closed_dir = os.path.join(os.path.dirname(play_file), '..', 'closed')
     os.makedirs(closed_dir, exist_ok=True)
@@ -306,6 +317,15 @@ def move_play_to_closed(play_file):
     os.rename(play_file, new_path)
     logging.info(f"Moved play to CLOSED folder: {new_path}")
 
+# Move to EXPIRED (for plays which have expired, and OCO triggered plays)
+def move_play_to_expired(play_file):
+    expired_dir = os.path.join(os.path.dirname(play_file), '..', 'expired')
+    os.makedirs(expired_dir, exist_ok=True)
+    new_path = os.path.join(expired_dir, os.path.basename(play_file))
+    os.rename(play_file, new_path)
+    logging.info(f"Moved play to EXPIRED folder: {new_path}")
+       
+    
 # ==================================================
 # 6. MAIN TRADE EXECUTION FLOW
 # ==================================================
@@ -342,7 +362,7 @@ def execute_trade(play_file, play_type):
 
             if "OTO_trigger" in play:
                 oto_trigger_play = play["OTO_trigger"]
-            move_play_to_open(oto_trigger_play)  # Move to new folder
+            move_play_to_new(oto_trigger_play)  # Move to new folder
             logging.info(f"Moved OTO_trigger play to new folder: {oto_trigger_play}")
     # CLOSING a Play
     elif play_type == "open":
@@ -360,8 +380,7 @@ def execute_trade(play_file, play_type):
 
 def monitor_plays_continuously():
     plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plays'))
-    expired_dir = os.path.join(plays_dir, 'expired')  # Directory for expired plays
-    os.makedirs(expired_dir, exist_ok=True)  # Create expired directory if it doesn't exist
+
     
     logging.info(f"Monitoring plays directory: {plays_dir}")
 
@@ -379,7 +398,7 @@ def monitor_plays_continuously():
                 if play and 'play_expiration_date' in play:
                     expiration_date = datetime.strptime(play['play_expiration_date'], "%m/%d/%Y").date()
                     if expiration_date < current_date:
-                        move_play_to_expired(play_file, expired_dir)  # Move expired play
+                        move_play_to_expired(play_file)  # Move expired play
                         logging.info(f"Moved expired play to expired folder: {play_file}")
 
             for play_type in ['new', 'open']:
@@ -399,15 +418,7 @@ def monitor_plays_continuously():
 
         time.sleep(30)  # Wait for 30 seconds before re-evaluating
 
-# ==================================================
-# 8. MOVE PLAY TO EXPIRED FOLDER
-# ==================================================
-# Function to move a play file to the expired plays folder.
 
-def move_play_to_expired(play_file, expired_dir):
-    new_path = os.path.join(expired_dir, os.path.basename(play_file))
-    os.rename(play_file, new_path)
-    logging.info(f"Moved play to expired folder: {new_path}")
 
 if __name__ == "__main__":
     monitor_plays_continuously()

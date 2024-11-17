@@ -220,17 +220,17 @@ def create_play():
         if play['play_class'] == 'PRIMARY':
                         # Prompt user to choose an existing play from "new" or "OTO" folders
             existing_play = get_input(
-                "Link a conditional play to this primary play. Choose an existing play from 'new' or 'OTO' folders (provide the full play name, including the .json extension. Hint: view current plays): ",
+                "Link a conditional play to this primary play. Choose an existing play from ['new' if OCO], or ['temp' if OTO], folders (provide the full play name, including the .json extension. Hint: view current plays): ",
                 str,
                 validation=lambda x: os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'new', x)) or 
-                                    os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'OTO', x)),
+                                    os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp', x)),
                 error_message="Play not found in 'new' or 'OTO' folders."
             )
 
             # Check which folder the play is in and set the appropriate field
             if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'new', existing_play)):
                 play['conditional_plays'] = {'OCO_trigger': existing_play}
-            elif os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'OTO', existing_play)):
+            elif os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp', existing_play)):
                 play['conditional_plays'] = {'OTO_trigger': existing_play}
 
         play['strategy'] = (
@@ -243,7 +243,7 @@ def create_play():
 
         # Update the plays directory path
         if play['play_class'] == 'OTO':
-            plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'OTO')
+            plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp')
         else:
             plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'new')
         os.makedirs(plays_dir, exist_ok=True)
