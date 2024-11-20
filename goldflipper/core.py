@@ -354,16 +354,33 @@ def execute_trade(play_file, play_type):
                 monitor_and_manage_position(play, play_file)
                 return True
     # CONDITIONAL PLAYS: Activate OCO / OTO upon play opening for PRIMARY plays
-        if play.get("class") == "PRIMARY":
-            if  "OCO_trigger" in play:
-                oco_trigger_play = play["OCO_trigger"]
-            move_play_to_expired(oco_trigger_play)  # Move to expired folder
-            logging.info(f"Moved OCO_trigger play to expired folder: {oco_trigger_play}")
+    if play.get("class") == "PRIMARY":
+        if "OCO_trigger" in play:
+            oco_trigger_play = play["OCO_trigger"]
+            oco_trigger_path = os.path.join(os.path.dirname(play_file), '..', 'new', oco_trigger_play)
+            try:
+                if os.path.exists(oco_trigger_path):
+                    if move_play_to_expired(oco_trigger_play):  # Add return value check
+                        logging.info(f"Moved OCO_trigger play to expired folder: {oco_trigger_play}")
+                    else:
+                        logging.error(f"Failed to move OCO trigger play: {oco_trigger_play}")
+                else:
+                    logging.error(f"OCO trigger play file not found: {oco_trigger_play}")
+            except Exception as e:
+                logging.error(f"Error processing OCO trigger: {str(e)}")
 
-            if "OTO_trigger" in play:
-                oto_trigger_play = play["OTO_trigger"]
-            move_play_to_new(oto_trigger_play)  # Move to new folder
-            logging.info(f"Moved OTO_trigger play to new folder: {oto_trigger_play}")
+        if "OTO_trigger" in play:
+            oto_trigger_play = play["OTO_trigger"]
+            try:
+                if os.path.exists(oto_trigger_play):
+                    if move_play_to_new(oto_trigger_play):  # Add return value check
+                        logging.info(f"Moved OTO_trigger play to new folder: {oto_trigger_play}")
+                    else:
+                        logging.error(f"Failed to move OTO trigger play: {oto_trigger_play}")
+                else:
+                    logging.error(f"OTO trigger play file not found: {oto_trigger_play}")
+            except Exception as e:
+                logging.error(f"Error processing OTO trigger: {str(e)}")
     # CLOSING a Play
     elif play_type == "open":
         if evaluate_closing_strategy(symbol, market_data, play):
