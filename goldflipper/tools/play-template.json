@@ -9,10 +9,12 @@
   "option_contract_symbol": "string",
   "take_profit": {
     "stock_price": 0.0,
+    "premium_pct": 50.0,
     "order_type": "market"
   },
   "stop_loss": {
     "stock_price": 0.0,
+    "premium_pct": 25.0,
     "order_type": "market"
   },
   "contracts": 0,
