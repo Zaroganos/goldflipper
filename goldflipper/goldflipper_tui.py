@@ -22,7 +22,7 @@ class WelcomeScreen(Screen):
                     classes="button-column",
                 ),
                 Container(
-                    Button("View Current Plays", variant="primary", id="view_plays"),
+                    Button("View / Edit Current Plays", variant="primary", id="view_plays"),
                     Button("Upkeep and Status", variant="primary", id="system_status"),
                     Button("Configuration", variant="primary", id="configuration"),
                     classes="button-column",

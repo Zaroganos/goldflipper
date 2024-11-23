@@ -1,7 +1,6 @@
 import os
 import logging
 import time
-import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import yfinance as yf
@@ -61,86 +60,6 @@ def get_market_data(symbol):
     logging.info(f"Market data for {symbol} fetched successfully.")
     return data
 
-"""Function to fetch the latest option premium data using yfinance."""
-
-def get_option_premium_data(ticker, expiration_date=None, strike_price=None, option_type='call'):
-    """
-    Fetch option premium data for a specific option contract.
-    
-    Parameters:
-    - ticker (str): Stock symbol
-    - expiration_date (str, optional): Option expiration date in 'YYYY-MM-DD' format
-    - strike_price (float, optional): Strike price of the option
-    - option_type (str): 'call' or 'put', defaults to 'call'
-    
-    Returns:
-    - dict: Option premium data including bid, ask, last price and volume
-           Returns None if data unavailable
-    """
-    logging.info(f"Fetching option premium data for {ticker}...")
-    
-    try:
-        stock = yf.Ticker(ticker)
-        
-        # Get available expiration dates
-        available_dates = stock.options
-        if not available_dates:
-            logging.error(f"No option data available for {ticker}")
-            return None
-            
-        # Use provided expiration date or default to nearest
-        target_date = expiration_date if expiration_date in available_dates else available_dates[0]
-        
-        # Get option chain
-        chain = stock.option_chain(target_date)
-        
-        # Select calls or puts
-        options_data = chain.calls if option_type.lower() == 'call' else chain.puts
-        
-        # Filter by strike price if provided
-        if strike_price:
-            options_data = options_data[options_data['strike'] == float(strike_price)]
-            
-        if options_data.empty:
-            logging.warning(f"No matching options found for {ticker} with given parameters")
-            return None
-            
-        # Get first matching option
-        option = options_data.iloc[0]
-        
-        premium_data = {
-            'bid': option.bid,
-            'ask': option.ask,
-            'last_price': option.lastPrice,
-            'volume': option.volume,
-            'strike': option.strike,
-            'expiration': target_date
-        }
-        
-        logging.info(f"Option premium data fetched successfully for {ticker}")
-        return premium_data
-        
-    except Exception as e:
-        logging.error(f"Error fetching option premium data for {ticker}: {str(e)}")
-        return None
-
-def get_current_option_premium(play):
-    """Get current option premium for a play."""
-    try:
-        premium_data = get_option_premium_data(
-            ticker=play['symbol'],
-            expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
-            strike_price=float(play['strike_price']),
-            option_type=play['trade_type']
-        )
-        if premium_data:
-            # Use mid price as current premium
-            return (premium_data['bid'] + premium_data['ask']) / 2 # IS THIS WHAT WE WANT???? NOT SURE IT IS.CHECK!!!!!!!!!
-        return None
-    except Exception as e:
-        logging.error(f"Error getting option premium: {e}")
-        return None
-
 # ==================================================
 # 3. STRATEGY EVALUATION
 # ==================================================
@@ -172,55 +91,38 @@ def evaluate_opening_strategy(symbol, market_data, play):
     return condition_met
 
 def evaluate_closing_strategy(symbol, market_data, play):
-    """Evaluate if closing conditions are met for either stock price or option premium."""
     logging.info(f"Evaluating closing strategy for {symbol} using play data...")
     
+    take_profit = play['take_profit']['stock_price']
+    stop_loss = play['stop_loss']['stock_price']
     last_price = market_data["Close"].iloc[-1]
     trade_type = play.get("trade_type", "").upper()
-    
-    # Check if using stock price or premium percentage
-    using_stock_price = play['take_profit'].get('stock_price') is not None
-    
-    if using_stock_price:
-        # Original stock price based logic
-        take_profit = play['take_profit']['stock_price']
-        stop_loss = play['stop_loss']['stock_price']
-        
-        if trade_type == "CALL":
-            profit_condition = last_price >= take_profit
-            loss_condition = last_price <= stop_loss
-        elif trade_type == "PUT":
-            profit_condition = last_price <= take_profit
-            loss_condition = last_price >= stop_loss
-        else:
-            logging.error(f"Invalid trade type: {trade_type}")
-            return False
+
+    if trade_type == "CALL":
+        profit_condition = last_price >= take_profit
+        loss_condition = last_price <= stop_loss
+        comparison_profit = ">="
+        comparison_loss = "<="
+    elif trade_type == "PUT":
+        # Take Profit and Stop Loss conditions remain as per standard PUT logic
+        profit_condition = last_price <= take_profit
+        loss_condition = last_price >= stop_loss
+        comparison_profit = "<="
+        comparison_loss = ">="
     else:
-        # Premium percentage based logic
-        current_premium = get_current_option_premium(play)
-        if current_premium is None:
-            logging.error("Could not get current option premium")
-            return False
-            
-        entry_premium = play.get('entry_premium', current_premium)  # Store initial premium when opening position
-        tp_pct = play['take_profit']['premium_pct'] / 100
-        sl_pct = play['stop_loss']['premium_pct'] / 100
-        
-        # Calculate target prices
-        tp_target = entry_premium * (1 + tp_pct)
-        sl_target = entry_premium * (1 - sl_pct)
-        
-        profit_condition = current_premium >= tp_target
-        loss_condition = current_premium <= sl_target
-        
-        logging.info(f"Premium conditions - Current: ${current_premium:.2f}, TP: ${tp_target:.2f} ({tp_pct*100}%), SL: ${sl_target:.2f} ({sl_pct*100}%)")
+        logging.error(f"Invalid trade type: {trade_type}. Must be CALL or PUT.")
+        return False
 
     if profit_condition:
-        logging.info("Take profit condition met")
+        logging.info(f"Take profit condition met: Current stock price {last_price:.2f} {comparison_profit} take profit {take_profit} for {trade_type}")
     if loss_condition:
-        logging.info("Stop loss condition met")
-        
-    return profit_condition or loss_condition
+        logging.info(f"Stop loss condition met: Current stock price {last_price:.2f} {comparison_loss} stop loss {stop_loss} for {trade_type}")
+
+    if profit_condition or loss_condition:
+        return True
+    else:
+        logging.info(f"Closing conditions not met: Current stock price {last_price:.2f} for {trade_type}")
+        return False
 
 # ==================================================
 # 4. ORDER PLACEMENT
@@ -339,40 +241,51 @@ def close_position(play):
         return False
 
 def monitor_and_manage_position(play, play_file):
-    """Monitor position using appropriate price type."""
     client = get_alpaca_client()
-    contract_symbol = play.get('option_contract_symbol')
-    underlying_symbol = play.get('symbol')
-    
+    contract_symbol = play.get('option_contract_symbol')  # Full option symbol
+    underlying_symbol = play.get('symbol')  # Underlying stock symbol
+    trade_type = play.get("trade_type", "").upper()
+
     if not contract_symbol or not underlying_symbol:
-        logging.error("Missing required symbols")
+        logging.error("Option contract symbol or underlying symbol not found. Cannot monitor position.")
         return False
-        
-    using_stock_price = play['take_profit'].get('stock_price') is not None
-    
+
+    tp_price = play['take_profit']['stock_price']
+    sl_price = play['stop_loss']['stock_price']
+
     while True:
         try:
             position = client.get_open_position(contract_symbol)
             if position is None:
                 logging.info(f"Position {contract_symbol} closed.")
                 break
-                
-            if using_stock_price:
-                current_price = float(client.get_latest_trade(underlying_symbol).price)
-                market_data = pd.DataFrame({'Close': [current_price]})
+
+            current_price = float(client.get_latest_trade(underlying_symbol).price)
+            logging.info(f"Current price for {underlying_symbol}: {current_price:.2f}")
+
+            if trade_type == "CALL":
+                profit_condition = current_price >= tp_price
+                loss_condition = current_price <= sl_price
+                condition_met = profit_condition or loss_condition
+            elif trade_type == "PUT":
+                # Take Profit and Stop Loss conditions remain as per standard PUT logic
+                profit_condition = current_price <= tp_price
+                loss_condition = current_price >= sl_price
+                condition_met = profit_condition or loss_condition
             else:
-                market_data = pd.DataFrame({'Close': [get_current_option_premium(play)]})
-                
-            if evaluate_closing_strategy(underlying_symbol, market_data, play):
-                logging.info("Closing conditions met")
+                logging.error(f"Invalid trade type: {trade_type}. Cannot monitor position effectively.")
+                break
+
+            if condition_met:
+                condition = 'Take profit' if profit_condition else 'Stop loss'
+                logging.info(f"{condition} condition met for {contract_symbol}. Closing position.")
                 if close_position(play):
                     move_play_to_closed(play_file)
                 break
-                
-            time.sleep(10)
-            
+
+            time.sleep(10)  # Wait for 10s before checking again
         except Exception as e:
-            logging.error(f"Error monitoring position: {e}")
+            logging.error(f"Error monitoring position {contract_symbol}: {e}")
             break
 
 # ==================================================

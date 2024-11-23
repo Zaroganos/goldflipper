@@ -10,13 +10,13 @@ goldflipper/plays/open/*
 goldflipper/plays/closed/*
 goldflipper/plays/expired/*
 goldflipper/plays/old/*
-goldflipper/plays/temp/* # Folder for depositing OTO conditional plays
+goldflipper/plays/temp/*
 !goldflipper/plays/new/.gitkeep
 !goldflipper/plays/open/.gitkeep
 !goldflipper/plays/closed/.gitkeep
 !goldflipper/plays/expired/.gitkeep
 !goldflipper/plays/old/.gitkeep
-!goldflipper/plays/temp/.gitkeep # Folder for depositing OTO conditional plays
+!goldflipper/plays/temp/.gitkeep
 # Python bytecode
 __pycache__/
 *.py[cod]
