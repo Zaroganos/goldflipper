@@ -65,7 +65,7 @@ def get_market_data(symbol):
 
 def get_option_premium_data(ticker, expiration_date=None, strike_price=None, option_type='call'):
     """
-    Fetch option premium data for a specific option contract.
+    Fetch the last price of the option premium for a specific contract.
     
     Parameters:
     - ticker (str): Stock symbol
@@ -74,8 +74,8 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
     - option_type (str): 'call' or 'put', defaults to 'call'
     
     Returns:
-    - dict: Option premium data including bid, ask, last price and volume
-           Returns None if data unavailable
+    - float: Last price of the option premium
+             Returns None if data unavailable
     """
     logging.info(f"Fetching option premium data for {ticker}...")
     
@@ -105,38 +105,26 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
             logging.warning(f"No matching options found for {ticker} with given parameters")
             return None
             
-        # Get first matching option
-        option = options_data.iloc[0]
-        
-        premium_data = {
-            'bid': option.bid,
-            'ask': option.ask,
-            'last_price': option.lastPrice,
-            'volume': option.volume,
-            'strike': option.strike,
-            'expiration': target_date
-        }
+        # Get the last price
+        last_price = options_data.iloc[0]['lastPrice']
         
         logging.info(f"Option premium data fetched successfully for {ticker}")
-        return premium_data
+        return last_price
         
     except Exception as e:
         logging.error(f"Error fetching option premium data for {ticker}: {str(e)}")
         return None
 
 def get_current_option_premium(play):
-    """Get current option premium for a play."""
+    """Get the current option premium for a play."""
     try:
-        premium_data = get_option_premium_data(
+        last_price = get_option_premium_data(
             ticker=play['symbol'],
             expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
             strike_price=float(play['strike_price']),
             option_type=play['trade_type']
         )
-        if premium_data:
-            # Use mid price as current premium
-            return (premium_data['bid'] + premium_data['ask']) / 2 # IS THIS WHAT WE WANT???? NOT SURE IT IS.CHECK!!!!!!!!!
-        return None
+        return last_price
     except Exception as e:
         logging.error(f"Error getting option premium: {e}")
         return None
