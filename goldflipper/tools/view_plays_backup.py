@@ -5,6 +5,11 @@ import subprocess
 import platform
 from pathlib import Path
 
+''' This is the old version of the play viewer.
+It is being superseded by the new TUI version.
+However, because the TUI version isn't rendering correctly,
+this version is being kept as a backup. '''
+
 def open_file_explorer(path):
     """
     Opens the file explorer at the specified path based on the operating system

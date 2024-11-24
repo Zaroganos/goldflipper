@@ -58,6 +58,7 @@ class PlayCard(Widget):
     def compose(self) -> ComposeResult:
         with Horizontal():
             data = self.play['data']
+            name = data.get('play_name', 'N/A')
             entry_price = float(data.get('entry_point', 0.00))
             strike_price = data.get('strike_price', 'N/A')
             
@@ -72,14 +73,16 @@ class PlayCard(Widget):
             strategy = data.get('strategy', 'Option Swings')
 
             details = (
-                f"[bold yellow]{symbol}[/bold yellow] - [cyan]{strategy}[/cyan]\n"
-                f"[green]Entry:[/green] ${entry_price:.2f} | "
-                f"[magenta]Strike:[/magenta] {strike_price}\n"
-                f"[blue]TP:[/blue] {tp_value} | "
+                f"📄  [bold green]{name}[/bold green]\n"
+                f"[bold yellow]${symbol}[/bold yellow] - [cyan]{strategy}[/cyan]\n"
+                f"[white]Contract Exp.:[/white] {expiration_date}  "
+                f"[purple]Strike:[/purple] {strike_price}\n"
+                f"[color(33)]Entry:[/color(33)] ${entry_price:.2f} [white]->[/white] "
+                f"[green]TP:[/green] {tp_value} | "
                 f"[red]SL:[/red] {sl_value}\n"
-                f"[white]Created:[/white] {creation_date} | "
-                f"[white]Play Exp:[/white] {play_expiration}\n"
-                f"[white]Contract Exp:[/white] {expiration_date}"
+                f"[white]Created:[/white] {creation_date}  "
+                f"[white]Play Exp.:[/white] {play_expiration}\n"
+                
             ).strip()  # Strip leading/trailing whitespace from the string
 
             # Create a Text object from the stripped string
@@ -112,12 +115,31 @@ class ViewPlaysApp(App):
         align: center middle;
         background: #1b1b1b;
     }
+    
+    #folder_button {
+        dock: top;
+        width: 100%;
+        height: 3;
+        margin: 1 0;
+        background: #3b3b3b;
+        color: gold;
+        text-align: center;
+        text-style: bold;
+        layer: overlay;
+    }
+    
+    #folder_button:hover {
+        background: #4b4b4b;
+    }
+    
     #plays_container {
         overflow-y: auto;
         height: 100%;
         width: 100%;
         padding: 0;
+        margin-top: 4;
     }
+    
     .play-card {
         width: 100%;
         border: solid gold;
@@ -125,63 +147,64 @@ class ViewPlaysApp(App):
         margin: 1 1 1 2;
         height: auto;
         background: #2b2b2b;
-        
     }
+    
     .folder-title {
         content-align: center middle;
         color: #FFD700;
         height: 10;
         margin: 1 1 1 1;
     }
+    
     .edit-button {
         dock: left;
         width: 15;
-        margin: 0 3 0 0;
+        margin: 0 3 0 3;
         background: #3b3b3b;
         color: gold;
     }
+    
     .edit-button:hover {
         background: #4b4b4b;
     }
     '''
 
     def compose(self) -> ComposeResult:
-        self.plays_container = Container(id="plays_container")
-        yield self.plays_container
+        yield Header()
+        yield Button("📁 Open Plays Folder", id="folder_button")
+        yield Container(id="plays_container")
         yield Footer()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "folder_button":
+            plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../plays"))
+            open_file_explorer(plays_dir)
 
     async def on_mount(self):
         await self.load_plays()
 
     async def load_plays(self):
-        plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../plays"))
-
-        # Open file explorer
-        print("\nOpening plays directory in file explorer...")
-        open_file_explorer(plays_dir)
-
-        # Display plays
         folders = ['New', 'Open', 'Closed', 'Temp', 'Expired']
+        plays_container = self.query_one("#plays_container")
 
-        # Clear existing content
-        while self.plays_container.children:
-            child = self.plays_container.children[0]
-            self.plays_container.remove(child)
+        while plays_container.children:
+            child = plays_container.children[0]
+            plays_container.remove(child)
 
         for folder in folders:
-            folder_path = os.path.join(plays_dir, folder)
+            folder_path = os.path.join(os.path.dirname(__file__), "../plays", folder.lower())
             plays = format_play_files(folder_path)
 
             title_text = f"{folder} Plays"
-            self.plays_container.mount(Static(f"\n{title_text}\n", classes="folder-title"))
+            plays_container.mount(Static(f"\n{title_text}\n", classes="folder-title"))
 
             if not plays:
-                self.plays_container.mount(Static("No plays found", classes="play-card"))
+                plays_container.mount(Static("No plays found", classes="play-card"))
                 continue
 
             for play in plays:
                 play_card = PlayCard(play)
-                self.plays_container.mount(play_card)
+                plays_container.mount(play_card)
 
 if __name__ == "__main__":
     app = ViewPlaysApp()

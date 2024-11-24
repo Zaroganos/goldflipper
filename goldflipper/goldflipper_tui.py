@@ -17,8 +17,8 @@ class WelcomeScreen(Screen):
             Horizontal(
                 Container(
                     Button("Create New Play", variant="primary", id="create_play"),
+                    Button("Fetch Option Data", variant="primary", id="option_data_fetcher"),
                     Button("Launch Trading System", variant="success", id="start_monitor"),
-                    Button("Exit", variant="error", id="exit"),
                     classes="button-column",
                 ),
                 Container(
@@ -38,6 +38,8 @@ class WelcomeScreen(Screen):
             self.run_play_creation_tool()
         elif event.button.id == "start_monitor":
             self.run_trading_monitor()
+        elif event.button.id == "option_data_fetcher":
+            self.run_option_data_fetcher()
         elif event.button.id == "view_plays":
             self.run_view_plays()
         elif event.button.id == "system_status":
@@ -46,6 +48,14 @@ class WelcomeScreen(Screen):
             self.run_configuration()
         elif event.button.id == "exit":
             self.app.exit()
+
+    def run_option_data_fetcher(self):
+        tools_dir = os.path.join(os.path.dirname(__file__), "tools")
+        script_path = os.path.join(tools_dir, "option-data-fetcher.py")
+        if os.name == 'nt':  # Windows
+            subprocess.Popen(['cmd', '/k', 'python', script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
+        else:  # Unix-like systems
+            subprocess.Popen(['gnome-terminal', '--', 'python', script_path])
 
     def run_play_creation_tool(self):
         try:
