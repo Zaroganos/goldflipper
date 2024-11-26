@@ -17,35 +17,27 @@ from alpaca.common.exceptions import APIError
 # Configure logging to ensure information is recorded both in the console and log files.
 
 def setup_logging():
-    # Get the absolute path to the goldflipper directory
-    goldflipper_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    logs_dir = os.path.join(goldflipper_dir, 'logs')
+    # Get the path to the directory containing the 'goldflipper' folder
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    log_dir = os.path.join(base_dir, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
 
-    # Create logs directory if it doesn't exist
-    if not os.path.exists(logs_dir):
-        os.makedirs(logs_dir)
-
-    # Configure root logger
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s - %(levelname)s - %(message)s',
-                        handlers=[logging.StreamHandler()])
-
-    # Create file handlers
-    info_handler = logging.FileHandler(os.path.join(logs_dir, 'app.log'))
-    info_handler.setLevel(logging.INFO)
-    error_handler = logging.FileHandler(os.path.join(logs_dir, 'error.log'))
-    error_handler.setLevel(logging.ERROR)
-
-    # Create formatters and add it to handlers
+    log_file = os.path.join(log_dir, 'app_run.log')
+    
+    # Configure handlers with proper encoding
+    console_handler = logging.StreamHandler()
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    
+    # Create formatter
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    info_handler.setFormatter(formatter)
-    error_handler.setFormatter(formatter)
-
-    # Add handlers to the root logger
-    logging.getLogger('').addHandler(info_handler)
-    logging.getLogger('').addHandler(error_handler)
-
-    logging.info("Logging initialized successfully")
+    console_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
 
 # Call the setup_logging function at the beginning of the script
 setup_logging()
@@ -317,7 +309,7 @@ def close_position(play):
             symbol_or_asset_id=contract_symbol,
             close_options=close_req
         )
-        logging.info(f"🟢 Successfully closed position: {qty} contracts of {contract_symbol}")
+        logging.info(f"Successfully closed position: {qty} contracts of {contract_symbol}")
         return True
     except APIError as api_err:
         logging.error(f"API Error closing position for {contract_symbol}: {api_err}")
