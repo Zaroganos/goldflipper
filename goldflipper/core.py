@@ -420,6 +420,7 @@ def execute_trade(play_file, play_type):
                 move_play_to_open(play_file)
                 monitor_and_manage_position(play, play_file)
                 return True
+            
     # CONDITIONAL PLAYS: Activate OCO / OTO upon play opening for PRIMARY plays
     if play.get("class") == "PRIMARY":
         if "OCO_trigger" in play:
