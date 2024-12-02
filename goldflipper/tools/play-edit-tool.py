@@ -674,6 +674,8 @@ def get_field_value_display(play_data, field):
     """Get formatted display value for a field"""
     if field == "play_name":
         return play_data.get("play_name", "Not set")
+    elif field == "symbol":
+        return f"${play_data.get('symbol', 'Not set')}"
     elif field == "strike_price":
         return f"${float(play_data.get('strike_price', 0)):.2f}"
     elif field == "entry_point":
