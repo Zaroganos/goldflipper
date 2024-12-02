@@ -75,30 +75,14 @@ def find_play_file(filename):
 
 def edit_play_field(play_data, field, filepath):
     """Edit a specific field in the play data"""
-    # First check if play is in 'open' folder and field is protected
-    protected_fields = ['symbol', 'expiration_date', 'trade_type', 'strike_price', 'entry_point', 'contracts']
-    if '/open/' in filepath and field in protected_fields:
-        print(f"\nERROR: {get_display_name(field)} cannot be modified for plays in the 'open' folder")
-        return
-            
-    if field == 'symbol':
-        confirm = get_input(
-            "\nWARNING: Changing the symbol will affect the option contract symbol. DO NOT DO THIS unless you are absolutely sure. Continue? (y/N): ",
-            str,
-            validation=lambda x: x.lower() in ['y', 'n', ''],
-            error_message="Please enter 'y' or 'n'"
-        )
-        if confirm.lower() != 'y':
-            return
-            
     if field == 'expiration_date':
         # Only allow editing for plays in 'new' folder
-        if not os.path.normpath(filepath).replace(os.sep, '/').split('/plays/')[1].startswith('new/'):
-            print("\nERROR: You are attempting to modify the Option Contract Expiration Date. This field should only be modified for a NEW play, in case you wish to change the expiration. If you wish to duplicate this play with a new expiration date, there is an option for that.")
+        if '/new/' not in filepath:
+            print("\nERROR: Expiration date can only be modified for plays in the 'new' folder")
             return
             
         confirm = get_input(
-            "\nWARNING: Changing expiration date will affect the option contract symbol. DO NOT DO THIS unless you are absolutely sure you want to change the option's expiration date. Continue? (y/N): ",
+            "\nWARNING: Changing expiration date will affect the option contract symbol. Continue? (y/N): ",
             str,
             validation=lambda x: x.lower() in ['y', 'n', ''],
             error_message="Please enter 'y' or 'n'"
@@ -114,66 +98,17 @@ def edit_play_field(play_data, field, filepath):
         )
         
         if new_value:
+            old_date = datetime.strptime(play_data['expiration_date'], "%m/%d/%Y")
             new_date = datetime.strptime(new_value, "%m/%d/%Y")
             
-            # Get the current contract symbol
-            old_contract_symbol = play_data['option_contract_symbol']
-            
-            # Find where the date portion starts (after the ticker symbol)
-            # Look for the first occurrence of the year (24 for 2024)
-            year_str = str(new_date.year % 100)  # "24"
-            date_start = old_contract_symbol.find(year_str)
-            if date_start == -1:
-                print("Error: Could not locate date portion in option contract symbol")
-                return
-            
-            # Get the parts of the contract symbol
-            symbol_prefix = old_contract_symbol[:date_start]  # Ticker symbol (SPY, F, etc.)
-            symbol_suffix = old_contract_symbol[date_start + 6:]  # C00200000 or P00200000
-            
-            # Create new contract symbol with the new date
-            new_date_str = f"{new_date.year % 100}{new_date.month:02d}{new_date.day:02d}"
-            new_contract_symbol = f"{symbol_prefix}{new_date_str}{symbol_suffix}"
-            
-            # Store old filename before updates
-            old_filename = os.path.basename(filepath)
-            
-            # Update both the expiration date and the contract symbol
+            # Update contract symbol date portion
+            old_date_str = old_date.strftime("%y%m%d")
+            new_date_str = new_date.strftime("%y%m%d")
             play_data['expiration_date'] = new_value
-            play_data['option_contract_symbol'] = new_contract_symbol
+            play_data['option_contract_symbol'] = play_data['option_contract_symbol'].replace(
+                old_date_str, new_date_str
+            )
             
-            # Update play name if it contains the old contract symbol
-            if 'play_name' in play_data and old_contract_symbol in play_data['play_name']:
-                play_data['play_name'] = play_data['play_name'].replace(
-                    old_contract_symbol,
-                    new_contract_symbol
-                )
-                
-                # Generate new filepath with updated name
-                new_filename = f"{play_data['play_name']}.json"
-                new_filepath = os.path.join(os.path.dirname(filepath), new_filename)
-                
-                # Save to new file first
-                if save_play(new_filepath, play_data):
-                    # Delete old file only after successful save
-                    try:
-                        os.remove(filepath)
-                        print(f"\nFile renamed from {old_filename} to {new_filename}")
-                    except Exception as e:
-                        print(f"\nError removing old file: {e}")
-                        return
-                else:
-                    print("\nError saving new file")
-                    return
-            else:
-                # If play name wasn't changed, just save to same file
-                if not save_play(filepath, play_data):
-                    print("\nError saving changes")
-                    return
-            
-            return
-
-    # Play Expiration Date
     elif field == 'play_expiration_date':
         new_value = get_input(
             "Enter new play expiration date (MM/DD/YYYY): ",
@@ -254,8 +189,8 @@ def edit_play_field(play_data, field, filepath):
 
     elif field == 'contracts':
         # Only allow editing for plays in 'new' folder
-        if not os.path.normpath(filepath).replace(os.sep, '/').split('/plays/')[1].startswith('new/'):
-            print("\nERROR: Number of contracts can only be modified for NEW plays")
+        if '/new/' not in filepath:
+            print("\nERROR: Number of contracts can only be modified for plays in the 'new' folder")
             return
             
         new_value = get_input(
@@ -279,73 +214,34 @@ def edit_play_field(play_data, field, filepath):
         edit_conditional_plays(play_data, filepath)
         return
 
-    # current_value = play_data.get(field, "Not set")
-    # print(f"\nCurrent value of {field}: {current_value}")
+    current_value = play_data.get(field, "Not set")
+    print(f"\nCurrent value of {field}: {current_value}")
 
     if field == 'symbol':
-        # Only allow editing for plays not in 'open' folder
-        if '/open/' in filepath:
-            print("\nERROR: Symbol can only be modified for plays not in the 'open' folder")
-            return
-            
+        # Confirm symbol change
         confirm = get_input(
-            "\nWARNING: Changing the symbol will affect the option contract symbol. DO NOT DO THIS unless you are absolutely sure. Continue? (y/N): ",
+            "\nWARNING: Changing the symbol will affect the option contract symbol. Are you sure? (y/N): ",
             str,
             validation=lambda x: x.lower() in ['y', 'n', ''],
             error_message="Please enter 'y' or 'n'"
         )
         if confirm.lower() != 'y':
             return
-            
+
         new_value = get_input(
             "Enter new symbol: ",
             str,
             validation=lambda x: len(x) > 0,
             error_message="Symbol cannot be empty"
         ).upper()
-        
+
         if new_value:
-            # Store old values before updates
+            # Update option contract symbol
             old_symbol = play_data['symbol']
-            old_contract_symbol = play_data['option_contract_symbol']
-            old_filename = os.path.basename(filepath)
-            
-            # Update symbol and option contract symbol
             play_data['symbol'] = new_value
             play_data['option_contract_symbol'] = play_data['option_contract_symbol'].replace(
                 old_symbol, new_value
             )
-            
-            # Update play name if it contains the old contract symbol
-            if 'play_name' in play_data and old_contract_symbol in play_data['play_name']:
-                play_data['play_name'] = play_data['play_name'].replace(
-                    old_contract_symbol,
-                    play_data['option_contract_symbol']
-                )
-                
-                # Generate new filepath with updated name
-                new_filename = f"{play_data['play_name']}.json"
-                new_filepath = os.path.join(os.path.dirname(filepath), new_filename)
-                
-                # Save to new file first
-                if save_play(new_filepath, play_data):
-                    # Delete old file only after successful save
-                    try:
-                        os.remove(filepath)
-                        print(f"\nFile renamed from {old_filename} to {new_filename}")
-                    except Exception as e:
-                        print(f"\nError removing old file: {e}")
-                        return
-                else:
-                    print("\nError saving new file")
-                    return
-            else:
-                # If play name wasn't changed, just save to same file
-                if not save_play(filepath, play_data):
-                    print("\nError saving changes")
-                    return
-            
-            return
 
     elif field == 'trade_type':
         # Confirm trade type change
@@ -392,14 +288,13 @@ def edit_play_field(play_data, field, filepath):
         if new_value is not None:
             play_data['strike_price'] = str(new_value)  # Store as string like in creation tool
 
- #   else:
- #       new_value = get_input(
- #           f"Enter new value for {field} (press Enter to keep current): ",
- #           optional=True
- #        )
- #       if new_value is not None:
- #           play_data[field] = new_value
-
+    else:
+        new_value = get_input(
+            f"Enter new value for {field} (press Enter to keep current): ",
+            optional=True
+        )
+        if new_value is not None:
+            play_data[field] = new_value
 
 def display_plays_list(plays, source_folder, current_play_filename):
     """Display numbered list of available plays from folder, excluding current play"""
@@ -561,10 +456,6 @@ def select_single_play(plays):
 
 def edit_oco_trigger(play_data, filepath):
     """Edit OCO trigger play"""
-    # Initialize conditional_plays if it doesn't exist
-    if 'conditional_plays' not in play_data:
-        play_data['conditional_plays'] = {'OCO_trigger': None, 'OTO_trigger': None}
-        
     current_filename = os.path.basename(filepath)
     current_trigger = play_data['conditional_plays'].get('OCO_trigger')
     
@@ -600,10 +491,6 @@ def edit_oco_trigger(play_data, filepath):
 
 def edit_oto_trigger(play_data, filepath):
     """Edit OTO trigger play"""
-    # Initialize conditional_plays if it doesn't exist
-    if 'conditional_plays' not in play_data:
-        play_data['conditional_plays'] = {'OCO_trigger': None, 'OTO_trigger': None}
-        
     current_filename = os.path.basename(filepath)
     current_trigger = play_data['conditional_plays'].get('OTO_trigger')
     
@@ -637,250 +524,71 @@ def edit_oto_trigger(play_data, filepath):
         else:
             print("\nNo OTO trigger to remove")
 
-def update_play_class(play_data):
-    """Auto-adjust play class based on conditional plays configuration"""
-    # Initialize if missing
-    if 'conditional_plays' not in play_data:
-        play_data['conditional_plays'] = {'OCO_trigger': None, 'OTO_trigger': None}
-    
-    # Check if this play has any child plays
-    has_children = (
-        play_data['conditional_plays'].get('OCO_trigger') or 
-        play_data['conditional_plays'].get('OTO_trigger')
-    )
-    
-    # Get all plays to check if this play is listed as OTO child
-    all_plays = get_all_plays()
-    is_oto_child = False
-    
-    current_filename = os.path.basename(play_data.get('filepath', ''))
-    
-    for play in all_plays:
-        play_data = load_play(play['filepath'])
-        if play_data and 'conditional_plays' in play_data:
-            if play_data['conditional_plays'].get('OTO_trigger') == current_filename:
-                is_oto_child = True
-                break
-    
-    # Set play class based on conditions
-    if is_oto_child:
-        play_data['play_class'] = 'OTO'
-    elif has_children:
-        play_data['play_class'] = 'PRIMARY'
-    else:
-        play_data['play_class'] = 'SIMPLE'
-
-def get_field_value_display(play_data, field):
-    """Get formatted display value for a field"""
-    if field == "play_name":
-        return play_data.get("play_name", "Not set")
-    elif field == "strike_price":
-        return f"${float(play_data.get('strike_price', 0)):.2f}"
-    elif field == "entry_point":
-        return f"${play_data.get('entry_point', 0):.2f}"
-    elif field == "take_profit":
-        if "stock_price" in play_data.get("take_profit", {}):
-            return f"${play_data['take_profit']['stock_price']:.2f} (stock price)"
-        else:
-            return f"{play_data['take_profit'].get('premium_pct', 0)}% (premium)"
-    elif field == "stop_loss":
-        if "stock_price" in play_data.get("stop_loss", {}):
-            return f"${play_data['stop_loss']['stock_price']:.2f} (stock price)"
-        else:
-            return f"{play_data['stop_loss'].get('premium_pct', 0)}% (premium)"
-    elif field == "OCO_trigger":
-        return play_data.get("conditional_plays", {}).get("OCO_trigger", "None")
-    elif field == "OTO_trigger":
-        return play_data.get("conditional_plays", {}).get("OTO_trigger", "None")
-    else:
-        return str(play_data.get(field, "Not set"))
-
-def get_display_name(field):
-    """Convert field names to nice display format"""
-    display_names = {
-        "play_name": "Rename Play",
-        "symbol": "Symbol",
-        "expiration_date": "Expiration Date",
-        "trade_type": "Trade Type",
-        "strike_price": "Strike Price",
-        "entry_point": "Entry Point",
-        "take_profit": "Take Profit",
-        "stop_loss": "Stop Loss",
-        "contracts": "Contracts",
-        "play_expiration_date": "Play Expiration Date",
-        "OCO_trigger": "OCO Trigger",
-        "OTO_trigger": "OTO Trigger"
-    }
-    return display_names.get(field, field)
-
-def edit_specific_play(filename):
-    play_info = find_play_file(filename)
-    if not play_info:
-        print(f"Error: Play file '{filename}' not found")
+def edit_play():
+    """Main function to edit plays"""
+    plays = get_all_plays()
+    if not plays:
+        print("No plays found")
         return
+
+    # Display available plays
+    print("\nAvailable Plays:")
+    for i, play in enumerate(plays, 1):
+        print(f"{i}. [{play['folder']}] {play['filename']}")
+
+    # Get play selection
+    selection = get_input(
+        "\nEnter the number of the play to edit (0 to exit): ",
+        type_cast=int,
+        validation=lambda x: 0 <= x <= len(plays),
+        error_message=f"Please enter a number between 0 and {len(plays)}"
+    )
+
+    if selection == 0:
+        return
+
+    selected_play = plays[selection - 1]
+    play_data = load_play(selected_play['filepath'])
     
-    print(f"\nEditing play: [{play_info['folder']}] {play_info['filename']}")
-    play_data = load_play(play_info['filepath'])
     if not play_data:
         return
-
-    # Define protected fields and check folder
-    protected_fields = ['symbol', 'expiration_date', 'trade_type', 'strike_price', 'entry_point', 'contracts']
-    is_open_play = play_info['folder'] == 'open'
 
     while True:
         print("\nEditable Fields:")
         fields = [
-            "play_name",
-            "symbol",
-            "expiration_date", 
-            "trade_type",
-            "strike_price",
-            "entry_point",
-            "take_profit",
-            "stop_loss",
-            "contracts",
-            "play_expiration_date",
-            "OCO_trigger",
-            "OTO_trigger"
+            "symbol", "trade_type", "entry_point", "strike_price",
+            "expiration_date", "play_expiration_date", "take_profit",
+            "stop_loss", "contracts", "play_class", "conditional_plays"
         ]
         
-        # Display fields with current values and track valid options
-        valid_options = []
         for i, field in enumerate(fields, 1):
-            number_padding = 1 if i <10 else 0
-            value = get_field_value_display(play_data, field)
-            display_name = get_display_name(field)
-            dots = "." * (30 - len(display_name) + number_padding)
-            
-            if is_open_play and field in protected_fields:
-                print(f"{i}. {display_name}{dots}{value} (locked)")
-            else:
-                print(f"{i}. {display_name}{dots}{value}")
-                valid_options.append(i)
+            print(f"{i}. {field}")
         
-        # Add additional options
-        print("\nAdditional Options:")
-        print(f"{len(fields) + 1}. Duplicate Play")
-        print(f"{len(fields) + 2}. Delete Play")
-        valid_options.extend([len(fields) + 1, len(fields) + 2])
-        
-        # Get user selection
         field_selection = get_input(
-            "\nEnter the number of the field to edit or option to perform (0 to save and exit): ",
+            "\nEnter the number of the field to edit (0 to save and exit): ",
             type_cast=int,
-            validation=lambda x: 0 <= x <= len(fields) + 2,
-            error_message=f"Please enter a number between 0 and {len(fields) + 2}"
+            validation=lambda x: 0 <= x <= len(fields),
+            error_message=f"Please enter a number between 0 and {len(fields)}"
         )
 
         if field_selection == 0:
             break
 
-        elif field_selection == 13:
-            duplicate_play(play_data, play_info['filepath'])
-        elif field_selection == 14:
-            delete_play(play_data, play_info['filepath'])
-            return
-        elif field_selection == 1:
-            play_name(play_data, play_info)
-        elif field_selection in valid_options:
-            field = fields[field_selection - 1]
-            if is_open_play and field in protected_fields:
-                print(f"\nERROR: Cannot modify {get_display_name(field)} for plays in the 'open' folder")
-                continue
-                
-            # Special handling for OCO and OTO triggers
-            if field == "OCO_trigger":
-                edit_oco_trigger(play_data, play_info['filepath'])
-            elif field == "OTO_trigger":
-                edit_oto_trigger(play_data, play_info['filepath'])
-            else:
-                edit_play_field(play_data, field, play_info['filepath'])
+        edit_play_field(play_data, fields[field_selection - 1], selected_play['filepath'])
+
+        if fields[field_selection - 1] == 'play_class':
+            edit_play_class(play_data)
+
+        if fields[field_selection - 1] == 'conditional_plays':
+            edit_conditional_plays(play_data, selected_play['filepath'])
 
     # Save changes
-    if save_play(play_info['filepath'], play_data):
-        print(f"\nChanges saved to {play_info['filename']}")
+    if save_play(selected_play['filepath'], play_data):
+        print(f"\nChanges saved to {selected_play['filename']}")
     else:
-        print("\nError saving changes")
+        print("\nFailed to save changes")
 
-def duplicate_play(play_data, original_filepath):
-    """Duplicate a play with optional modifications"""
-    print("\n=== Duplicate Play ===")
-    
-    # Choose destination folder
-    print("\nSelect destination folder:")
-    print("1. New")
-    print("2. Temp (if OTO)")
-    
-    folder_choice = get_input(
-        "Enter choice (1-2): ",
-        int,
-        validation=lambda x: x in [1, 2],
-        error_message="Please enter 1 or 2"
-    )
-    
-    destination_folder = 'new' if folder_choice == 1 else 'temp'
-    
-    # Create a deep copy of the play data
-    new_play_data = json.loads(json.dumps(play_data))
-    
-    # Generate new timestamp for the name
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    new_play_data['play_name'] = f"{new_play_data['option_contract_symbol']}_{timestamp}"
-    
-    # Set creation date to today
-    new_play_data['creation_date'] = datetime.now().strftime('%m/%d/%Y')
-    
-    # Generate the new filepath
-    base_dir = os.path.join(os.path.dirname(original_filepath), '..', destination_folder)
-    os.makedirs(base_dir, exist_ok=True)
-    new_filepath = os.path.join(base_dir, f"{new_play_data['play_name']}.json")
-    
-    # Save the duplicated play
-    if save_play(new_filepath, new_play_data):
-        print(f"\nPlay duplicated successfully to: {destination_folder}/{os.path.basename(new_filepath)}")
-        return True
-    else:
-        print("\nError duplicating play")
-        return False
-
-def delete_play(play_data, filepath):
-    """Mark a play as deleted and move it to the OLD folder"""
-    confirm = get_input(
-        "\nAre you sure you want to delete (archive) this play? (y/N): ",
-        str,
-        validation=lambda x: x.lower() in ['y', 'n', ''],
-        error_message="Please enter 'y' or 'n'"
-    )
-    
-    if confirm.lower() != 'y':
-        return False
-    
-    # Add deletion marker
-    play_data['DELETED_by_user'] = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
-    
-    # Create Old folder if it doesn't exist
-    old_dir = os.path.join(os.path.dirname(filepath), '..', 'old')
-    os.makedirs(old_dir, exist_ok=True)
-    
-    # Move to Old folder
-    old_filepath = os.path.join(old_dir, os.path.basename(filepath))
-    
-    try:
-        # First save to old folder
-        if save_play(old_filepath, play_data):
-            # Then remove original file
-            os.remove(filepath)
-            print(f"\nPlay moved to old folder and marked as deleted")
-            return True
-        else:
-            print("\nError saving to old folder")
-            return False
-    except Exception as e:
-        print(f"\nError during deletion: {e}")
-        return False
-
-def play_name(play_data, play_info):
+def rename_play(play_data, play_info):
     """Rename a play and its file"""
     current_name = play_data.get('play_name', '')
     print(f"\nCurrent play name: {current_name}")
@@ -919,29 +627,134 @@ def play_name(play_data, play_info):
             return False
     return False
 
-def edit_play():
-    """Main function to edit plays"""
-    plays = get_all_plays()
-    if not plays:
-        print("No plays found")
-        return
-
-    print("\nAvailable Plays:")
-    for i, play in enumerate(plays, 1):
-        print(f"{i}. [{play['folder']}] {play['filename']}")
-
-    selection = get_input(
-        "\nEnter the number of the play to edit (0 to exit): ",
-        type_cast=int,
-        validation=lambda x: 0 <= x <= len(plays),
-        error_message=f"Please enter a number between 0 and {len(plays)}"
+def update_play_class(play_data):
+    """Auto-adjust play class based on conditional plays configuration"""
+    # Initialize if missing
+    if 'conditional_plays' not in play_data:
+        play_data['conditional_plays'] = {'OCO_trigger': None, 'OTO_trigger': None}
+    
+    # Check if this play has any child plays
+    has_children = (
+        play_data['conditional_plays'].get('OCO_trigger') or 
+        play_data['conditional_plays'].get('OTO_trigger')
     )
+    
+    # Get all plays to check if this play is listed as OTO child
+    all_plays = get_all_plays()
+    is_oto_child = False
+    
+    current_filename = os.path.basename(play_data.get('filepath', ''))
+    
+    for play in all_plays:
+        play_data = load_play(play['filepath'])
+        if play_data and 'conditional_plays' in play_data:
+            if play_data['conditional_plays'].get('OTO_trigger') == current_filename:
+                is_oto_child = True
+                break
+    
+    # Set play class based on conditions
+    if is_oto_child:
+        play_data['play_class'] = 'OTO'
+    elif has_children:
+        play_data['play_class'] = 'PRIMARY'
+    else:
+        play_data['play_class'] = 'SIMPLE'
 
-    if selection == 0:
+def get_field_value_display(play_data, field):
+    """Get formatted display string for field value"""
+    if field == "rename_play":
+        return play_data.get("play_name", "Not set")
+    elif field == "take_profit":
+        tp = play_data.get("take_profit", {})
+        if "stock_price" in tp:
+            return f"${tp['stock_price']:.2f} (stock price)"
+        elif "premium_pct" in tp:
+            return f"{tp['premium_pct']}% (premium)"
+        return "Not set"
+    elif field == "stop_loss":
+        sl = play_data.get("stop_loss", {})
+        if "stock_price" in sl:
+            return f"${sl['stock_price']:.2f} (stock price)"
+        elif "premium_pct" in sl:
+            return f"{sl['premium_pct']}% (premium)"
+        return "Not set"
+    elif field == "entry_point":
+        value = play_data.get(field)
+        return f"${value:.2f}" if value is not None else "Not set"
+    elif field == "strike_price":
+        value = play_data.get(field)
+        return f"${float(value):.2f}" if value else "Not set"
+    elif field == "conditional_plays (OCO & OTO)":
+        cond = play_data.get("conditional_plays", {})
+        oco = cond.get("OCO_trigger", "None")
+        oto = cond.get("OTO_trigger", "None")
+        return f"OCO: {oco}, OTO: {oto}"
+    else:
+        return str(play_data.get(field, "Not set"))
+
+def edit_specific_play(filename):
+    play_info = find_play_file(filename)
+    if not play_info:
+        print(f"Error: Play file '{filename}' not found")
+        return
+    
+    print(f"\nEditing play: [{play_info['folder']}] {play_info['filename']}")
+    play_data = load_play(play_info['filepath'])
+    if not play_data:
         return
 
-    selected_play = plays[selection - 1]
-    edit_specific_play(selected_play['filename'])
+    while True:
+        print("\nEditable Fields:")
+        fields = [
+            "rename_play",
+            "symbol",
+            "expiration_date", 
+            "trade_type",
+            "strike_price",
+            "entry_point",
+            "take_profit",
+            "stop_loss",
+            "contracts",
+            "play_expiration_date",
+            "OCO_trigger",
+            "OTO_trigger"
+        ]
+        
+        # Find longest field name for alignment
+        max_field_len = max(len(field) for field in fields)
+        
+        # Display fields with current values
+        for i, field in enumerate(fields, 1):
+            if field in ["OCO_trigger", "OTO_trigger"]:
+                value = play_data.get("conditional_plays", {}).get(field, "None")
+            else:
+                value = get_field_value_display(play_data, field)
+            
+            dots = "." * (max_field_len - len(field) + 5)
+            print(f"{i}. {field}{dots}{value}")
+        
+        field_selection = get_input(
+            "\nEnter the number of the field to edit (0 to save and exit): ",
+            type_cast=int,
+            validation=lambda x: 0 <= x <= len(fields),
+            error_message=f"Please enter a number between 0 and {len(fields)}"
+        )
+
+        if field_selection == 0:
+            break
+
+        if fields[field_selection - 1] == "rename_play":
+            rename_play(play_data, play_info)
+        elif fields[field_selection - 1] in ["OCO_trigger", "OTO_trigger"]:
+            edit_conditional_plays(play_data, play_info['filepath'])
+        else:
+            edit_play_field(play_data, fields[field_selection - 1], play_info['filepath'])
+
+    # Save changes
+    if save_play(play_info['filepath'], play_data):
+        print(f"\nChanges saved to {play_info['filename']}")
+    else:
+        print("\nError saving changes")
 
 def main():
     parser = argparse.ArgumentParser()
