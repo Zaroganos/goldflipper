@@ -7,15 +7,18 @@
   "expiration_date": "MM/DD/YYYY",
   "play_expiration_date": "MM/DD/YYYY",
   "option_contract_symbol": "string",
+  "entry_premium": 0.0,
   "take_profit": {
     "stock_price": 0.0,
     "premium_pct": 50.0,
-    "order_type": "market"
+    "order_type": "market",
+    "TP_option_prem": null
   },
   "stop_loss": {
     "stock_price": 0.0,
     "premium_pct": 25.0,
-    "order_type": "market"
+    "order_type": "market",
+    "SL_option_prem": null
   },
   "contracts": 0,
   "play_class": "SIMPLE, or if conditional: PRIMARY or OTO (if OCO, simply enter it as SIMPLE)",
