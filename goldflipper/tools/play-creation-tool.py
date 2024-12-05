@@ -89,13 +89,17 @@ def create_option_contract_symbol(symbol, expiration_date, strike_price, trade_t
 
     return final_symbol
 
-def get_price_type_choice():
-    """Get user's choice between stock price and option premium."""
+def get_condition_type_choice():
+    """Get user's choice for condition type."""
     return get_input(
-        "For TP & SL, Please Enter price type (1 for stock price, 2 for option premium %): ",
+        "Please choose condition type:\n"
+        "1. Stock price only\n"
+        "2. Option premium % only\n"
+        "3. Both stock price and option premium %\n"
+        "Choice (1/2/3): ",
         int,
-        validation=lambda x: x in [1, 2],
-        error_message="Please enter 1 for stock price or 2 for option premium."
+        validation=lambda x: x in [1, 2, 3],
+        error_message="Please enter 1 for stock price, 2 for option premium %, or 3 for both."
     )
 
 def get_premium_percentage():
@@ -188,52 +192,40 @@ def create_play():
             filename = default_name + ".json"
 
         # Take profit section
-        tp_type = get_price_type_choice()
-        if tp_type == 1:
-            # Stock price based TP
-            take_profit_stock_price = get_input(
+        print("\nSetting Take Profit conditions...")
+        tp_type = get_condition_type_choice()
+        play['take_profit'] = {'stock_price': None, 'premium_pct': None, 'order_type': 'market'}
+        
+        if tp_type in [1, 3]:  # Stock price or both
+            tp_stock_price = get_input(
                 "Enter take profit stock price: ",
                 float,
                 validation=lambda x: x > 0,
                 error_message="Please enter a valid positive number for the take profit stock price."
             )
-            play['take_profit'] = {
-                'stock_price': take_profit_stock_price,
-                'premium_pct': None,
-                'order_type': 'market'
-            }
-        else:
-            # Premium percentage based TP
-            premium_pct = get_premium_percentage()
-            play['take_profit'] = {
-                'stock_price': None,
-                'premium_pct': premium_pct,
-                'order_type': 'market'
-            }
+            play['take_profit']['stock_price'] = tp_stock_price
+
+        if tp_type in [2, 3]:  # Premium % or both
+            tp_premium_pct = get_premium_percentage()
+            play['take_profit']['premium_pct'] = tp_premium_pct
 
         # Stop loss section
-        sl_type = get_price_type_choice()
-        if sl_type == 1:
-            # Stock price based SL
-            stop_loss_stock_price = get_input(
+        print("\nSetting Stop Loss conditions...")
+        sl_type = get_condition_type_choice()
+        play['stop_loss'] = {'stock_price': None, 'premium_pct': None, 'order_type': 'market'}
+        
+        if sl_type in [1, 3]:  # Stock price or both
+            sl_stock_price = get_input(
                 "Enter stop loss stock price: ",
                 float,
                 validation=lambda x: x > 0,
                 error_message="Please enter a valid positive number for the stop loss stock price."
             )
-            play['stop_loss'] = {
-                'stock_price': stop_loss_stock_price,
-                'premium_pct': None,
-                'order_type': 'market'
-            }
-        else:
-            # Premium percentage based SL
-            premium_pct = get_premium_percentage()
-            play['stop_loss'] = {
-                'stock_price': None,
-                'premium_pct': premium_pct,
-                'order_type': 'market'
-            }
+            play['stop_loss']['stock_price'] = sl_stock_price
+
+        if sl_type in [2, 3]:  # Premium % or both
+            sl_premium_pct = get_premium_percentage()
+            play['stop_loss']['premium_pct'] = sl_premium_pct
 
         play['play_expiration_date'] = get_input(
             f"Enter the play's expiration date (MM/DD/YYYY), or press Enter to make it {play['expiration_date']} by default.): ",

@@ -172,50 +172,53 @@ def evaluate_opening_strategy(symbol, market_data, play):
     return condition_met
 
 def evaluate_closing_strategy(symbol, market_data, play):
-    """Evaluate if closing conditions are met for either stock price or option premium."""
+    """
+    Evaluate if closing conditions are met. Supports:
+    - Mixed conditions (e.g., TP by stock price, SL by premium %)
+    - Multiple conditions (both stock price AND premium % for either TP or SL)
+    - Either condition being met will trigger the corresponding action
+    """
     logging.info(f"Evaluating closing strategy for {symbol} using play data...")
     
     last_price = market_data["Close"].iloc[-1]
     trade_type = play.get("trade_type", "").upper()
     
-    # Check if using stock price or premium percentage
-    using_stock_price = play['take_profit'].get('stock_price') is not None
-    
-    if using_stock_price:
-        # Original stock price based logic
-        take_profit = play['take_profit']['stock_price']
-        stop_loss = play['stop_loss']['stock_price']
-        
+    # Initialize condition flags
+    profit_condition = False
+    loss_condition = False
+
+    # Check stock price-based take profit condition
+    if play['take_profit'].get('stock_price') is not None:
         if trade_type == "CALL":
-            profit_condition = last_price >= take_profit
-            loss_condition = last_price <= stop_loss
+            profit_condition = last_price >= play['take_profit']['stock_price']
         elif trade_type == "PUT":
-            profit_condition = last_price <= take_profit
-            loss_condition = last_price >= stop_loss
-        else:
-            logging.error(f"Invalid trade type: {trade_type}")
-            return False
-    else:
-        # Use stored premium values instead of calculating
-        current_premium = get_current_option_premium(play)
-        if current_premium is None:
-            logging.error("Could not get current option premium")
-            return False
-            
-        tp_target = play['take_profit']['TP_option_prem']
-        sl_target = play['stop_loss']['SL_option_prem']
-        
-        profit_condition = current_premium >= tp_target
-        loss_condition = current_premium <= sl_target
-        
-        logging.info(f"Premium conditions - Current: ${current_premium:.2f}, "
-                    f"TP: ${tp_target:.2f}, SL: ${sl_target:.2f}")
+            profit_condition = last_price <= play['take_profit']['stock_price']
+
+    # Check stock price-based stop loss condition
+    if play['stop_loss'].get('stock_price') is not None:
+        if trade_type == "CALL":
+            loss_condition = last_price <= play['stop_loss']['stock_price']
+        elif trade_type == "PUT":
+            loss_condition = last_price >= play['stop_loss']['stock_price']
+
+    # Check premium-based conditions if available
+    current_premium = get_current_option_premium(play)
+    if current_premium is not None:
+        # Check premium-based take profit - combines with stock price condition using OR
+        if play['take_profit'].get('premium_pct') is not None:
+            tp_target = play['take_profit']['TP_option_prem']
+            profit_condition = profit_condition or (current_premium >= tp_target)
+
+        # Check premium-based stop loss - combines with stock price condition using OR
+        if play['stop_loss'].get('premium_pct') is not None:
+            sl_target = play['stop_loss']['SL_option_prem']
+            loss_condition = loss_condition or (current_premium <= sl_target)
 
     if profit_condition:
         logging.info("Take profit condition met")
     if loss_condition:
         logging.info("Stop loss condition met")
-        
+
     return profit_condition or loss_condition
 
 # ==================================================
@@ -340,7 +343,7 @@ def close_position(play):
         return False
 
 def monitor_and_manage_position(play, play_file):
-    """Monitor position using appropriate price type."""
+    """Monitor position using both stock price and premium conditions if configured."""
     client = get_alpaca_client()
     contract_symbol = play.get('option_contract_symbol')
     underlying_symbol = play.get('symbol')
@@ -348,70 +351,53 @@ def monitor_and_manage_position(play, play_file):
     if not contract_symbol or not underlying_symbol:
         logging.error("Missing required symbols")
         return False
-        
-    using_stock_price = play['take_profit'].get('stock_price') is not None
-    
-    # Validate TP/SL values for premium-based monitoring
-    if not using_stock_price:
-        if not play['take_profit'].get('TP_option_prem') or not play['stop_loss'].get('SL_option_prem'):
-            logging.error("Missing TP/SL premium values. Position cannot be monitored effectively.")
-            return False
-        logging.info(f"Monitoring position with premium targets - TP: ${play['take_profit']['TP_option_prem']:.4f}, "
-                    f"SL: ${play['stop_loss']['SL_option_prem']:.4f}")
 
-    try:
-        # Verify position is still open
-        position = client.get_open_position(contract_symbol)
-        if position is None:
-            logging.info(f"Position {contract_symbol} closed.")
-            return True
-            
-        # Get current price based on monitoring type
-        if using_stock_price:
-            try:
-                current_price = float(client.get_latest_trade(underlying_symbol).price)
-                market_data = pd.DataFrame({'Close': [current_price]})
-                logging.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
-            except Exception as e:
-                logging.error(f"Error getting stock price: {e}")
-                return False
-        else:
-            try:
-                current_premium = get_current_option_premium(play)
-                if current_premium is None:
-                    logging.error("Failed to get current option premium.")
-                    return False
-                market_data = pd.DataFrame({'Close': [current_premium]})
-                logging.info(f"Current option premium for {contract_symbol}: ${current_premium:.4f}")
-                
-                # Evaluate closing conditions using the already fetched premium
-                if current_premium >= play['take_profit']['TP_option_prem'] or current_premium <= play['stop_loss']['SL_option_prem']:
-                    logging.info(f"Closing conditions met - Current: ${current_premium:.4f}, "
-                               f"TP: ${play['take_profit']['TP_option_prem']:.4f}, "
-                               f"SL: ${play['stop_loss']['SL_option_prem']:.4f}")
-                    
-                    close_attempts = 0
-                    max_attempts = 3
-                    
-                    while close_attempts < max_attempts:
-                        logging.info(f"Attempting to close position: Attempt {close_attempts + 1}")
-                        if close_position(play):
-                            move_play_to_closed(play_file)
-                            logging.info("Position closed successfully")
-                            return True
-                        close_attempts += 1
-                        logging.warning(f"Close attempt {close_attempts} failed. Retrying...")
-                        time.sleep(2)
-                    
-                    logging.error("Failed to close position after maximum attempts")
-                    return False
-                    
-            except Exception as e:
-                logging.error(f"Error getting option premium or closing position: {e}")
-                return False
-            
-    except Exception as e:
-        logging.error(f"Error monitoring position: {e}")
+    # Get current market data
+    market_data = None
+    current_premium = None
+    
+    # Check if we need stock price monitoring
+    if play['take_profit'].get('stock_price') is not None or play['stop_loss'].get('stock_price') is not None:
+        try:
+            current_price = float(client.get_latest_trade(underlying_symbol).price)
+            market_data = pd.DataFrame({'Close': [current_price]})
+            logging.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
+        except Exception as e:
+            logging.error(f"Error getting stock price: {e}")
+            return False
+
+    # Check if we need premium monitoring
+    if play['take_profit'].get('premium_pct') is not None or play['stop_loss'].get('premium_pct') is not None:
+        current_premium = get_current_option_premium(play)
+        if current_premium is None:
+            logging.error("Failed to get current option premium.")
+            return False
+        if market_data is None:
+            market_data = pd.DataFrame({'Close': [current_premium]})
+        logging.info(f"Current option premium for {contract_symbol}: ${current_premium:.4f}")
+
+    # Verify position is still open
+    position = client.get_open_position(contract_symbol)
+    if position is None:
+        logging.info(f"Position {contract_symbol} closed.")
+        return True
+
+    # Evaluate closing conditions
+    if evaluate_closing_strategy(underlying_symbol, market_data, play):
+        close_attempts = 0
+        max_attempts = 3
+        
+        while close_attempts < max_attempts:
+            logging.info(f"Attempting to close position: Attempt {close_attempts + 1}")
+            if close_position(play):
+                move_play_to_closed(play_file)
+                logging.info("Position closed successfully")
+                return True
+            close_attempts += 1
+            logging.warning(f"Close attempt {close_attempts} failed. Retrying...")
+            time.sleep(2)
+        
+        logging.error("Failed to close position after maximum attempts")
         return False
 
     return True
