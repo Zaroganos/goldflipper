@@ -213,7 +213,12 @@ def edit_play_field(play_data, field, filepath):
                 error_message="Please enter a valid number"
             )
             if price is not None:
-                play_data['take_profit']['stock_price'] = price
+                play_data['take_profit'] = {
+                    'stock_price': price,
+                    'premium_pct': None,
+                    'order_type': 'market',
+                    'TP_option_prem': None
+                }
                 
         else:
             premium = get_input(
@@ -223,7 +228,12 @@ def edit_play_field(play_data, field, filepath):
                 error_message="Please enter a percentage between 0 and 100"
             )
             if premium is not None:
-                play_data['take_profit']['premium_pct'] = premium
+                play_data['take_profit'] = {
+                    'stock_price': None,
+                    'premium_pct': premium,
+                    'order_type': 'market',
+                    'TP_option_prem': None
+                }
 
     elif field == 'stop_loss':
         price_type = get_input(
@@ -240,7 +250,12 @@ def edit_play_field(play_data, field, filepath):
                 error_message="Please enter a valid number"
             )
             if price is not None:
-                play_data['stop_loss']['stock_price'] = price
+                play_data['stop_loss'] = {
+                    'stock_price': price,
+                    'premium_pct': None,
+                    'order_type': 'market',
+                    'SL_option_prem': None
+                }
                 
         else:
             premium = get_input(
@@ -250,7 +265,12 @@ def edit_play_field(play_data, field, filepath):
                 error_message="Please enter a percentage between 0 and 100"
             )
             if premium is not None:
-                play_data['stop_loss']['premium_pct'] = premium
+                play_data['stop_loss'] = {
+                    'stock_price': None,
+                    'premium_pct': premium,
+                    'order_type': 'market',
+                    'SL_option_prem': None
+                }
 
     elif field == 'contracts':
         # Only allow editing for plays in 'new' folder
@@ -674,24 +694,27 @@ def get_field_value_display(play_data, field):
     """Get formatted display value for a field"""
     if field == "play_name":
         return play_data.get("play_name", "Not set")
+    elif field == "symbol":
+        return play_data.get("symbol", "Not set")
     elif field == "strike_price":
         return f"${float(play_data.get('strike_price', 0)):.2f}"
     elif field == "entry_point":
-        return f"${play_data.get('entry_point', 0):.2f}"
+        entry_point = play_data.get('entry_point')
+        return f"${entry_point:.2f}" if entry_point is not None else "Not set"
     elif field == "take_profit":
-        if "stock_price" in play_data.get("take_profit", {}):
+        if play_data.get('take_profit', {}).get('stock_price') is not None:
             return f"${play_data['take_profit']['stock_price']:.2f} (stock price)"
+        elif play_data.get('take_profit', {}).get('premium_pct') is not None:
+            return f"{play_data['take_profit']['premium_pct']}% (premium)"
         else:
-            return f"{play_data['take_profit'].get('premium_pct', 0)}% (premium)"
+            return "Not set"
     elif field == "stop_loss":
-        if "stock_price" in play_data.get("stop_loss", {}):
+        if play_data.get('stop_loss', {}).get('stock_price') is not None:
             return f"${play_data['stop_loss']['stock_price']:.2f} (stock price)"
+        elif play_data.get('stop_loss', {}).get('premium_pct') is not None:
+            return f"{play_data['stop_loss']['premium_pct']}% (premium)"
         else:
-            return f"{play_data['stop_loss'].get('premium_pct', 0)}% (premium)"
-    elif field == "OCO_trigger":
-        return play_data.get("conditional_plays", {}).get("OCO_trigger", "None")
-    elif field == "OTO_trigger":
-        return play_data.get("conditional_plays", {}).get("OTO_trigger", "None")
+            return "Not set"
     else:
         return str(play_data.get(field, "Not set"))
 
