@@ -111,6 +111,29 @@ def get_premium_percentage():
         error_message="Please enter a percentage between 0 and 100. If you want a higher %, ask iliya to code it in."
     )
 
+def get_order_type_choice(is_stop_loss=False, transaction_type=""):
+    """Get user's choice for order type (market/limit).
+    
+    Args:
+        is_stop_loss (bool): If True, adds warning about market orders being safer for SL
+        transaction_type (str): The type of transaction (Entry, Take Profit, Stop Loss)
+    """
+    prompt = f"\nSelect order type for {transaction_type}:"
+    prompt += "\n1. Market order"
+    prompt += "\n2. Limit order (default)"
+    prompt += "\nChoice (1/2) [2]: "
+    
+    choice = get_input(
+        prompt,
+        int,
+        validation=lambda x: x in [1, 2],
+        error_message="Please enter 1 for market or 2 for limit order.",
+        optional=True
+    )
+    
+    # If optional input is skipped (None returned), default to 2 (limit)
+    return 'market' if choice == 1 else 'limit'
+
 def create_play():
     """
     Interactive tool to create a play for options trading, following the minimal template.
@@ -191,6 +214,9 @@ def create_play():
             play['play_name'] = default_name
             filename = default_name + ".json"
 
+        # Entry order type
+        play['entry_order_type'] = get_order_type_choice(transaction_type="Entry")
+        
         # Take profit section
         print("\nSetting Take Profit conditions...")
         tp_type = get_condition_type_choice()
@@ -208,6 +234,9 @@ def create_play():
         if tp_type in [2, 3]:  # Premium % or both
             tp_premium_pct = get_premium_percentage()
             play['take_profit']['premium_pct'] = tp_premium_pct
+        
+        # Take profit order type
+        play['take_profit']['order_type'] = get_order_type_choice(transaction_type="Take Profit")
 
         # Stop loss section
         print("\nSetting Stop Loss conditions...")
@@ -226,6 +255,9 @@ def create_play():
         if sl_type in [2, 3]:  # Premium % or both
             sl_premium_pct = get_premium_percentage()
             play['stop_loss']['premium_pct'] = sl_premium_pct
+        
+        # Stop loss order type
+        play['stop_loss']['order_type'] = get_order_type_choice(is_stop_loss=True, transaction_type="Stop Loss")
 
         play['play_expiration_date'] = get_input(
             f"Enter the play's expiration date (MM/DD/YYYY), or press Enter to make it {play['expiration_date']} by default.): ",

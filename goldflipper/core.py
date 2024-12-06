@@ -7,10 +7,17 @@ from zoneinfo import ZoneInfo
 import yfinance as yf
 from goldflipper.json_parser import load_play
 from goldflipper.alpaca_client import get_alpaca_client
-from alpaca.trading.requests import GetOptionContractsRequest, LimitOrderRequest, StopOrderRequest, MarketOrderRequest, ClosePositionRequest
+from goldflipper.config.config import config
+from alpaca.trading.requests import (
+    GetOptionContractsRequest, 
+    LimitOrderRequest, 
+    MarketOrderRequest, 
+    ClosePositionRequest
+)
 from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 import json
+
 
 # ==================================================
 # 1. LOGGING CONFIGURATION
@@ -49,10 +56,37 @@ setup_logging()
 # Function to fetch the latest market data using yfinance.
 
 def get_market_data(symbol):
+    """
+    Fetch market data for a given symbol using configuration settings.
+    
+    Args:
+        symbol (str): The stock symbol to fetch data for
+        
+    Returns:
+        pandas.DataFrame: Market data with timestamp index and OHLCV columns
+        
+    Logs:
+        INFO: Fetch attempt and success
+        ERROR: Any failures during data retrieval
+    """
     logging.info(f"Fetching market data for {symbol}...")
-    data = yf.download(symbol, period="1d", interval="1m") #DOUBLE CHECK THIS! CAN INTERVAL BE DECREASED??
-    logging.info(f"Market data for {symbol} fetched successfully.")
-    return data
+    try:
+        data = yf.download(
+            symbol,
+            period=config.get('market_data', 'period', default='1d'),
+            interval=config.get('market_data', 'interval', default='1m')
+        )
+        logging.info(f"Market data for {symbol} fetched successfully.")
+        
+        if data.empty:
+            logging.error(f"No data returned for {symbol}")
+            return None
+            
+        return data
+        
+    except Exception as e:
+        logging.error(f"Error fetching market data for {symbol}: {str(e)}")
+        return None
 
 """Function to fetch the latest option premium data using yfinance."""
 
@@ -250,26 +284,26 @@ def get_option_contract(play):
         logging.error(f"No option contract found for {symbol} with given parameters")
         return None
 
-# LIMIT BUY orders... CURRENTLY INACTIVE!
-def calculate_limit_buy_price(contract):
-    try:
-        option_ticker = yf.Ticker(contract.root_symbol)
-        option_data = option_ticker.option_chain(contract.expiration_date.strftime('%Y-%m-%d'))
-
-        options = option_data.calls if contract.type == 'call' else option_data.puts
-        option = options[(options['strike'] == contract.strike_price) & (options['contractSymbol'] == contract.symbol)]
-        if not option.empty:
-            bid = option.iloc[0]['bid']
-            ask = option.iloc[0]['ask']
-            limit_buy_price = bid + (ask - bid) * 0.25  # Set limit buy price to 25% above the bid price
-            logging.info(f"Calculated limit buy price for {contract.symbol}: {limit_buy_price:.2f}")
-            return limit_buy_price
-        else:
-            logging.error(f"No option data found for {contract.symbol}")
-            return None
-    except Exception as e:
-        logging.error(f"Error calculating limit buy price for {contract.symbol}: {str(e)}")
-        return None
+# LIMIT BUY orders... CURRENTLY INACTIVE! this was auto-generated and probably not needed
+# def calculate_limit_buy_price(contract):
+#     try:
+#         option_ticker = yf.Ticker(contract.root_symbol)
+#         option_data = option_ticker.option_chain(contract.expiration_date.strftime('%Y-%m-%d'))
+#
+#        options = option_data.calls if contract.type == 'call' else option_data.puts
+#        option = options[(options['strike'] == contract.strike_price) & (options['contractSymbol'] == contract.symbol)]
+#        if not option.empty:
+#            bid = option.iloc[0]['bid']
+#            ask = option.iloc[0]['ask']
+#            limit_buy_price = bid + (ask - bid) * 0.25  # Set limit buy price to 25% above the bid price
+#            logging.info(f"Calculated limit buy price for {contract.symbol}: {limit_buy_price:.2f}")
+#            return limit_buy_price
+#        else:
+#            logging.error(f"No option data found for {contract.symbol}")
+#            return None
+#    except Exception as e:
+#        logging.error(f"Error calculating limit buy price for {contract.symbol}: {str(e)}")
+#        return None
 
 def open_position(play, play_file):
     client = get_alpaca_client()
@@ -295,14 +329,27 @@ def open_position(play, play_file):
     logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
     
     try:
-        # Rest of the existing order placement code...
-        order_req = MarketOrderRequest(
-            symbol=contract.symbol,
-            qty=play['contracts'],
-            side=OrderSide.BUY,
-            type=OrderType.MARKET,
-            time_in_force=TimeInForce.DAY,
-        )
+        # Create appropriate order request based on order type
+        if play.get('entry_order_type') == 'limit':
+            order_req = LimitOrderRequest(
+                symbol=contract.symbol,
+                qty=play['contracts'],
+                limit_price=current_premium,  # Use current premium as limit price
+                side=OrderSide.BUY,
+                type=OrderType.LIMIT,
+                time_in_force=TimeInForce.DAY,
+            )
+            logging.info(f"Creating limit buy order with limit price: ${current_premium:.4f}")
+        else:
+            order_req = MarketOrderRequest(
+                symbol=contract.symbol,
+                qty=play['contracts'],
+                side=OrderSide.BUY,
+                type=OrderType.MARKET,
+                time_in_force=TimeInForce.DAY,
+            )
+            logging.info("Creating market buy order")
+
         response = client.submit_order(order_req)
         logging.info(f"Order submitted: {response}")
         
@@ -316,25 +363,67 @@ def open_position(play, play_file):
 
 def close_position(play):
     client = get_alpaca_client()
-    contract_symbol = play.get('option_contract_symbol')  # This should be the full option symbol
+    contract_symbol = play.get('option_contract_symbol')
 
     if not contract_symbol:
         logging.error("Option contract symbol not found in play. Cannot close position.")
         return False
 
     qty = play.get('contracts', 1)  # Default to 1 if not specified
-
-    logging.info(f"Attempting to close position: {qty} contracts of {contract_symbol}")
-
+    
     try:
-        # Convert qty to string as ClosePositionRequest expects a string
-        close_req = ClosePositionRequest(qty=str(qty))
-        response = client.close_position(
-            symbol_or_asset_id=contract_symbol,
-            close_options=close_req
+        # Check if this is a TP or SL closure by checking conditions
+        is_tp = (
+            (play['take_profit'].get('stock_price') is not None and 
+             float(client.get_latest_trade(play['symbol']).price) >= play['take_profit']['stock_price']) or
+            (play['take_profit'].get('premium_pct') is not None and 
+             get_current_option_premium(play) >= play['take_profit']['TP_option_prem'])
         )
-        logging.info(f"Successfully closed position: {qty} contracts of {contract_symbol}")
+        
+        # Handle limit orders
+        if (is_tp and play['take_profit'].get('order_type') == 'limit') or \
+           (not is_tp and play['stop_loss'].get('order_type') == 'limit'):
+            
+            if is_tp:
+                # For TP, use the TP premium target if available
+                limit_price = play['take_profit'].get('TP_option_prem')
+                logging.info(f"Take Profit triggered - Using TP premium target: ${limit_price:.4f}")
+            else:
+                # For SL, use the SL premium target if available
+                limit_price = play['stop_loss'].get('SL_option_prem')
+                logging.info(f"Stop Loss triggered - Using SL premium target: ${limit_price:.4f}")
+            
+            # If no premium target set, get current premium
+            if limit_price is None:
+                current_premium = get_current_option_premium(play)
+                if current_premium is None:
+                    logging.error("Failed to get current option premium for limit order.")
+                    return False
+                limit_price = current_premium
+                logging.info(f"Using current premium as limit price: ${limit_price:.4f}")
+            
+            order_req = LimitOrderRequest(
+                symbol=contract_symbol,
+                qty=qty,
+                limit_price=limit_price,
+                side=OrderSide.SELL,
+                type=OrderType.LIMIT,
+                time_in_force=TimeInForce.DAY
+            )
+            logging.info(f"Creating limit sell order with limit price: ${limit_price:.4f}")
+            response = client.submit_order(order_req)
+        
+        # Handle market orders using ClosePositionRequest
+        else:
+            response = client.close_position(
+                symbol_or_asset_id=contract_symbol,
+                close_options=ClosePositionRequest(qty=str(qty))
+            )
+            logging.info(f"Creating market sell order via ClosePositionRequest for {'TP' if is_tp else 'SL'}")
+            
+        logging.info(f"Successfully submitted close order: {response}")
         return True
+        
     except APIError as api_err:
         logging.error(f"API Error closing position for {contract_symbol}: {api_err}")
         return False
@@ -375,6 +464,12 @@ def monitor_and_manage_position(play, play_file):
         if market_data is None:
             market_data = pd.DataFrame({'Close': [current_premium]})
         logging.info(f"Current option premium for {contract_symbol}: ${current_premium:.4f}")
+
+        # Log premium targets if using limit orders
+        if play['take_profit'].get('order_type') == 'limit' and play['take_profit'].get('TP_option_prem'):
+            logging.info(f"TP limit order target: ${play['take_profit']['TP_option_prem']:.4f}")
+        if play['stop_loss'].get('order_type') == 'limit' and play['stop_loss'].get('SL_option_prem'):
+            logging.info(f"SL limit order target: ${play['stop_loss']['SL_option_prem']:.4f}")
 
     # Verify position is still open
     position = client.get_open_position(contract_symbol)
@@ -453,6 +548,11 @@ def execute_trade(play_file, play_type):
         logging.error(f"Failed to load play {play_file}. Aborting trade execution.")
         return False
 
+    # Validate order types first
+    if not validate_play_order_types(play):
+        logging.error(f"Invalid order types in play {play_file}. Aborting trade execution.")
+        return False
+
     symbol = play.get("symbol")
     trade_type = play.get("trade_type", "").upper()
     if not symbol or trade_type not in ["CALL", "PUT"]:
@@ -460,49 +560,82 @@ def execute_trade(play_file, play_type):
         return False
 
     market_data = get_market_data(symbol)
+    
     # OPENING a Play
     if play_type == "new":
         if evaluate_opening_strategy(symbol, market_data, play):
             if open_position(play, play_file):
                 move_play_to_open(play_file)
-                return True  # Return to main loop instead of monitoring immediately
-            
-    # CONDITIONAL PLAYS: Activate OCO / OTO upon play opening for PRIMARY plays
-    if play.get("class") == "PRIMARY":
-        if "OCO_trigger" in play:
-            oco_trigger_play = play["OCO_trigger"]
-            oco_trigger_path = os.path.join(os.path.dirname(play_file), '..', 'new', oco_trigger_play)
-            try:
-                if os.path.exists(oco_trigger_path):
-                    if move_play_to_expired(oco_trigger_play):  # Add return value check
-                        logging.info(f"Moved OCO_trigger play to expired folder: {oco_trigger_play}")
-                    else:
-                        logging.error(f"Failed to move OCO trigger play: {oco_trigger_play}")
-                else:
-                    logging.error(f"OCO trigger play file not found: {oco_trigger_play}")
-            except Exception as e:
-                logging.error(f"Error processing OCO trigger: {str(e)}")
+                
+                # Handle conditional plays if this is a PRIMARY play
+                if play.get("class") == "PRIMARY":
+                    plays_base_dir = os.path.dirname(os.path.dirname(play_file))
+                    
+                    # Handle OCO trigger
+                    if "OCO_trigger" in play:
+                        oco_file = play["OCO_trigger"]
+                        oco_path = os.path.join(plays_base_dir, 'new', oco_file)
+                        if os.path.exists(oco_path):
+                            logging.info(f"Processing OCO trigger: {oco_file}")
+                            move_play_to_expired(oco_path)
+                        else:
+                            logging.error(f"OCO trigger file not found: {oco_path}")
 
-        if "OTO_trigger" in play:
-            oto_trigger_play = play["OTO_trigger"]
-            try:
-                if os.path.exists(oto_trigger_play):
-                    if move_play_to_new(oto_trigger_play):  # Add return value check
-                        logging.info(f"Moved OTO_trigger play to new folder: {oto_trigger_play}")
-                    else:
-                        logging.error(f"Failed to move OTO trigger play: {oto_trigger_play}")
-                else:
-                    logging.error(f"OTO trigger play file not found: {oto_trigger_play}")
-            except Exception as e:
-                logging.error(f"Error processing OTO trigger: {str(e)}")
-    # CLOSING a Play
-    elif play_type == "open":
-        if evaluate_closing_strategy(symbol, market_data, play):
-            if close_position(play):
-                move_play_to_closed(play_file)
+                    # Handle OTO trigger
+                    if "OTO_trigger" in play:
+                        oto_file = play["OTO_trigger"]
+                        oto_path = os.path.join(plays_base_dir, 'new', oto_file)
+                        if os.path.exists(oto_path):
+                            logging.info(f"Processing OTO trigger: {oto_file}")
+                            move_play_to_new(oto_path)
+                        else:
+                            logging.error(f"OTO trigger file not found: {oto_path}")
+                
                 return True
+            
+    # MONITORING an Open Play
+    elif play_type == "open":
+        return monitor_and_manage_position(play, play_file)
     
+    # Handle Expired Play
+    elif play_type == "expired":
+        move_play_to_expired(play_file)
+        return True
+        
     return False
+
+def validate_play_order_types(play):
+    """Validate order types in play data.
+    
+    Returns:
+        bool: True if all order types are valid, False otherwise
+    """
+    valid_types = ['market', 'limit']
+    
+    # Validate entry order type
+    entry_type = play.get('entry_order_type')
+    if entry_type is None:
+        logging.error("Missing entry_order_type in play")
+        return False
+    if entry_type not in valid_types:
+        logging.error(f"Invalid entry_order_type: {entry_type}")
+        return False
+    
+    # Validate take profit order type
+    tp = play.get('take_profit', {})
+    tp_type = tp.get('order_type')
+    if tp_type is not None and tp_type not in valid_types:
+        logging.error(f"Invalid take_profit order_type: {tp_type}")
+        return False
+    
+    # Validate stop loss order type
+    sl = play.get('stop_loss', {})
+    sl_type = sl.get('order_type')
+    if sl_type is not None and sl_type not in valid_types:
+        logging.error(f"Invalid stop_loss order_type: {sl_type}")
+        return False
+    
+    return True
 
 # ==================================================
 # 7. CONTINUOUS MONITORING AND EXECUTION
