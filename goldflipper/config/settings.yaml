@@ -83,6 +83,19 @@ market_data:
         - vega
         - rho
 
+  # Technical Indicators settings
+  indicators:
+    enabled: true
+    ttm_squeeze:
+      enabled: true
+      period: 20
+      bb_multiplier: 2.0
+      kc_multiplier: 1.5
+    columns:
+      - squeeze_on
+      - momentum
+      - momentum_increasing
+
 # Strategy Settings
 # --------------------------------------------------
 entry_strategy:

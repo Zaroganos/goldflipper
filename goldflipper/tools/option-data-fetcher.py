@@ -16,6 +16,8 @@ from goldflipper.data.greeks.gamma import GammaCalculator
 from goldflipper.data.greeks.theta import ThetaCalculator
 from goldflipper.data.greeks.vega import VegaCalculator
 from goldflipper.data.greeks.rho import RhoCalculator
+from goldflipper.data.indicators.base import MarketData
+from goldflipper.data.indicators.ttm_squeeze import TTMSqueezeCalculator
 
 pd.set_option('display.max_rows', None)
 
@@ -25,7 +27,15 @@ def load_settings():
     with open(settings_path, 'r') as f:
         return yaml.safe_load(f)
 
-def display_options_chain(chain_data):
+def display_indicator_summary(indicator_data):
+    """Display summary of technical indicators"""
+    print("\nTechnical Indicators Summary:")
+    print(f"TTM Squeeze: {'ON' if indicator_data['squeeze_on'].iloc[-1] else 'OFF'}")
+    print(f"Momentum: {indicator_data['momentum'].iloc[-1]:.2f}")
+    print(f"Momentum Trend: {'↑ INCREASING' if indicator_data['momentum_increasing'].iloc[-1] else '↓ DECREASING'}")
+    print("-" * 50)
+
+def display_options_chain(chain_data, indicator_data=None):
     """Display formatted options chain data with configurable columns."""
     settings = load_settings()
     display_config = settings['market_data']['option_chain_display']
@@ -37,6 +47,10 @@ def display_options_chain(chain_data):
     
     # Filter columns that exist in the data
     available_columns = [col for col in columns_to_display if col in chain_data.columns]
+    
+    # Display indicator summary if available
+    if indicator_data is not None:
+        display_indicator_summary(indicator_data)
     
     print("\nOptions Chain:")
     print(chain_data[available_columns].to_string(index=False))
@@ -266,14 +280,48 @@ def get_current_stock_price(stock):
     except (KeyError, AttributeError) as e:
         raise Exception(f"Could not fetch stock price: {str(e)}")
 
+def calculate_indicators(ticker: str, settings: dict) -> pd.DataFrame:
+    """Calculate technical indicators for the underlying stock"""
+    stock = yf.Ticker(ticker)
+    
+    # Get historical data
+    hist = stock.history(period='1y')  # Adjust period as needed
+    
+    # Prepare market data
+    market_data = MarketData(
+        high=hist['High'],
+        low=hist['Low'],
+        close=hist['Close'],
+        volume=hist['Volume'],
+        period=settings['market_data']['indicators']['ttm_squeeze']['period']
+    )
+    
+    # Calculate TTM Squeeze
+    ttm_calc = TTMSqueezeCalculator(
+        market_data,
+        bb_mult=settings['market_data']['indicators']['ttm_squeeze']['bb_multiplier'],
+        kc_mult=settings['market_data']['indicators']['ttm_squeeze']['kc_multiplier']
+    )
+    
+    indicators = ttm_calc.calculate()
+    
+    # Create DataFrame with latest indicator values
+    latest_indicators = pd.DataFrame({
+        'squeeze_on': [indicators['squeeze_on'].iloc[-1]],
+        'momentum': [indicators['momentum'].iloc[-1]],
+        'momentum_increasing': [indicators['momentum_increasing'].iloc[-1]]
+    })
+    
+    return latest_indicators
+
 def main():
     """Main function to fetch and display option data."""
     while True:
         play_data = get_play_selection()
         
         if play_data:
+            # Extract data from selected play
             try:
-                # Extract data from selected play
                 data = play_data['data']
                 ticker = data['symbol']
                 expiration_date = datetime.strptime(data['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d')
@@ -292,16 +340,26 @@ def main():
             ticker, expiration_date, option_type = input_data
 
         try:
-            # Fetch data
+            # Load settings
+            settings = load_settings()
+            
+            # Calculate indicators first
+            indicator_data = None
+            if settings['market_data']['indicators']['enabled']:
+                try:
+                    indicator_data = calculate_indicators(ticker, settings)
+                    logging.info(f"Calculated indicators for {ticker}")
+                except Exception as e:
+                    logging.warning(f"Failed to calculate indicators: {str(e)}")
+            
+            # Fetch option data
             stock = yf.Ticker(ticker)
             chain = stock.option_chain(expiration_date)
-            
-            # Get current stock price using the correct field
             underlying_price = get_current_stock_price(stock)
             
             # Get appropriate chain
             options_data = chain.calls if option_type == 'call' else chain.puts
-            options_data['option_type'] = option_type  # Add option type to dataframe
+            options_data['option_type'] = option_type
             
             # Filter by strike if from play
             if play_data and strike_price:
@@ -317,10 +375,9 @@ def main():
             # Calculate Greeks
             options_data = calculate_greeks(options_data, underlying_price, expiration_date)
             
-            # Display chain
-            display_options_chain(options_data)
+            # Display chain with indicators
+            display_options_chain(options_data, indicator_data)
             
-            # Ask if user wants to fetch more data
             choice = input("\nFetch more option data? (y/n): ").lower()
             if choice != 'y':
                 break
