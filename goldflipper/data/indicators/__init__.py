@@ -1,0 +1,1 @@
+# goldflipper/data/indicators/__init__.py to have as a package
