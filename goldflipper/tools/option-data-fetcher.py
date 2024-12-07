@@ -4,34 +4,92 @@ from datetime import datetime
 import pandas as pd
 import os
 import json
+import yaml
+import sys
+
+# Add the project root directory to Python path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from goldflipper.data.greeks.base import OptionData
+from goldflipper.data.greeks.delta import DeltaCalculator
+from goldflipper.data.greeks.gamma import GammaCalculator
+from goldflipper.data.greeks.theta import ThetaCalculator
+from goldflipper.data.greeks.vega import VegaCalculator
+from goldflipper.data.greeks.rho import RhoCalculator
 
 pd.set_option('display.max_rows', None)
 
+def load_settings():
+    """Load settings from yaml file."""
+    settings_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'settings.yaml')
+    with open(settings_path, 'r') as f:
+        return yaml.safe_load(f)
+
 def display_options_chain(chain_data):
-    """Display formatted options chain data."""
-    relevant_cols = ['strike', 'lastPrice', 'bid', 'ask', 'volume', 'impliedVolatility']
+    """Display formatted options chain data with configurable columns."""
+    settings = load_settings()
+    display_config = settings['market_data']['option_chain_display']
+    
+    # Combine default columns with Greeks if enabled
+    columns_to_display = display_config['default_columns']
+    if display_config['greeks']['enabled']:
+        columns_to_display.extend(display_config['greeks']['columns'])
+    
+    # Filter columns that exist in the data
+    available_columns = [col for col in columns_to_display if col in chain_data.columns]
+    
     print("\nOptions Chain:")
-    print(chain_data[relevant_cols].to_string(index=False))
+    print(chain_data[available_columns].to_string(index=False))
 
 def get_user_input():
     """Get user input for option parameters."""
-    ticker = input("Enter ticker symbol (e.g. SPY): ").upper()
-    stock = yf.Ticker(ticker)
-    
-    # Show available expiration dates
-    print("\nAvailable expiration dates:")
-    for i, date in enumerate(stock.options, 1):
-        print(f"{i}. {date}")
-    
-    date_choice = int(input("\nSelect expiration date number: ")) - 1
-    selected_date = stock.options[date_choice]
-    
-    # Get option type
-    option_type = input("\nEnter option type (call/put): ").lower()
-    while option_type not in ['call', 'put']:
-        option_type = input("Invalid! Enter 'call' or 'put': ").lower()
-        
-    return ticker, selected_date, option_type
+    while True:
+        try:
+            ticker = input("Enter ticker symbol (e.g. SPY) or press Enter to return to main menu: ").upper()
+            if not ticker:
+                return None, None, None
+                
+            stock = yf.Ticker(ticker)
+            available_dates = stock.options
+            
+            if not available_dates:
+                print(f"\nNo option data available for {ticker}")
+                continue
+            
+            # Show available expiration dates
+            print("\nAvailable expiration dates:")
+            for i, date in enumerate(stock.options, 1):
+                print(f"{i}. {date}")
+            
+            date_choice = input("\nSelect expiration date number (or press Enter to return to main menu): ")
+            if not date_choice:
+                return None, None, None
+                
+            try:
+                date_choice = int(date_choice) - 1
+                if not (0 <= date_choice < len(available_dates)):
+                    print("Invalid date selection")
+                    continue
+                selected_date = stock.options[date_choice]
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+                continue
+            
+            # Get option type
+            option_type = input("\nEnter option type (call/put) or press Enter to return to main menu: ").lower()
+            if not option_type:
+                return None, None, None
+                
+            if option_type not in ['call', 'put']:
+                print("Invalid option type")
+                continue
+                
+            return ticker, selected_date, option_type
+            
+        except Exception as e:
+            print(f"\nError occurred: {str(e)}")
+            print("Returning to main menu...")
+            return None, None, None
 
 def get_option_premium_data(ticker, expiration_date=None, strike_price=None, option_type='call'):
     """
@@ -146,43 +204,131 @@ def get_play_selection():
     print("Invalid selection, defaulting to manual input")
     return None
 
+def prepare_option_data(row, underlying_price, expiration_date, risk_free_rate=0.05) -> OptionData:
+    """Prepare option data for Greeks calculation."""
+    current_date = datetime.now()
+    expiry = datetime.strptime(expiration_date, '%Y-%m-%d')
+    time_to_expiry = (expiry - current_date).days / 365.0
+    
+    return OptionData(
+        underlying_price=underlying_price,
+        strike_price=float(row['strike']),
+        time_to_expiry=time_to_expiry,
+        risk_free_rate=risk_free_rate,
+        volatility=float(row['impliedVolatility']),
+        dividend_yield=0.0  # Could be made configurable in settings.yaml
+    )
+
+def calculate_greeks(options_data, underlying_price, expiration_date):
+    """Calculate Greeks for the options chain."""
+    # Initialize new columns for Greeks
+    options_data['delta'] = None
+    options_data['gamma'] = None
+    options_data['theta'] = None
+    options_data['vega'] = None
+    options_data['rho'] = None
+    
+    for idx, row in options_data.iterrows():
+        try:
+            # Prepare option data
+            option_data = prepare_option_data(row, underlying_price, expiration_date)
+            
+            # Calculate delta
+            delta_calculator = DeltaCalculator(option_data)
+            options_data.at[idx, 'delta'] = delta_calculator.calculate(row['option_type'])
+            
+            # Calculate gamma
+            gamma_calculator = GammaCalculator(option_data)
+            options_data.at[idx, 'gamma'] = gamma_calculator.calculate(row['option_type'])
+            
+            # Calculate theta
+            theta_calculator = ThetaCalculator(option_data)
+            options_data.at[idx, 'theta'] = theta_calculator.calculate(row['option_type'])
+            
+            # Calculate vega
+            vega_calculator = VegaCalculator(option_data)
+            options_data.at[idx, 'vega'] = vega_calculator.calculate(row['option_type'])
+            
+            # Calculate rho
+            rho_calculator = RhoCalculator(option_data)
+            options_data.at[idx, 'rho'] = rho_calculator.calculate(row['option_type'])
+            
+        except Exception as e:
+            logging.warning(f"Error calculating Greeks for strike {row['strike']}: {str(e)}")
+            continue
+            
+    return options_data
+
+def get_current_stock_price(stock):
+    """Get current stock price from yfinance."""
+    try:
+        return stock.info['currentPrice']
+    except (KeyError, AttributeError) as e:
+        raise Exception(f"Could not fetch stock price: {str(e)}")
+
 def main():
     """Main function to fetch and display option data."""
-    play_data = get_play_selection()
-    
-    if play_data:
-        # Extract data from selected play
-        data = play_data['data']
-        ticker = data['symbol']
-        expiration_date = datetime.strptime(data['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d')
-        strike_price = float(data['strike_price'])
-        option_type = data['trade_type'].lower()
-    else:
-        # Get manual input if no play selected
-        ticker, expiration_date, option_type = get_user_input()
-        strike_price = None
+    while True:
+        play_data = get_play_selection()
+        
+        if play_data:
+            try:
+                # Extract data from selected play
+                data = play_data['data']
+                ticker = data['symbol']
+                expiration_date = datetime.strptime(data['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d')
+                strike_price = float(data['strike_price'])
+                option_type = data['trade_type'].lower()
+            except Exception as e:
+                print(f"\nError processing play data: {str(e)}")
+                print("Please try again...")
+                continue
+        else:
+            # Get manual input if no play selected
+            input_data = get_user_input()
+            if input_data == (None, None, None):
+                print("\nReturning to main menu...")
+                return
+            ticker, expiration_date, option_type = input_data
 
-    try:
-        # Fetch data
-        stock = yf.Ticker(ticker)
-        chain = stock.option_chain(expiration_date)
-        
-        # Get appropriate chain
-        options_data = chain.calls if option_type == 'call' else chain.puts
-        
-        # Filter by strike if from play
-        if strike_price:
-            options_data = options_data[
-                (options_data['strike'] >= strike_price - 1) & 
-                (options_data['strike'] <= strike_price + 1)
-            ]
-        
-        # Display chain
-        display_options_chain(options_data)
+        try:
+            # Fetch data
+            stock = yf.Ticker(ticker)
+            chain = stock.option_chain(expiration_date)
             
-    except Exception as e:
-        logging.error(f"Error in main: {str(e)}")
-        print(f"An error occurred: {str(e)}")
+            # Get current stock price using the correct field
+            underlying_price = get_current_stock_price(stock)
+            
+            # Get appropriate chain
+            options_data = chain.calls if option_type == 'call' else chain.puts
+            options_data['option_type'] = option_type  # Add option type to dataframe
+            
+            # Filter by strike if from play
+            if play_data and strike_price:
+                options_data = options_data[
+                    (options_data['strike'] >= strike_price - 1) & 
+                    (options_data['strike'] <= strike_price + 1)
+                ]
+            
+            if options_data.empty:
+                print("\nNo matching options found")
+                continue
+            
+            # Calculate Greeks
+            options_data = calculate_greeks(options_data, underlying_price, expiration_date)
+            
+            # Display chain
+            display_options_chain(options_data)
+            
+            # Ask if user wants to fetch more data
+            choice = input("\nFetch more option data? (y/n): ").lower()
+            if choice != 'y':
+                break
+                
+        except Exception as e:
+            print(f"\nError fetching option data: {str(e)}")
+            print("Please try again...")
+            continue
 
 if __name__ == "__main__":
     main()
