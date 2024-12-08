@@ -6,13 +6,14 @@ from scipy.stats import norm
 
 @dataclass
 class OptionData:
-    """Data structure for option calculations"""
+    """Data structure for options calculations"""
     underlying_price: float
     strike_price: float
     time_to_expiry: float  # in years
     risk_free_rate: float
     volatility: float
     dividend_yield: float = 0.0
+    option_price: float = 0.0
 
 class GreeksCalculator:
     """Base class for calculating option Greeks"""

@@ -74,6 +74,7 @@ market_data:
       - impliedVolatility
     
     # Greeks display settings
+    # NOTE: only main 5 Greeks are displayed. Uncomment the ones you want to see.
     greeks:
       enabled: true
       columns:
@@ -82,6 +83,18 @@ market_data:
         - theta
         - vega
         - rho
+#        - elasticity
+#        - epsilon
+#        - vanna
+#        - charm
+#        - vomma
+#        - veta
+#        - vera
+#        - speed
+#        - zomma
+#        - color
+#        - ultima
+#        - parmicharma
 
   # Technical Indicators settings
   indicators:
@@ -91,10 +104,21 @@ market_data:
       period: 20
       bb_multiplier: 2.0
       kc_multiplier: 1.5
+    ema:
+      enabled: true
+      periods: [9, 21, 55, 200]
+    macd:
+      enabled: true
+      fast_period: 12
+      slow_period: 26
+      signal_period: 9
     columns:
       - squeeze_on
       - momentum
       - momentum_increasing
+      - ema_above_below
+      - ema_trends
+      - macd_signals
 
 # Strategy Settings
 # --------------------------------------------------
