@@ -1,0 +1,132 @@
+# ==================================================
+# GoldFlipper Configuration File
+# ==================================================
+# This YAML file contains all configurable settings for the GoldFlipper trading system.
+# All paths are relative to the project root directory unless specified as absolute.
+
+# Display Configuration Instructions:
+# --------------------------------------------------
+# \/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\\/\<<<<<<<<<<<
+# SIMPLE STOOPID INSTRUCTIONS: SIMPLY COMMENT OUT THE COLUMNS YOU DON'T WANT TO SEE !!!<<<<<<<<<<<<
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^<<<<<<<<<<<<
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^<<<<<<<<<<<<
+# To enable/disable columns in the option chain display:
+# 1. Under market_data.option_chain_display.default_columns:
+#    - Add or remove column names to show/hide basic option data
+#    - Available columns: strike, lastPrice, bid, ask, volume, impliedVolatility
+#
+# 2. Under market_data.option_chain_display.greeks:
+#    - Set enabled: true/false to show/hide all Greeks
+#    - Under columns: add or remove specific Greeks to display
+#    - Available Greeks: delta, gamma, theta, vega, rho
+#
+# Example:
+# market_data:
+#   option_chain_display:
+#     default_columns:        # Show only these basic columns
+#       - strike
+#       - lastPrice
+#       - bid
+#       - ask
+#     greeks:
+#       enabled: true        # Enable Greeks display
+#       columns:            # Show only these Greeks
+#         - delta
+#         - theta
+
+# Alpaca API Settings
+# --------------------------------------------------
+alpaca:
+  api_key: 'PKJTEWFLB1XI1Y4BS6WW'     # Your Alpaca API key
+  secret_key: 'cNodK08udpSEk3JwA3l45Rqlsa4NNBgzyzafyWvf'  # Your Alpaca secret key
+  base_url: 'https://paper-api.alpaca.markets'  # Alpaca API endpoint (paper/live)
+
+# Data Paths
+# --------------------------------------------------
+# All paths are relative to project root
+paths:
+  data_dir: 'data'                    # Main data directory
+  raw_data_dir: 'data/raw'           # Raw market data storage
+  processed_data_dir: 'data/processed'  # Processed data storage
+  log_dir: 'logs'                    # Directory for log files
+  log_file: 'logs/app.log'           # Main application log file
+
+# Trading Parameters
+# --------------------------------------------------
+trading:
+  default_symbol: 'SPY'              # Default trading symbol
+  default_quantity: 100              # Default contract quantity
+
+# Market Data Settings
+# --------------------------------------------------
+market_data:
+  interval: "1m"                     # Data granularity (1m = 1 minute)
+  period: "1d"                       # Data fetch period (1d = 1 day)
+  
+  # Option chain display settings
+  option_chain_display:
+    default_columns:
+      - strike
+      - lastPrice
+      - bid
+      - ask
+      - volume
+      - impliedVolatility
+    
+    # Greeks display settings
+    greeks:
+      enabled: true
+      columns:
+        - delta
+        - gamma
+        - theta
+        - vega
+        - rho
+
+  # Technical Indicators settings
+  indicators:
+    enabled: true
+    ttm_squeeze:
+      enabled: true
+      period: 20
+      bb_multiplier: 2.0
+      kc_multiplier: 1.5
+    columns:
+      - squeeze_on
+      - momentum
+      - momentum_increasing
+
+# Strategy Settings
+# --------------------------------------------------
+entry_strategy:
+  buffer: 0.05                       # Price buffer for entry points (±$0.05)
+
+# Position Management
+# --------------------------------------------------
+monitoring:
+  max_retries: 3                     # Maximum retry attempts for operations
+  retry_delay: 2                     # Delay between retries (seconds)
+  polling_interval: 30               # Time between position checks (seconds)
+
+# Order Settings
+# --------------------------------------------------
+orders:
+  limit_buy:
+    price_buffer: 0.25               # Buffer for limit order prices (25%) (NOT USED)
+
+# File Operations
+# --------------------------------------------------
+# Directories for play file management
+file_paths:
+  plays_dir: "plays"                 # Root directory for all play files
+  new_dir: "new"                     # New/pending plays
+  open_dir: "open"                   # Currently active plays
+  closed_dir: "closed"               # Completed plays
+  expired_dir: "expired"             # Expired plays
+  temp_dir: "temp"                   # Temporary play storage
+
+# Logging Configuration
+# --------------------------------------------------
+logging:
+  level: "INFO"                      # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  format: "%(asctime)s - %(levelname)s - %(message)s"  # Log message format
