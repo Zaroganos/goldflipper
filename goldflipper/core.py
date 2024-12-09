@@ -2,7 +2,7 @@ import os
 import logging
 import time
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import yfinance as yf
 from goldflipper.json_parser import load_play
@@ -18,6 +18,7 @@ from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 import json
 from goldflipper.tools.option_data_fetcher import calculate_greeks
+import gc
 
 
 # ==================================================
@@ -689,6 +690,112 @@ def validate_play_order_types(play):
 # ==================================================
 # Monitor the plays directory continuously and execute plays as conditions are met.
 
+def get_sleep_interval(minutes_to_open):
+    """Return appropriate sleep interval based on time to market open."""
+    if minutes_to_open > 240:    # More than 4 hours
+        return 600               # Check every 10 minutes
+    elif minutes_to_open > 120:  # More than 2 hours
+        return 300               # Check every 5 minutes
+    elif minutes_to_open > 30:   # More than 30 minutes
+        return 120               # Check every 2 minutes
+    elif minutes_to_open > 5:    # More than 5 minutes
+        return 60                # Check every minute
+    else:
+        return 30                # Check every 30 seconds when close to open
+
+MAX_RETRIES = 3
+
+def validate_market_hours():
+    """
+    Validate if current time is within configured market hours.
+    Returns True if trading should proceed, False if should pause.
+    """
+    # Skip validation if disabled in settings
+    if not config.get('market_hours', 'enabled', default=True):
+        return True
+        
+    # Get configured timezone with error handling
+    try:
+        market_tz = ZoneInfo(config.get('market_hours', 'timezone', default='America/New_York'))
+    except Exception as e:
+        logging.error(f"Invalid timezone configuration: {e}. Defaulting to America/New_York")
+        market_tz = ZoneInfo('America/New_York')
+    
+    current_time = datetime.now(market_tz)
+    current_time_only = current_time.time()
+    
+    # Check for weekends first
+    if current_time.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+        next_market_day = current_time + timedelta(days=(7 - current_time.weekday()))
+        try:
+            start_time = config.get('market_hours', 'regular_hours', 'start', default='09:30')
+            next_market_day = next_market_day.replace(
+                hour=int(start_time.split(':')[0]),
+                minute=int(start_time.split(':')[1]),
+                second=0
+            )
+        except (ValueError, AttributeError) as e:
+            logging.error(f"Invalid market start time format: {e}. Using default 09:30")
+            next_market_day = next_market_day.replace(hour=9, minute=30, second=0)
+            
+        wait_hours = (next_market_day - current_time).total_seconds() / 3600
+        logging.info(f"Market is closed for the weekend. Current time in {market_tz}: {current_time_only}")
+        logging.info(f"Next market open in approximately {int(wait_hours)} hours")
+        return False, int(wait_hours * 60)  # Return minutes to next open
+    
+    # Get market hours with error handling
+    try:
+        market_open = datetime.strptime(config.get('market_hours', 'regular_hours', 'start', default='09:30'), '%H:%M').time()
+        market_close = datetime.strptime(config.get('market_hours', 'regular_hours', 'end', default='16:00'), '%H:%M').time()
+    except ValueError as e:
+        logging.error(f"Invalid time format in configuration: {e}. Using default market hours")
+        market_open = datetime.strptime('09:30', '%H:%M').time()
+        market_close = datetime.strptime('16:00', '%H:%M').time()
+    
+    # Check if within regular market hours
+    is_market_open = market_open <= current_time_only <= market_close
+    
+    # Handle extended hours if enabled
+    if not is_market_open and config.get('market_hours', 'extended_hours', 'enabled', default=False):
+        try:
+            pre_market = datetime.strptime(config.get('market_hours', 'extended_hours', 'pre_market_start', default='04:00'), '%H:%M').time()
+            after_market = datetime.strptime(config.get('market_hours', 'extended_hours', 'after_market_end', default='20:00'), '%H:%M').time()
+            is_market_open = pre_market <= current_time_only <= after_market
+        except ValueError as e:
+            logging.error(f"Invalid extended hours format: {e}. Using default extended hours")
+            pre_market = datetime.strptime('04:00', '%H:%M').time()
+            after_market = datetime.strptime('20:00', '%H:%M').time()
+            is_market_open = pre_market <= current_time_only <= after_market
+    
+    if not is_market_open:
+        next_open = datetime.combine(current_time.date(), market_open)
+        if current_time_only > market_close:
+            next_open += timedelta(days=1)
+        elif current_time_only < market_open:
+            # Already on the correct day, no adjustment needed
+            pass
+        wait_minutes = int((next_open - current_time).total_seconds() / 60)
+        
+        logging.info(f"Market is closed. Current time in {market_tz}: {current_time_only}")
+        logging.info(f"Next market open in approximately {wait_minutes} minutes")
+        return False, wait_minutes
+        
+    logging.debug(f"Validating market hours at {datetime.now()}")
+    logging.info(f"Market is open. Current time in {market_tz}: {current_time_only}")
+    return True, 0
+
+def is_market_holiday(date):
+    """Check if given date is a US market holiday."""
+    holidays = [
+        (1, 1),    # New Year's Day
+        (1, 16),   # Martin Luther King Jr. Day (3rd Monday in January)
+        (2, 20),   # Presidents Day (3rd Monday in February)
+        (5, 29),   # Memorial Day (Last Monday in May)
+        (7, 4),    # Independence Day
+        (12, 25),  # Christmas
+    ]
+    return (date.month, date.day) in holidays
+
 def monitor_plays_continuously():
     plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plays'))
     
@@ -696,6 +803,13 @@ def monitor_plays_continuously():
 
     while True:
         try:
+            # Check market hours before processing
+            is_open, minutes_to_open = validate_market_hours()
+            if not is_open:
+                sleep_time = get_sleep_interval(minutes_to_open)
+                time.sleep(sleep_time)
+                continue
+                
             logging.info("\n" + "="*50)
             logging.info("Checking for new and open plays...")
 

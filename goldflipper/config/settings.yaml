@@ -154,3 +154,16 @@ file_paths:
 logging:
   level: "INFO"                      # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
   format: "%(asctime)s - %(levelname)s - %(message)s"  # Log message format
+
+# Market Hours Settings
+# --------------------------------------------------
+market_hours:
+  enabled: true                    # Enable/disable market hours validation
+  timezone: "America/New_York"     # Market timezone
+  regular_hours:
+    start: "09:30"                # Regular market open (HH:MM)
+    end: "16:00"                  # Regular market close (HH:MM)
+  extended_hours:
+    enabled: false                # Enable/disable extended hours trading
+    pre_market_start: "04:00"     # Pre-market start (HH:MM)
+    after_market_end: "20:00"     # After-market end (HH:MM)
