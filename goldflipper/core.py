@@ -299,17 +299,58 @@ def close_position(play):
         return False
 
     qty = play.get('contracts', 1)  # Default to 1 if not specified
-
-    logging.info(f"Attempting to close position: {qty} contracts of {contract_symbol}")
-
+    
     try:
-        # Convert qty to string as ClosePositionRequest expects a string
-        close_req = ClosePositionRequest(qty=str(qty))
-        response = client.close_position(
-            symbol_or_asset_id=contract_symbol,
-            close_options=close_req
-        )
-        logging.info(f"Successfully closed position: {qty} contracts of {contract_symbol}")
+        # Get current stock price using yfinance
+        current_stock_price = yf.Ticker(play['symbol']).info.get('regularMarketPrice')
+        current_premium = get_current_option_premium(play)
+        
+        # Check if this is a TP or SL closure by checking conditions
+        is_tp = False
+        if play['take_profit'].get('stock_price') is not None and current_stock_price is not None:
+            is_tp = current_stock_price >= play['take_profit']['stock_price']
+        if play['take_profit'].get('premium_pct') is not None and current_premium is not None:
+            is_tp = is_tp or (current_premium >= play['take_profit']['TP_option_prem'])
+        
+        # Handle limit orders
+        if (is_tp and play['take_profit'].get('order_type') == 'limit') or \
+           (not is_tp and play['stop_loss'].get('order_type') == 'limit'):
+            
+            if is_tp:
+                limit_price = play['take_profit'].get('TP_option_prem')
+                logging.info(f"Take Profit triggered - Using TP premium target: ${limit_price:.4f}")
+            else:
+                limit_price = play['stop_loss'].get('SL_option_prem')
+                logging.info(f"Stop Loss triggered - Using SL premium target: ${limit_price:.4f}")
+            
+            if limit_price is None:
+                limit_price = current_premium
+                logging.info(f"Using current premium as limit price: ${limit_price:.4f}")
+            
+            # Round limit price to 2 decimal places
+            limit_price = round(float(limit_price), 2)
+            logging.info(f"Rounded limit price to: ${limit_price:.2f}")
+            
+            order_req = LimitOrderRequest(
+                symbol=contract_symbol,
+                qty=qty,
+                limit_price=limit_price,
+                side=OrderSide.SELL,
+                type=OrderType.LIMIT,
+                time_in_force=TimeInForce.DAY
+            )
+            logging.info(f"Creating limit sell order with limit price: ${limit_price:.2f}")
+            response = client.submit_order(order_req)
+        
+        # Handle market orders using ClosePositionRequest
+        else:
+            response = client.close_position(
+                symbol_or_asset_id=contract_symbol,
+                close_options=ClosePositionRequest(qty=str(qty))
+            )
+            logging.info(f"Creating market sell order via ClosePositionRequest for {'TP' if is_tp else 'SL'}")
+            
+        logging.info(f"Successfully submitted close order: {response}")
         return True
     except APIError as api_err:
         logging.error(f"API Error closing position for {contract_symbol}: {api_err}")
@@ -327,33 +368,61 @@ def monitor_and_manage_position(play, play_file):
     if not contract_symbol or not underlying_symbol:
         logging.error("Missing required symbols")
         return False
-        
-    using_stock_price = play['take_profit'].get('stock_price') is not None
+
+    # Get current market data
+    market_data = None
+    current_premium = None
     
-    while True:
-        try:
-            position = client.get_open_position(contract_symbol)
-            if position is None:
-                logging.info(f"Position {contract_symbol} closed.")
-                break
-                
-            if using_stock_price:
-                current_price = float(client.get_latest_trade(underlying_symbol).price)
-                market_data = pd.DataFrame({'Close': [current_price]})
-            else:
-                market_data = pd.DataFrame({'Close': [get_current_option_premium(play)]})
-                
-            if evaluate_closing_strategy(underlying_symbol, market_data, play):
-                logging.info("Closing conditions met")
-                if close_position(play):
-                    move_play_to_closed(play_file)
-                break
-                
-            time.sleep(10)
-            
-        except Exception as e:
-            logging.error(f"Error monitoring position: {e}")
-            break
+    # Check if we need stock price monitoring
+    if play['take_profit'].get('stock_price') is not None or play['stop_loss'].get('stock_price') is not None:
+        market_data = get_market_data(underlying_symbol)  # Use existing get_market_data function
+        if market_data is None:
+            logging.error(f"Failed to get market data for {underlying_symbol}")
+            return False
+        current_price = market_data['Close'].iloc[-1]
+        logging.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
+
+    # Check if we need premium monitoring
+    if play['take_profit'].get('premium_pct') is not None or play['stop_loss'].get('premium_pct') is not None:
+        current_premium = get_current_option_premium(play)
+        if current_premium is None:
+            logging.error("Failed to get current option premium.")
+            return False
+        if market_data is None:
+            market_data = pd.DataFrame({'Close': [current_premium]})
+        logging.info(f"Current option premium for {contract_symbol}: ${current_premium:.4f}")
+
+        # Log premium targets if using limit orders
+        if play['take_profit'].get('order_type') == 'limit' and play['take_profit'].get('TP_option_prem'):
+            logging.info(f"TP limit order target: ${play['take_profit']['TP_option_prem']:.4f}")
+        if play['stop_loss'].get('order_type') == 'limit' and play['stop_loss'].get('SL_option_prem'):
+            logging.info(f"SL limit order target: ${play['stop_loss']['SL_option_prem']:.4f}")
+
+    # Verify position is still open
+    position = client.get_open_position(contract_symbol)
+    if position is None:
+        logging.info(f"Position {contract_symbol} closed.")
+        return True
+
+    # Evaluate closing conditions
+    if evaluate_closing_strategy(underlying_symbol, market_data, play):
+        close_attempts = 0
+        max_attempts = 3
+        
+        while close_attempts < max_attempts:
+            logging.info(f"Attempting to close position: Attempt {close_attempts + 1}")
+            if close_position(play):
+                move_play_to_closed(play_file)
+                logging.info("Position closed successfully")
+                return True
+            close_attempts += 1
+            logging.warning(f"Close attempt {close_attempts} failed. Retrying...")
+            time.sleep(2)
+        
+        logging.error("Failed to close position after maximum attempts")
+        return False
+
+    return True
 
 # ==================================================
 # 5. MOVE PLAY TO APPROPRIATE FOLDER
