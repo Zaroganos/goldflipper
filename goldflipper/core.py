@@ -17,6 +17,7 @@ from alpaca.trading.requests import (
 from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 import json
+from goldflipper.tools.option_data_fetcher import calculate_greeks
 
 
 # ==================================================
@@ -183,7 +184,7 @@ def save_play(play, play_file):
 def evaluate_opening_strategy(symbol, market_data, play):
     logging.info(f"Evaluating opening strategy for {symbol} using play data...")
 
-    entry_point = play.get("entry_point", 0)
+    entry_point = play.get("entry_point", {}).get("stock_price", 0)
     last_price = market_data["Close"].iloc[-1]
     trade_type = play.get("trade_type", "").upper()
 
@@ -319,18 +320,32 @@ def open_position(play, play_file):
         logging.error("Failed to get current option premium. Aborting order placement.")
         return False
         
-    # Store the entry premium in the play data
-    play['entry_premium'] = current_premium
+    # Store the entry premium in the play data's entry_point object
+    if 'entry_point' not in play:
+        play['entry_point'] = {}
+    play['entry_point']['entry_premium'] = current_premium
     logging.info(f"Entry premium: ${current_premium:.4f}")
         
     # Calculate and store TP/SL levels if using premium percentages
     calculate_and_store_premium_levels(play, current_premium)
     
-    logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
+    # Capture Greeks
+    delta, theta = capture_greeks(play, current_premium)
     
+    # Initialize logging section if it doesn't exist
+    if 'logging' not in play:
+        play['logging'] = {}
+    
+    # Store Greeks
+    play['logging']['delta_atOpen'] = delta
+    play['logging']['theta_atOpen'] = theta
+    
+    logging.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
+    
+    logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
     try:
         # Create appropriate order request based on order type
-        if play.get('entry_order_type') == 'limit':
+        if play.get('entry_point', {}).get('order_type') == 'limit':
             order_req = LimitOrderRequest(
                 symbol=contract.symbol,
                 qty=play['contracts'],
@@ -504,6 +519,14 @@ def monitor_and_manage_position(play, play_file):
 
 # Move to NEW (for OTO triggered plays)
 def move_play_to_new(play_file):
+    # Update status in JSON
+    with open(play_file, 'r') as f:
+        play_data = json.load(f)
+    play_data['status'] = 'new'
+    with open(play_file, 'w') as f:
+        json.dump(play_data, f, indent=4)
+    
+    # Existing move logic
     new_dir = os.path.join(os.path.dirname(play_file), '..', 'new')
     os.makedirs(new_dir, exist_ok=True)
     new_path = os.path.join(new_dir, os.path.basename(play_file))
@@ -512,6 +535,14 @@ def move_play_to_new(play_file):
 
 # Move to OPEN (for plays whose BUY condition has hit)
 def move_play_to_open(play_file):
+    # Update status in JSON
+    with open(play_file, 'r') as f:
+        play_data = json.load(f)
+    play_data['status'] = 'open'
+    with open(play_file, 'w') as f:
+        json.dump(play_data, f, indent=4)
+    
+    # Existing move logic
     open_dir = os.path.join(os.path.dirname(play_file), '..', 'open')
     os.makedirs(open_dir, exist_ok=True)
     new_path = os.path.join(open_dir, os.path.basename(play_file))
@@ -520,6 +551,14 @@ def move_play_to_open(play_file):
 
 # Move to CLOSED (for plays whose TP or SL condition has hit)
 def move_play_to_closed(play_file):
+    # Update status in JSON
+    with open(play_file, 'r') as f:
+        play_data = json.load(f)
+    play_data['status'] = 'closed'
+    with open(play_file, 'w') as f:
+        json.dump(play_data, f, indent=4)
+    
+    # Existing move logic
     closed_dir = os.path.join(os.path.dirname(play_file), '..', 'closed')
     os.makedirs(closed_dir, exist_ok=True)
     new_path = os.path.join(closed_dir, os.path.basename(play_file))
@@ -528,6 +567,14 @@ def move_play_to_closed(play_file):
 
 # Move to EXPIRED (for plays which have expired, and OCO triggered plays)
 def move_play_to_expired(play_file):
+    # Update status in JSON
+    with open(play_file, 'r') as f:
+        play_data = json.load(f)
+    play_data['status'] = 'expired'
+    with open(play_file, 'w') as f:
+        json.dump(play_data, f, indent=4)
+
+    # Existing move logic
     expired_dir = os.path.join(os.path.dirname(play_file), '..', 'expired')
     os.makedirs(expired_dir, exist_ok=True)
     new_path = os.path.join(expired_dir, os.path.basename(play_file))
@@ -726,6 +773,48 @@ def monitor_plays_continuously():
             logging.error(f"An error occurred during play monitoring: {e}")
 
         time.sleep(30)  # Wait for 30 seconds before re-evaluating
+
+# ==================================================
+# 8. ANCILLARY FUNCTIONS
+# ==================================================
+# Functions to support the main trade execution flow.
+
+def capture_greeks(play, current_premium):
+    """Capture Delta and Theta values for the option play at position opening"""
+    try:
+        # Format expiration date for yfinance
+        expiration_date = datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d')
+        
+        # Get market data using existing yfinance setup
+        stock = yf.Ticker(play['symbol'])
+        chain = stock.option_chain(expiration_date)
+        underlying_price = stock.info['regularMarketPrice']
+        
+        # Get appropriate chain and prepare data
+        options_data = chain.calls if play['trade_type'].lower() == 'call' else chain.puts
+        options_data['option_type'] = play['trade_type'].lower()
+        
+        # Filter for our specific strike
+        strike = float(play['strike_price'])
+        filtered_data = options_data[options_data['strike'] == strike]
+        
+        if filtered_data.empty:
+            logging.error(f"No matching option found for strike {strike}")
+            return None, None
+            
+        # Use existing calculate_greeks function from option_data_fetcher
+        greeks_data = calculate_greeks(filtered_data, underlying_price, expiration_date)
+        
+        if not greeks_data.empty:
+            delta = greeks_data.iloc[0]['delta']
+            theta = greeks_data.iloc[0]['theta']
+            return delta, theta
+            
+        return None, None
+        
+    except Exception as e:
+        logging.error(f"Error capturing Greeks: {e}")  # Updated error message
+        return None, None
 
 if __name__ == "__main__":
     monitor_plays_continuously()

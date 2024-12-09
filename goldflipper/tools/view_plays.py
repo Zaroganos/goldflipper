@@ -59,7 +59,8 @@ class PlayCard(Widget):
         with Horizontal():
             data = self.play['data']
             name = data.get('play_name', 'N/A')
-            entry_price = float(data.get('entry_point', 0.00))
+            entry_point = data.get('entry_point', {})
+            entry_price = float(entry_point.get('stock_price', 0.00))
             strike_price = data.get('strike_price', 'N/A')
             
             # Handle both price formats

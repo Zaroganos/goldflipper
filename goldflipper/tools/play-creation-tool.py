@@ -89,10 +89,10 @@ def create_option_contract_symbol(symbol, expiration_date, strike_price, trade_t
 
     return final_symbol
 
-def get_condition_type_choice():
-    """Get user's choice for condition type."""
+def get_price_condition_type():
+    """Get user's choice for price condition type (stock price vs premium %)."""
     return get_input(
-        "Please choose condition type:\n"
+        "Please choose price condition type:\n"
         "1. Stock price only\n"
         "2. Option premium % only\n"
         "3. Both stock price and option premium %\n"
@@ -134,6 +134,20 @@ def get_order_type_choice(is_stop_loss=False, transaction_type=""):
     # If optional input is skipped (None returned), default to 2 (limit)
     return 'market' if choice == 1 else 'limit'
 
+def get_sl_type_choice():
+    """Get user's choice for stop loss execution type (STOP/LIMIT/CONTINGENCY)."""
+    print("\nSelect Stop Loss Type:")
+    print("1. Stop (market order when price is hit)")
+    print("2. Limit (limit order when price is hit)")
+    print("3. Contingency (limit order with backup market order)")
+    
+    return get_input(
+        "Choice (1/2/3): ",
+        int,
+        validation=lambda x: x in [1, 2, 3],
+        error_message="Please enter 1 for 'Stop' (Market Order), 2 for 'Limit' (Limit Order), or 3 for 'Contingency' (Limit Order with added safety Market Order)."
+    )
+
 def create_play():
     """
     Interactive tool to create a play for options trading, following the minimal template.
@@ -155,11 +169,14 @@ def create_play():
             error_message="Invalid trade type. Please enter 'CALL' or 'PUT'."
         ).upper()
 
-        play['entry_point'] = get_input(
-            "Enter the entry price (stock price): ",
+        # Entry point setup
+        play['entry_point'] = {}
+        play['entry_point']['stock_price'] = get_input(
+            "Enter the entry stock price: ",
             float,
             error_message="Please enter a valid number for the entry price."
         )
+        play['entry_point']['order_type'] = get_order_type_choice(transaction_type="Entry")
 
         # Save strike price as a string
         play['strike_price'] = str(get_input(
@@ -214,15 +231,12 @@ def create_play():
             play['play_name'] = default_name
             filename = default_name + ".json"
 
-        # Entry order type
-        play['entry_order_type'] = get_order_type_choice(transaction_type="Entry")
-        
         # Take profit section
-        print("\nSetting Take Profit conditions...")
-        tp_type = get_condition_type_choice()
+        print("\nSetting Take Profit parameters...")
+        tp_price_type = get_price_condition_type()
         play['take_profit'] = {'stock_price': None, 'premium_pct': None, 'order_type': 'market'}
         
-        if tp_type in [1, 3]:  # Stock price or both
+        if tp_price_type in [1, 3]:  # Stock price or both
             tp_stock_price = get_input(
                 "Enter take profit stock price: ",
                 float,
@@ -231,7 +245,7 @@ def create_play():
             )
             play['take_profit']['stock_price'] = tp_stock_price
 
-        if tp_type in [2, 3]:  # Premium % or both
+        if tp_price_type in [2, 3]:  # Premium % or both
             tp_premium_pct = get_premium_percentage()
             play['take_profit']['premium_pct'] = tp_premium_pct
         
@@ -239,25 +253,74 @@ def create_play():
         play['take_profit']['order_type'] = get_order_type_choice(transaction_type="Take Profit")
 
         # Stop loss section
-        print("\nSetting Stop Loss conditions...")
-        sl_type = get_condition_type_choice()
-        play['stop_loss'] = {'stock_price': None, 'premium_pct': None, 'order_type': 'market'}
+        print("\nSetting Stop Loss parameters...")
+        sl_price_type = get_price_condition_type()
+        play['stop_loss'] = {
+            'stock_price': None, 
+            'premium_pct': None, 
+            'SL_type': None,
+            'order_type': None
+        }
         
-        if sl_type in [1, 3]:  # Stock price or both
-            sl_stock_price = get_input(
-                "Enter stop loss stock price: ",
-                float,
-                validation=lambda x: x > 0,
-                error_message="Please enter a valid positive number for the stop loss stock price."
-            )
-            play['stop_loss']['stock_price'] = sl_stock_price
+        # Get SL type first as it affects how many conditions we need
+        sl_type_choice = get_sl_type_choice()
+        play['stop_loss']['SL_type'] = (
+            'STOP' if sl_type_choice == 1 else
+            'LIMIT' if sl_type_choice == 2 else
+            'CONTINGENCY'
+        )
+        
+        # Handle stop loss conditions based on SL_type and price_type
+        if play['stop_loss']['SL_type'] in ['STOP', 'LIMIT']:
+            # Single set of conditions
+            if sl_price_type in [1, 3]:  # Stock price or both
+                sl_stock_price = get_input(
+                    "Enter stop loss stock price: ",
+                    float,
+                    validation=lambda x: x > 0,
+                    error_message="Please enter a valid positive number for the stop loss stock price."
+                )
+                play['stop_loss']['stock_price'] = sl_stock_price
 
-        if sl_type in [2, 3]:  # Premium % or both
-            sl_premium_pct = get_premium_percentage()
-            play['stop_loss']['premium_pct'] = sl_premium_pct
+            if sl_price_type in [2, 3]:  # Premium % or both
+                sl_premium_pct = get_premium_percentage()
+                play['stop_loss']['premium_pct'] = sl_premium_pct
+                
+        else:  # CONTINGENCY type needs two sets of conditions
+            if sl_price_type in [1, 3]:  # Stock price or both
+                print("\nEnter main stop loss conditions:")
+                main_sl_price = get_input(
+                    "Enter main stop loss stock price: ",
+                    float,
+                    validation=lambda x: x > 0,
+                    error_message="Please enter a valid positive number for the main stop loss stock price."
+                )
+                print("\nEnter backup/safety stop loss conditions:")
+                backup_sl_price = get_input(
+                    "Enter backup stop loss stock price: ",
+                    float,
+                    validation=lambda x: x > 0,
+                    error_message="Please enter a valid positive number for the backup stop loss stock price."
+                )
+                play['stop_loss']['stock_price'] = [main_sl_price, backup_sl_price]
+
+            if sl_price_type in [2, 3]:  # Premium % or both
+                print("\nEnter main stop loss conditions:") if sl_price_type == 2 else None
+                main_sl_prem = get_premium_percentage()
+                print("\nEnter backup/safety stop loss conditions:") if sl_price_type == 2 else None
+                backup_sl_prem = get_premium_percentage()
+                play['stop_loss']['premium_pct'] = [main_sl_prem, backup_sl_prem]
         
-        # Stop loss order type
-        play['stop_loss']['order_type'] = get_order_type_choice(is_stop_loss=True, transaction_type="Stop Loss")
+        # Set order type(s) based on SL_type
+        if play['stop_loss']['SL_type'] == 'STOP':
+            play['stop_loss']['order_type'] = 'market'
+        elif play['stop_loss']['SL_type'] == 'LIMIT':
+            play['stop_loss']['order_type'] = get_order_type_choice(
+                is_stop_loss=True, 
+                transaction_type="Stop Loss"
+            )
+        else:  # CONTINGENCY
+            play['stop_loss']['order_type'] = ['limit', 'market']  # Always this combination for contingency
 
         play['play_expiration_date'] = get_input(
             f"Enter the play's expiration date (MM/DD/YYYY), or press Enter to make it {play['expiration_date']} by default.): ",
@@ -303,11 +366,13 @@ def create_play():
 
         play['creation_date'] = datetime.now().strftime('%Y-%m-%d')  # Automatically populate play's creation date
 
-        # Update the plays directory path
+        # Update the plays directory path and add status field
         if play['play_class'] == 'OTO':
             plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp')
+            play['status'] = 'temp'
         else:
             plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'new')
+            play['status'] = 'new'
         os.makedirs(plays_dir, exist_ok=True)
 
         filepath = os.path.join(plays_dir, filename)

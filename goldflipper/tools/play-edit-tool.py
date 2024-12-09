@@ -401,7 +401,7 @@ def edit_play_field(play_data, field, filepath):
             error_message="Please enter a valid number for the entry price."
         )
         if new_value is not None:
-            play_data['entry_point'] = new_value
+            play_data['entry_point']['stock_price'] = new_value
 
     elif field == 'strike_price':
         new_value = get_input(
