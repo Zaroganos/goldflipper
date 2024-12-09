@@ -23,6 +23,8 @@
     "SL_type": "STOP or LIMIT or CONTINGENCY",
     "stock_price": 0.0,
     "premium_pct": 25.0,
+    "contingency_stock_price": 0.0,
+    "contingency_premium_pct": 25.0,
     "order_type": "market or limit, or array with both if type is contingency",
     "SL_option_prem": null
   },

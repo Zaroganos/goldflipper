@@ -18,7 +18,6 @@ from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 import json
 from goldflipper.tools.option_data_fetcher import calculate_greeks
-import gc
 
 
 # ==================================================
@@ -768,12 +767,16 @@ def validate_market_hours():
             is_market_open = pre_market <= current_time_only <= after_market
     
     if not is_market_open:
+        # Create next_open datetime with timezone awareness
         next_open = datetime.combine(current_time.date(), market_open)
+        next_open = next_open.replace(tzinfo=market_tz)
+        
         if current_time_only > market_close:
             next_open += timedelta(days=1)
         elif current_time_only < market_open:
             # Already on the correct day, no adjustment needed
             pass
+            
         wait_minutes = int((next_open - current_time).total_seconds() / 60)
         
         logging.info(f"Market is closed. Current time in {market_tz}: {current_time_only}")
