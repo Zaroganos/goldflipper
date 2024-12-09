@@ -74,7 +74,8 @@ def get_market_data(symbol):
         data = yf.download(
             symbol,
             period=config.get('market_data', 'period', default='1d'),
-            interval=config.get('market_data', 'interval', default='1m')
+            interval=config.get('market_data', 'interval', default='1m'),
+            timeout=None  # Remove timeout limit
         )
         logging.info(f"Market data for {symbol} fetched successfully.")
         
