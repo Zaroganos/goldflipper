@@ -37,8 +37,8 @@
 # Alpaca API Settings
 # --------------------------------------------------
 alpaca:
-  api_key: 'PKJTEWFLB1XI1Y4BS6WW'     # Your Alpaca API key
-  secret_key: 'cNodK08udpSEk3JwA3l45Rqlsa4NNBgzyzafyWvf'  # Your Alpaca secret key
+  api_key: 'PKCBGN33W2QQDYIT7GIY'     # Your Alpaca API key
+  secret_key: 'OeeFoeeDLFBqvo8l88V8hvTMi49JNzyUJmgBQlqO'  # Your Alpaca secret key
   base_url: 'https://paper-api.alpaca.markets'  # Alpaca API endpoint (paper/live)
 
 # Data Paths
