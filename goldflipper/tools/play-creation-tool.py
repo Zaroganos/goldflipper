@@ -139,14 +139,35 @@ def get_sl_type_choice():
     print("\nSelect Stop Loss Type:")
     print("1. Stop (market order when price is hit)")
     print("2. Limit (limit order when price is hit)")
-    print("3. Contingency (limit order with backup market order)")
+    print("3. Contingency (primary limit order with backup market order at a worse price)")
     
     return get_input(
         "Choice (1/2/3): ",
         int,
         validation=lambda x: x in [1, 2, 3],
-        error_message="Please enter 1 for 'Stop' (Market Order), 2 for 'Limit' (Limit Order), or 3 for 'Contingency' (Limit Order with added safety Market Order)."
+        error_message="Please enter 1 for 'Stop' (Market Order), 2 for 'Limit' (Limit Order), or 3 for 'Contingency' (Primary Limit Order with backup Market Order)."
     )
+
+def validate_contingency_prices(main_price, backup_price, is_stock_price, trade_type):
+    """
+    Validate that the backup price is worse than the main price.
+    
+    Args:
+        main_price (float): Primary stop loss price
+        backup_price (float): Backup/safety stop loss price
+        is_stock_price (bool): True if validating stock prices, False for premium percentages
+        trade_type (str): 'CALL' or 'PUT'
+    
+    Returns:
+        bool: True if valid, False if invalid
+    """
+    if is_stock_price:
+        if trade_type == 'CALL':
+            return backup_price < main_price  # Lower stock price is worse for calls
+        else:  # PUT
+            return backup_price > main_price  # Higher stock price is worse for puts
+    else:  # Premium percentage
+        return backup_price > main_price  # Higher percentage means bigger loss
 
 def create_play():
     """
@@ -256,10 +277,13 @@ def create_play():
         print("\nSetting Stop Loss parameters...")
         sl_price_type = get_price_condition_type()
         play['stop_loss'] = {
-            'stock_price': None, 
-            'premium_pct': None, 
             'SL_type': None,
-            'order_type': None
+            'stock_price': None,
+            'premium_pct': None,
+            'contingency_stock_price': None,
+            'contingency_premium_pct': None,
+            'order_type': None,
+            'SL_option_prem': None  # Keeping this from template
         }
         
         # Get SL type first as it affects how many conditions we need
@@ -289,28 +313,46 @@ def create_play():
         else:  # CONTINGENCY type needs two sets of conditions
             if sl_price_type in [1, 3]:  # Stock price or both
                 print("\nEnter main stop loss conditions:")
-                main_sl_price = get_input(
+                main_stock_price = get_input(
                     "Enter main stop loss stock price: ",
                     float,
                     validation=lambda x: x > 0,
                     error_message="Please enter a valid positive number for the main stop loss stock price."
                 )
-                print("\nEnter backup/safety stop loss conditions:")
-                backup_sl_price = get_input(
-                    "Enter backup stop loss stock price: ",
-                    float,
-                    validation=lambda x: x > 0,
-                    error_message="Please enter a valid positive number for the backup stop loss stock price."
-                )
-                play['stop_loss']['stock_price'] = [main_sl_price, backup_sl_price]
+                
+                while True:
+                    print("\nEnter backup/safety stop loss conditions (must be worse than main price):")
+                    backup_stock_price = get_input(
+                        f"Enter backup stop loss stock price ({'lower' if play['trade_type'] == 'CALL' else 'higher'} than {main_stock_price}): ",
+                        float,
+                        validation=lambda x: x > 0,
+                        error_message="Please enter a valid positive number for the backup stop loss stock price."
+                    )
+                    
+                    if validate_contingency_prices(main_stock_price, backup_stock_price, True, play['trade_type']):
+                        break
+                    print(f"Error: Backup price must be {'lower' if play['trade_type'] == 'CALL' else 'higher'} than the main price ({main_stock_price}) for a {play['trade_type']}")
+                
+                play['stop_loss']['stock_price'] = main_stock_price
+                play['stop_loss']['contingency_stock_price'] = backup_stock_price
 
             if sl_price_type in [2, 3]:  # Premium % or both
                 print("\nEnter main stop loss conditions:") if sl_price_type == 2 else None
-                main_sl_prem = get_premium_percentage()
-                print("\nEnter backup/safety stop loss conditions:") if sl_price_type == 2 else None
-                backup_sl_prem = get_premium_percentage()
-                play['stop_loss']['premium_pct'] = [main_sl_prem, backup_sl_prem]
-        
+                main_premium = get_premium_percentage()
+                
+                while True:
+                    print("\nEnter backup/safety stop loss conditions (must represent a bigger loss):")
+                    print(f"Current main stop loss is at {main_premium}% loss from entry")
+                    print(f"Backup must be higher than {main_premium}% (representing a bigger loss)")
+                    backup_premium = get_premium_percentage()
+                    
+                    if validate_contingency_prices(main_premium, backup_premium, False, play['trade_type']):
+                        break
+                    print(f"Error: Backup loss percentage ({backup_premium}%) must be higher than main loss percentage ({main_premium}%) to represent a bigger loss")
+                
+                play['stop_loss']['premium_pct'] = main_premium
+                play['stop_loss']['contingency_premium_pct'] = backup_premium
+
         # Set order type(s) based on SL_type
         if play['stop_loss']['SL_type'] == 'STOP':
             play['stop_loss']['order_type'] = 'market'
