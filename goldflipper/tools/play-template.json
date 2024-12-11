@@ -1,31 +1,58 @@
 {
+  "creator": "user or auto",
   "play_name": "string",
   "symbol": "string",
-  "trade_type": "CALL or PUT",
-  "entry_point": 0.0,
-  "strike_price": "0.0",
   "expiration_date": "MM/DD/YYYY",
-  "play_expiration_date": "MM/DD/YYYY",
+  "trade_type": "CALL or PUT",
+  "strike_price": "0.0",
   "option_contract_symbol": "string",
-  "entry_premium": 0.0,
+  "contracts": 0,
+  "play_expiration_date": "MM/DD/YYYY",
+  "entry_point": {
+    "stock_price": 0.0,
+    "order_type": "market or limit",
+    "entry_premium": 0.0
+  },
   "take_profit": {
+    "TP_type": "Single or multiple TPs, Mixed, Multiple, etc.",
     "stock_price": 0.0,
     "premium_pct": 50.0,
-    "order_type": "market",
+    "order_type": "market or limit",
     "TP_option_prem": null
   },
   "stop_loss": {
+    "SL_type": "STOP or LIMIT or CONTINGENCY",
     "stock_price": 0.0,
     "premium_pct": 25.0,
-    "order_type": "market",
-    "SL_option_prem": null
+    "contingency_stock_price": 0.0,
+    "contingency_premium_pct": 25.0,
+    "order_type": "market or limit, or array with both if type is contingency",
+    "SL_option_prem": null,
+    "contingency_SL_option_prem": null
   },
-  "contracts": 0,
   "play_class": "SIMPLE, or if conditional: PRIMARY or OTO (if OCO, simply enter it as SIMPLE)",
   "strategy": "string",
   "creation_date": "MM/DD/YYYY",
   "conditional_plays": {
-    "OCO_trigger": "play name of the corresponding OCO conditional play",
-    "OTO_trigger": "play name of the corresponding OTO conditional play"
+    "OCO_trigger": "play name of the corresponding OCO conditional play(s)",
+    "OTO_trigger": "play name of the corresponding OTO conditional play(s)"
+  },
+  "status": {
+    "play_status": "TEMP / NEW / PENDING / OPEN / CLOSING / CLOSED / EXPIRED",
+    "order_id": null,
+    "order_status": null,
+    "position_exists": false,
+    "last_checked": null,
+    "closing_order_id": null,
+    "closing_order_status": null,
+    "contingency_order_id": null,
+    "contingency_order_status": null,
+    "conditionals_handled": false
+  },
+  "logging": {
+    "delta_atOpen": null,
+    "theta_atOpen": null,
+    "time_atOpen": null,
+    "time_atClose": null
   }
 }

@@ -5,6 +5,7 @@ import pandas as pd
 import os
 import json
 import time
+from goldflipper.utils.display import TerminalDisplay as display
 
 def setup_logging():
     logging.basicConfig(
@@ -36,6 +37,7 @@ def load_plays(status=None):
                             play_data['filename'] = filename
                             plays.append(play_data)
                     except Exception as e:
+                        display.error(f"Error loading play {filename}: {e}")
                         logging.error(f"Error loading play {filename}: {e}")
     
     return plays
@@ -70,10 +72,12 @@ def get_option_data(ticker, expiration_date, strike_price, option_type, max_retr
                 }
             
             logging.warning(f"No option found for {ticker} at strike {strike_price}")
+            display.error(f"No option found for {ticker} at strike {strike_price}")
             return None
             
         except Exception as e:
             logging.error(f"Attempt {attempt + 1}/{max_retries} failed: {e}")
+            display.error(f"Attempt {attempt + 1}/{max_retries} failed: {e}")
             if attempt == max_retries - 1:
                 return None
 
@@ -134,6 +138,7 @@ def analyze_play(play):
         
     except Exception as e:
         logging.error(f"Error analyzing play {play.get('filename', 'unknown')}: {e}")
+        display.error(f"Error analyzing play {play.get('filename', 'unknown')}: {e}")
         return None
 
 def main():
@@ -155,13 +160,20 @@ def main():
             
             # Log detailed information
             logging.info(f"\nAnalysis for {play['symbol']} {play['trade_type']}:")
+            display.info(f"\nAnalysis for {play['symbol']} {play['trade_type']}:")
             logging.info(f"Current Stock Price: ${analysis['option_data']['current_stock_price']:.2f}")
+            display.info(f"Current Stock Price: ${analysis['option_data']['current_stock_price']:.2f}")
             logging.info(f"Option Premium: ${analysis['levels']['current_premium']:.2f}")
+            display.info(f"Option Premium: ${analysis['levels']['current_premium']:.2f}")
             logging.info(f"Entry: ${analysis['levels']['entry_price']:.2f}")
+            display.info(f"Entry: ${analysis['levels']['entry_price']:.2f}")
             logging.info(f"TP: ${analysis['levels']['tp_price']:.2f}")
+            display.info(f"TP: ${analysis['levels']['tp_price']:.2f}")
             logging.info(f"SL: ${analysis['levels']['sl_price']:.2f}")
+            display.info(f"SL: ${analysis['levels']['sl_price']:.2f}")
     
     logging.info(f"Analysis completed for {len(results)} plays")
+    display.info(f"Analysis completed for {len(results)} plays")
     return results
 
 if __name__ == "__main__":
