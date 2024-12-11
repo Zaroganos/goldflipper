@@ -42,9 +42,17 @@ def format_play_files(folder_path):
 def format_price_value(price_data):
     """Format price data to display either stock price or premium percentage."""
     if price_data.get('stock_price') is not None:
-        return f"${float(price_data.get('stock_price', 0.00)):.2f}"
+        stock_price = price_data['stock_price']
+        if isinstance(stock_price, list):
+            # For contingency orders, show both values
+            return f"${float(stock_price[0]):.2f} | ${float(stock_price[1]):.2f}"
+        return f"${float(stock_price):.2f}"
     elif price_data.get('premium_pct') is not None:
-        return f"{float(price_data.get('premium_pct', 0.00))}%"
+        premium_pct = price_data['premium_pct']
+        if isinstance(premium_pct, list):
+            # For contingency orders, show both values
+            return f"{float(premium_pct[0]):.0f}% | {float(premium_pct[1]):.0f}%"
+        return f"{float(premium_pct):.0f}%"
     return "N/A"
 
 class PlayCard(Widget):

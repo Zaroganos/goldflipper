@@ -745,22 +745,37 @@ def get_field_value_display(play_data, field):
     elif field == "strike_price":
         return f"${float(play_data.get('strike_price', 0)):.2f}"
     elif field == "entry_point":
-        entry_point = play_data.get('entry_point')
-        return f"${entry_point:.2f}" if entry_point is not None else "Not set"
+        entry_point = play_data.get('entry_point', {})
+        if isinstance(entry_point, dict):
+            stock_price = entry_point.get('stock_price')
+            return f"${float(stock_price):.2f}" if stock_price is not None else "Not set"
+        return "Not set"
     elif field == "take_profit":
-        if play_data.get('take_profit', {}).get('stock_price') is not None:
-            return f"${play_data['take_profit']['stock_price']:.2f} (stock price)"
-        elif play_data.get('take_profit', {}).get('premium_pct') is not None:
-            return f"{play_data['take_profit']['premium_pct']}% (premium)"
-        else:
-            return "Not set"
+        tp_data = play_data.get('take_profit', {})
+        if tp_data.get('stock_price') is not None:
+            stock_price = tp_data['stock_price']
+            if isinstance(stock_price, list):
+                return f"${float(stock_price[0]):.2f} | ${float(stock_price[1]):.2f}"
+            return f"${float(stock_price):.2f}"
+        elif tp_data.get('premium_pct') is not None:
+            premium = tp_data['premium_pct']
+            if isinstance(premium, list):
+                return f"{float(premium[0])}% | {float(premium[1])}%"
+            return f"{float(premium)}%"
+        return "Not set"
     elif field == "stop_loss":
-        if play_data.get('stop_loss', {}).get('stock_price') is not None:
-            return f"${play_data['stop_loss']['stock_price']:.2f} (stock price)"
-        elif play_data.get('stop_loss', {}).get('premium_pct') is not None:
-            return f"{play_data['stop_loss']['premium_pct']}% (premium)"
-        else:
-            return "Not set"
+        sl_data = play_data.get('stop_loss', {})
+        if sl_data.get('stock_price') is not None:
+            stock_price = sl_data['stock_price']
+            if isinstance(stock_price, list):
+                return f"${float(stock_price[0]):.2f} | ${float(stock_price[1]):.2f}"
+            return f"${float(stock_price):.2f}"
+        elif sl_data.get('premium_pct') is not None:
+            premium = sl_data['premium_pct']
+            if isinstance(premium, list):
+                return f"{float(premium[0])}% | {float(premium[1])}%"
+            return f"{float(premium)}%"
+        return "Not set"
     else:
         return str(play_data.get(field, "Not set"))
 
