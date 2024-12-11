@@ -19,12 +19,14 @@ class WelcomeScreen(Screen):
                     Button("Create New Play", variant="primary", id="create_play"),
                     Button("Fetch Option Data", variant="primary", id="option_data_fetcher"),
                     Button("Launch Trading System", variant="success", id="start_monitor"),
+                    Button("Auto Play Creator", variant="primary", id="auto_play_creator"),
                     classes="button-column",
                 ),
                 Container(
                     Button("View / Edit Current Plays", variant="primary", id="view_plays"),
                     Button("Upkeep and Status", variant="primary", id="system_status"),
                     Button("Configuration", variant="primary", id="configuration"),
+                    Button("Placeholder 2", variant="primary", id="placeholder2"),
                     classes="button-column",
                 ),
                 id="button_container"
@@ -46,12 +48,14 @@ class WelcomeScreen(Screen):
             self.run_system_status()
         elif event.button.id == "configuration":
             self.run_configuration()
+        elif event.button.id == "auto_play_creator":
+            self.run_auto_play_creator()
         elif event.button.id == "exit":
             self.app.exit()
 
     def run_option_data_fetcher(self):
         tools_dir = os.path.join(os.path.dirname(__file__), "tools")
-        script_path = os.path.join(tools_dir, "option-data-fetcher.py")
+        script_path = os.path.join(tools_dir, "option_data_fetcher.py")
         if os.name == 'nt':  # Windows
             subprocess.Popen(['cmd', '/k', 'python', script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
         else:  # Unix-like systems
@@ -122,6 +126,20 @@ class WelcomeScreen(Screen):
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:  # Unix-like systems
                 subprocess.Popen(['gnome-terminal', '--', 'python', 'configuration.py'], 
+                               cwd=tools_dir)
+        except Exception as e:
+            self.notify(f"Error: {str(e)}", severity="error")
+
+    def run_auto_play_creator(self):
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            tools_dir = os.path.join(current_dir, "tools")
+            
+            if os.name == 'nt':  # Windows
+                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'auto_play_creator.py']
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:  # Unix-like systems
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'auto_play_creator.py'], 
                                cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")

@@ -1,14 +1,18 @@
+import os
+import sys
+
+# Get the absolute path to the project root directory
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+# Add the project root to Python path
+sys.path.insert(0, project_root)
+
 import yfinance as yf
 import logging
 from datetime import datetime
 import pandas as pd
-import os
 import json
 import yaml
-import sys
-
-# Add the project root directory to Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from goldflipper.utils.display import TerminalDisplay as display
 
 from goldflipper.data.greeks.base import OptionData
 from goldflipper.data.greeks.delta import DeltaCalculator
@@ -16,8 +20,23 @@ from goldflipper.data.greeks.gamma import GammaCalculator
 from goldflipper.data.greeks.theta import ThetaCalculator
 from goldflipper.data.greeks.vega import VegaCalculator
 from goldflipper.data.greeks.rho import RhoCalculator
+from goldflipper.data.greeks.elasticity import ElasticityCalculator
+from goldflipper.data.greeks.epsilon import EpsilonCalculator
+from goldflipper.data.greeks.vanna import VannaCalculator
+from goldflipper.data.greeks.charm import CharmCalculator
+from goldflipper.data.greeks.vomma import VommaCalculator
+from goldflipper.data.greeks.veta import VetaCalculator
+from goldflipper.data.greeks.vera import VeraCalculator
+from goldflipper.data.greeks.speed import SpeedCalculator
+from goldflipper.data.greeks.zomma import ZommaCalculator
+from goldflipper.data.greeks.color import ColorCalculator
+from goldflipper.data.greeks.ultima import UltimaCalculator
+from goldflipper.data.greeks.parmicharma import ParmicharmaCalculator
 from goldflipper.data.indicators.base import MarketData
 from goldflipper.data.indicators.ttm_squeeze import TTMSqueezeCalculator
+from goldflipper.data.indicators.ema import EMACalculator
+from goldflipper.data.indicators.macd import MACDCalculator
+
 
 pd.set_option('display.max_rows', None)
 
@@ -30,9 +49,37 @@ def load_settings():
 def display_indicator_summary(indicator_data):
     """Display summary of technical indicators"""
     print("\nTechnical Indicators Summary:")
-    print(f"TTM Squeeze: {'ON' if indicator_data['squeeze_on'].iloc[-1] else 'OFF'}")
-    print(f"Momentum: {indicator_data['momentum'].iloc[-1]:.2f}")
-    print(f"Momentum Trend: {'↑ INCREASING' if indicator_data['momentum_increasing'].iloc[-1] else '↓ DECREASING'}")
+    
+    # TTM Squeeze
+    if 'squeeze_on' in indicator_data:
+        print("\nTTM Squeeze:")
+        print(f"Status: {'ON' if indicator_data['squeeze_on'].iloc[-1] else 'OFF'}")
+        print(f"Momentum: {indicator_data['momentum'].iloc[-1]:.2f}")
+        print(f"Momentum Trend: {'↑ INCREASING' if indicator_data['momentum_increasing'].iloc[-1] else '↓ DECREASING'}")
+    
+    # EMAs
+    ema_periods = [int(key.split('_')[1]) for key in indicator_data.columns if key.startswith('ema_')]
+    if ema_periods:
+        print("\nEMA Status:")
+        for period in sorted(ema_periods):
+            above_key = f"{period}_above"
+            rising_key = f"{period}_rising"
+            ema_key = f"ema_{period}"
+            if all(key in indicator_data for key in [ema_key, above_key, rising_key]):
+                print(f"EMA-{period}: {indicator_data[ema_key].iloc[-1]:.2f} "
+                      f"| {'↑ ABOVE' if indicator_data[above_key].iloc[-1] else '↓ BELOW'} Price "
+                      f"| {'↗ RISING' if indicator_data[rising_key].iloc[-1] else '↘ FALLING'}")
+    
+    # MACD
+    if 'macd_line' in indicator_data:
+        print("\nMACD Status:")
+        print(f"MACD: {indicator_data['macd_line'].iloc[-1]:.2f} "
+              f"({'↑ ABOVE' if indicator_data['macd_above_signal'].iloc[-1] else '↓ BELOW'} Signal)")
+        print(f"Signal: {indicator_data['signal_line'].iloc[-1]:.2f}")
+        print(f"Histogram: {indicator_data['macd_histogram'].iloc[-1]:.2f} "
+              f"({'↗ INCREASING' if indicator_data['histogram_increasing'].iloc[-1] else '↘ DECREASING'})")
+        print(f"MACD Trend: {'↗ RISING' if indicator_data['macd_increasing'].iloc[-1] else '↘ FALLING'}")
+    
     print("-" * 50)
 
 def display_options_chain(chain_data, indicator_data=None):
@@ -120,6 +167,7 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
            Returns None if data unavailable
     """
     logging.info(f"Fetching option premium data for {ticker}...")
+    display.info(f"Fetching option premium data for {ticker}...")
     
     try:
         stock = yf.Ticker(ticker)
@@ -128,6 +176,7 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
         available_dates = stock.options
         if not available_dates:
             logging.error(f"No option data available for {ticker}")
+            display.error(f"No option data available for {ticker}")
             return None
             
         # Use provided expiration date or default to nearest
@@ -145,6 +194,7 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
             
         if options_data.empty:
             logging.warning(f"No matching options found for {ticker} with given parameters")
+            display.error(f"No matching options found for {ticker} with given parameters")
             return None
             
         # Get first matching option
@@ -160,10 +210,12 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
         }
         
         logging.info(f"Option premium data fetched successfully for {ticker}")
+        display.info(f"Option premium data fetched successfully for {ticker}")
         return premium_data
         
     except Exception as e:
         logging.error(f"Error fetching option premium data for {ticker}: {str(e)}")
+        display.error(f"Error fetching option premium data for {ticker}: {str(e)}")
         return None
 
 def get_all_plays():
@@ -230,7 +282,8 @@ def prepare_option_data(row, underlying_price, expiration_date, risk_free_rate=0
         time_to_expiry=time_to_expiry,
         risk_free_rate=risk_free_rate,
         volatility=float(row['impliedVolatility']),
-        dividend_yield=0.0  # Could be made configurable in settings.yaml
+        dividend_yield=0.0,  # Could be made configurable in settings.yaml
+        option_price=float(row['lastPrice'])  # Add this line
     )
 
 def calculate_greeks(options_data, underlying_price, expiration_date):
@@ -241,6 +294,18 @@ def calculate_greeks(options_data, underlying_price, expiration_date):
     options_data['theta'] = None
     options_data['vega'] = None
     options_data['rho'] = None
+    options_data['elasticity'] = None
+    options_data['epsilon'] = None
+    options_data['vanna'] = None
+    options_data['charm'] = None
+    options_data['vomma'] = None
+    options_data['veta'] = None
+    options_data['vera'] = None
+    options_data['speed'] = None
+    options_data['zomma'] = None
+    options_data['color'] = None
+    options_data['ultima'] = None
+    options_data['parmicharma'] = None
     
     for idx, row in options_data.iterrows():
         try:
@@ -267,8 +332,57 @@ def calculate_greeks(options_data, underlying_price, expiration_date):
             rho_calculator = RhoCalculator(option_data)
             options_data.at[idx, 'rho'] = rho_calculator.calculate(row['option_type'])
             
+            # Calculate elasticity
+            elasticity_calculator = ElasticityCalculator(option_data)
+            options_data.at[idx, 'elasticity'] = elasticity_calculator.calculate(row['option_type'])
+            
+            # Calculate epsilon
+            epsilon_calculator = EpsilonCalculator(option_data)
+            options_data.at[idx, 'epsilon'] = epsilon_calculator.calculate(row['option_type'])
+            
+            # Calculate vanna
+            vanna_calculator = VannaCalculator(option_data)
+            options_data.at[idx, 'vanna'] = vanna_calculator.calculate(row['option_type'])
+            
+            # Calculate charm
+            charm_calculator = CharmCalculator(option_data)
+            options_data.at[idx, 'charm'] = charm_calculator.calculate(row['option_type'])
+            
+            # Calculate vomma
+            vomma_calculator = VommaCalculator(option_data)
+            options_data.at[idx, 'vomma'] = vomma_calculator.calculate(row['option_type'])
+            
+            # Calculate veta
+            veta_calculator = VetaCalculator(option_data)
+            options_data.at[idx, 'veta'] = veta_calculator.calculate(row['option_type'])
+            
+            # Calculate vera
+            vera_calculator = VeraCalculator(option_data)
+            options_data.at[idx, 'vera'] = vera_calculator.calculate(row['option_type'])
+            
+            # Calculate speed
+            speed_calculator = SpeedCalculator(option_data)
+            options_data.at[idx, 'speed'] = speed_calculator.calculate(row['option_type'])
+            
+            # Calculate zomma
+            zomma_calculator = ZommaCalculator(option_data)
+            options_data.at[idx, 'zomma'] = zomma_calculator.calculate(row['option_type'])
+            
+            # Calculate color
+            color_calculator = ColorCalculator(option_data)
+            options_data.at[idx, 'color'] = color_calculator.calculate(row['option_type'])
+            
+            # Calculate ultima
+            ultima_calculator = UltimaCalculator(option_data)
+            options_data.at[idx, 'ultima'] = ultima_calculator.calculate(row['option_type'])
+            
+            # Calculate parmicharma
+            parmicharma_calculator = ParmicharmaCalculator(option_data)
+            options_data.at[idx, 'parmicharma'] = parmicharma_calculator.calculate(row['option_type'])
+            
         except Exception as e:
             logging.warning(f"Error calculating Greeks for strike {row['strike']}: {str(e)}")
+            display.error(f"Error calculating Greeks for strike {row['strike']}: {str(e)}")
             continue
             
     return options_data
@@ -285,7 +399,7 @@ def calculate_indicators(ticker: str, settings: dict) -> pd.DataFrame:
     stock = yf.Ticker(ticker)
     
     # Get historical data
-    hist = stock.history(period='1y')  # Adjust period as needed
+    hist = stock.history(period='1y')
     
     # Prepare market data
     market_data = MarketData(
@@ -296,23 +410,59 @@ def calculate_indicators(ticker: str, settings: dict) -> pd.DataFrame:
         period=settings['market_data']['indicators']['ttm_squeeze']['period']
     )
     
+    indicators_dict = {}
+    
     # Calculate TTM Squeeze
-    ttm_calc = TTMSqueezeCalculator(
-        market_data,
-        bb_mult=settings['market_data']['indicators']['ttm_squeeze']['bb_multiplier'],
-        kc_mult=settings['market_data']['indicators']['ttm_squeeze']['kc_multiplier']
-    )
+    if settings['market_data']['indicators']['ttm_squeeze']['enabled']:
+        ttm_calc = TTMSqueezeCalculator(
+            market_data,
+            bb_mult=settings['market_data']['indicators']['ttm_squeeze']['bb_multiplier'],
+            kc_mult=settings['market_data']['indicators']['ttm_squeeze']['kc_multiplier']
+        )
+        ttm_indicators = ttm_calc.calculate()
+        indicators_dict.update({
+            'squeeze_on': ttm_indicators['squeeze_on'].iloc[-1],
+            'momentum': ttm_indicators['momentum'].iloc[-1],
+            'momentum_increasing': ttm_indicators['momentum_increasing'].iloc[-1]
+        })
     
-    indicators = ttm_calc.calculate()
+    # Calculate EMAs
+    if settings['market_data']['indicators']['ema']['enabled']:
+        ema_calc = EMACalculator(
+            market_data,
+            periods=settings['market_data']['indicators']['ema']['periods']
+        )
+        ema_indicators = ema_calc.calculate()
+        
+        # Add EMA values and trends to indicators
+        for key, value in ema_indicators.items():
+            if key.startswith('ema_'):
+                indicators_dict[key] = value.iloc[-1]
+            else:
+                indicators_dict[key] = value.iloc[-1]
     
-    # Create DataFrame with latest indicator values
-    latest_indicators = pd.DataFrame({
-        'squeeze_on': [indicators['squeeze_on'].iloc[-1]],
-        'momentum': [indicators['momentum'].iloc[-1]],
-        'momentum_increasing': [indicators['momentum_increasing'].iloc[-1]]
-    })
+    # Calculate MACD
+    if settings['market_data']['indicators']['macd']['enabled']:
+        macd_calc = MACDCalculator(
+            market_data,
+            fast_period=settings['market_data']['indicators']['macd']['fast_period'],
+            slow_period=settings['market_data']['indicators']['macd']['slow_period'],
+            signal_period=settings['market_data']['indicators']['macd']['signal_period']
+        )
+        macd_indicators = macd_calc.calculate()
+        
+        # Add MACD values and signals to indicators
+        indicators_dict.update({
+            'macd_line': macd_indicators['macd_line'].iloc[-1],
+            'signal_line': macd_indicators['signal_line'].iloc[-1],
+            'macd_histogram': macd_indicators['macd_histogram'].iloc[-1],
+            'macd_above_signal': macd_indicators['macd_above_signal'].iloc[-1],
+            'histogram_increasing': macd_indicators['histogram_increasing'].iloc[-1],
+            'macd_increasing': macd_indicators['macd_increasing'].iloc[-1]
+        })
     
-    return latest_indicators
+    # Create DataFrame with all indicator values
+    return pd.DataFrame([indicators_dict])
 
 def main():
     """Main function to fetch and display option data."""
@@ -349,8 +499,10 @@ def main():
                 try:
                     indicator_data = calculate_indicators(ticker, settings)
                     logging.info(f"Calculated indicators for {ticker}")
+                    display.info(f"Calculated indicators for {ticker}")
                 except Exception as e:
                     logging.warning(f"Failed to calculate indicators: {str(e)}")
+                    display.error(f"Failed to calculate indicators: {str(e)}")
             
             # Fetch option data
             stock = yf.Ticker(ticker)

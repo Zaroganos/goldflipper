@@ -16,6 +16,18 @@ import os
 import yaml
 import logging
 
+def load_config():
+    config_path = os.path.join(os.path.dirname(__file__), 'settings.yaml')
+    try:
+        with open(config_path, 'r') as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Configuration file not found at {config_path}")
+    except yaml.YAMLError as e:
+        raise ValueError(f"Error parsing YAML configuration: {e}")
+
+config = load_config()
+
 class Config:
     """
     Singleton configuration class that manages all GoldFlipper settings.

@@ -236,6 +236,38 @@ def edit_play_field(play_data, field, filepath):
                 }
 
     elif field == 'stop_loss':
+        # First get the stop loss type
+        sl_type = get_input(
+            "Enter stop loss type (1 for STOP, 2 for LIMIT, 3 for CONTINGENCY): ",
+            int,
+            validation=lambda x: x in [1, 2, 3],
+            error_message="Please enter 1 for STOP, 2 for LIMIT, or 3 for CONTINGENCY"
+        )
+        
+        # Convert number to type string
+        sl_type_map = {1: 'STOP', 2: 'LIMIT', 3: 'CONTINGENCY'}
+        sl_type = sl_type_map[sl_type]
+        
+        # Initialize stop loss dictionary
+        play_data['stop_loss'] = {
+            'SL_type': sl_type,
+            'stock_price': None,
+            'premium_pct': None,
+            'contingency_stock_price': None,
+            'contingency_premium_pct': None,
+            'SL_option_prem': None,
+            'contingency_SL_option_prem': None
+        }
+        
+        # Set order type based on SL_type
+        if sl_type == 'STOP':
+            play_data['stop_loss']['order_type'] = 'market'
+        elif sl_type == 'LIMIT':
+            play_data['stop_loss']['order_type'] = 'limit'
+        else:  # CONTINGENCY
+            play_data['stop_loss']['order_type'] = ['limit', 'market']
+        
+        # Get price type
         price_type = get_input(
             "Enter price type (1 for stock price, 2 for option premium %): ",
             int,
@@ -244,33 +276,47 @@ def edit_play_field(play_data, field, filepath):
         )
         
         if price_type == 1:
+            # Stock price based stop loss
             price = get_input(
-                "Enter stop loss stock price: ",
+                "Enter primary stop loss stock price: ",
                 float,
                 error_message="Please enter a valid number"
             )
-            if price is not None:
-                play_data['stop_loss'] = {
-                    'stock_price': price,
-                    'premium_pct': None,
-                    'order_type': 'market',
-                    'SL_option_prem': None
-                }
+            play_data['stop_loss']['stock_price'] = price
+            
+            # If contingency, get backup price
+            if sl_type == 'CONTINGENCY':
+                backup_price = get_input(
+                    "Enter backup (contingency) stop loss stock price: ",
+                    float,
+                    error_message="Please enter a valid number"
+                )
+                play_data['stop_loss']['contingency_stock_price'] = backup_price
                 
         else:
+            # Premium percentage based stop loss
             premium = get_input(
-                "Enter stop loss premium percentage: ",
+                "Enter primary stop loss premium percentage: ",
                 float,
                 validation=lambda x: 0 < x <= 100,
                 error_message="Please enter a percentage between 0 and 100"
             )
-            if premium is not None:
-                play_data['stop_loss'] = {
-                    'stock_price': None,
-                    'premium_pct': premium,
-                    'order_type': 'market',
-                    'SL_option_prem': None
-                }
+            play_data['stop_loss']['premium_pct'] = premium
+            
+            # If contingency, get backup percentage
+            if sl_type == 'CONTINGENCY':
+                while True:
+                    backup_premium = get_input(
+                        f"Enter backup stop loss premium percentage (must be higher than {premium}%): ",
+                        float,
+                        validation=lambda x: 0 < x <= 100,
+                        error_message="Please enter a percentage between 0 and 100"
+                    )
+                    if backup_premium > premium:
+                        break
+                    print(f"Error: Backup percentage must be higher than {premium}%")
+                
+                play_data['stop_loss']['contingency_premium_pct'] = backup_premium
 
     elif field == 'contracts':
         # Only allow editing for plays in 'new' folder
@@ -401,7 +447,7 @@ def edit_play_field(play_data, field, filepath):
             error_message="Please enter a valid number for the entry price."
         )
         if new_value is not None:
-            play_data['entry_point'] = new_value
+            play_data['entry_point']['stock_price'] = new_value
 
     elif field == 'strike_price':
         new_value = get_input(
@@ -699,22 +745,37 @@ def get_field_value_display(play_data, field):
     elif field == "strike_price":
         return f"${float(play_data.get('strike_price', 0)):.2f}"
     elif field == "entry_point":
-        entry_point = play_data.get('entry_point')
-        return f"${entry_point:.2f}" if entry_point is not None else "Not set"
+        entry_point = play_data.get('entry_point', {})
+        if isinstance(entry_point, dict):
+            stock_price = entry_point.get('stock_price')
+            return f"${float(stock_price):.2f}" if stock_price is not None else "Not set"
+        return "Not set"
     elif field == "take_profit":
-        if play_data.get('take_profit', {}).get('stock_price') is not None:
-            return f"${play_data['take_profit']['stock_price']:.2f} (stock price)"
-        elif play_data.get('take_profit', {}).get('premium_pct') is not None:
-            return f"{play_data['take_profit']['premium_pct']}% (premium)"
-        else:
-            return "Not set"
+        tp_data = play_data.get('take_profit', {})
+        if tp_data.get('stock_price') is not None:
+            stock_price = tp_data['stock_price']
+            if isinstance(stock_price, list):
+                return f"${float(stock_price[0]):.2f} | ${float(stock_price[1]):.2f}"
+            return f"${float(stock_price):.2f}"
+        elif tp_data.get('premium_pct') is not None:
+            premium = tp_data['premium_pct']
+            if isinstance(premium, list):
+                return f"{float(premium[0])}% | {float(premium[1])}%"
+            return f"{float(premium)}%"
+        return "Not set"
     elif field == "stop_loss":
-        if play_data.get('stop_loss', {}).get('stock_price') is not None:
-            return f"${play_data['stop_loss']['stock_price']:.2f} (stock price)"
-        elif play_data.get('stop_loss', {}).get('premium_pct') is not None:
-            return f"{play_data['stop_loss']['premium_pct']}% (premium)"
-        else:
-            return "Not set"
+        sl_data = play_data.get('stop_loss', {})
+        if sl_data.get('stock_price') is not None:
+            stock_price = sl_data['stock_price']
+            if isinstance(stock_price, list):
+                return f"${float(stock_price[0]):.2f} | ${float(stock_price[1]):.2f}"
+            return f"${float(stock_price):.2f}"
+        elif sl_data.get('premium_pct') is not None:
+            premium = sl_data['premium_pct']
+            if isinstance(premium, list):
+                return f"{float(premium[0])}% | {float(premium[1])}%"
+            return f"{float(premium)}%"
+        return "Not set"
     else:
         return str(play_data.get(field, "Not set"))
 

@@ -39,7 +39,7 @@
 alpaca:
   api_key: 'PKCBGN33W2QQDYIT7GIY'     # Your Alpaca API key
   secret_key: 'OeeFoeeDLFBqvo8l88V8hvTMi49JNzyUJmgBQlqO'  # Your Alpaca secret key
-  base_url: 'https://paper-api.alpaca.markets/v2'  # Alpaca API endpoint (paper/live) MAKE SURE TO USE 'v2' !!!
+  base_url: 'https://paper-api.alpaca.markets/v2'  # Alpaca API endpoint (paper/live)
 
 # Data Paths
 # --------------------------------------------------
@@ -74,6 +74,7 @@ market_data:
       - impliedVolatility
     
     # Greeks display settings
+    # NOTE: only main 5 Greeks are displayed. Uncomment the ones you want to see.
     greeks:
       enabled: true
       columns:
@@ -82,6 +83,18 @@ market_data:
         - theta
         - vega
         - rho
+#        - elasticity
+#        - epsilon
+#        - vanna
+#        - charm
+#        - vomma
+#        - veta
+#        - vera
+#        - speed
+#        - zomma
+#        - color
+#        - ultima
+#        - parmicharma
 
   # Technical Indicators settings
   indicators:
@@ -91,10 +104,21 @@ market_data:
       period: 20
       bb_multiplier: 2.0
       kc_multiplier: 1.5
+    ema:
+      enabled: true
+      periods: [9, 21, 55, 200]
+    macd:
+      enabled: true
+      fast_period: 12
+      slow_period: 26
+      signal_period: 9
     columns:
       - squeeze_on
       - momentum
       - momentum_increasing
+      - ema_above_below
+      - ema_trends
+      - macd_signals
 
 # Strategy Settings
 # --------------------------------------------------
@@ -130,3 +154,45 @@ file_paths:
 logging:
   level: "INFO"                      # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
   format: "%(asctime)s - %(levelname)s - %(message)s"  # Log message format
+
+# Market Hours Settings
+# --------------------------------------------------
+market_hours:
+  enabled: true                    # Enable/disable market hours validation
+  timezone: "America/New_York"     # Market timezone
+  regular_hours:
+    start: "09:30"                # Regular market open (HH:MM)
+    end: "16:00"                  # Regular market close (HH:MM)
+  extended_hours:
+    enabled: false                # Enable/disable extended hours trading
+    pre_market_start: "04:00"     # Pre-market start (HH:MM)
+    after_market_end: "20:00"     # After-market end (HH:MM)
+
+# Auto Play Creator Settings
+# --------------------------------------------------
+auto_play_creator:
+  enabled: true                     # Enable/disable auto play creation
+  order_types:                      # Types of orders to use
+    - market
+    - limit
+  stop_loss_types:                  # Types of stop loss to use
+    - STOP
+    - LIMIT
+#    - CONTINGENCY
+  play_types:                       # Types of plays to create
+    - SIMPLE
+    - PRIMARY
+    - OCO
+    - OTO
+  trade_types:                      # Types of trades to create
+    - CALL
+    - PUT
+    - MIX
+  expiration_days: 7                # Default expiration in days for test plays
+  entry_buffer: 0.01                # Entry price buffer for test plays (e.g., ±$0.01)
+  take_profit_pct: 1.0              # Default take profit percentage
+  stop_loss_pct: 0.5                # Default stop loss percentage
+  test_symbols:                     # Symbols to use for test plays
+    - SPY
+    - AAPL
+    - TSLA
