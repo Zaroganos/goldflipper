@@ -331,18 +331,18 @@ def open_position(play, play_file):
     calculate_and_store_premium_levels(play, current_premium)
     
     # Capture Greeks
-    delta, theta = capture_greeks(play, current_premium)
+    # delta, theta = capture_greeks(play, current_premium)
     
     # Initialize logging section if it doesn't exist
-    if 'logging' not in play:
-        play['logging'] = {}
+    #if 'logging' not in play:
+    #    play['logging'] = {}
     
     # Store Greeks
-    play['logging']['delta_atOpen'] = delta
-    play['logging']['theta_atOpen'] = theta
+    #play['logging']['delta_atOpen'] = delta
+    #play['logging']['theta_atOpen'] = theta
     
-    logging.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
-    display.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
+    #logging.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
+    #display.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
     logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
     display.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
     try:
@@ -509,7 +509,8 @@ def monitor_and_manage_position(play, play_file):
     # Check if we need stock price monitoring
     if play['take_profit'].get('stock_price') is not None or play['stop_loss'].get('stock_price') is not None:
         try:
-            current_price = float(client.get_latest_trade(underlying_symbol).price)
+            stock = yf.Ticker(underlying_symbol)
+            current_price = stock.info.get('regularMarketPrice', 0)
             market_data = pd.DataFrame({'Close': [current_price]})
             logging.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
             display.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
@@ -1037,6 +1038,7 @@ def monitor_plays_continuously():
 # ==================================================
 # Functions to support the main trade execution flow.
 
+# Greeks have been paused for now.
 def capture_greeks(play, current_premium):
     """Capture Delta and Theta values for the option play at position opening"""
     try:
