@@ -42,7 +42,8 @@ def get_market_data(symbol):
         data = yf.download(
             symbol,
             period=config.get('market_data', 'period', default='1d'),
-            interval=config.get('market_data', 'interval', default='1m')
+            interval=config.get('market_data', 'interval', default='1m'),
+            timeout=None  # Remove timeout limit
         )
         display.success(f"Market data for {symbol} fetched successfully.")
         logging.info(f"Market data for {symbol} fetched successfully.")
@@ -410,6 +411,7 @@ def close_position(play, close_conditions, play_file):
     qty = play.get('contracts', 1)  # Default to 1 if not specified
     
     try:
+      
         # Initialize closing status
         play['status']['closing_order_id'] = None
         play['status']['closing_order_status'] = None
@@ -558,6 +560,7 @@ def monitor_and_manage_position(play, play_file):
     
     # Check if we need stock price monitoring
     if play['take_profit'].get('stock_price') is not None or play['stop_loss'].get('stock_price') is not None:
+
         try:
             stock = yf.Ticker(underlying_symbol)
             current_price = stock.info.get('regularMarketPrice', 0)
@@ -568,6 +571,8 @@ def monitor_and_manage_position(play, play_file):
             logging.error(f"Error getting stock price: {e}")
             display.error(f"Error getting stock price: {e}")
             return False
+        current_price = market_data['Close'].iloc[-1]
+        logging.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
 
     # Check if we need premium monitoring
     if play['take_profit'].get('premium_pct') is not None or play['stop_loss'].get('premium_pct') is not None:
