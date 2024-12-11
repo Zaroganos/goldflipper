@@ -40,8 +40,8 @@ def test_alpaca_connection():
     except Exception as e:
         return False, f"Alpaca API test failed: {str(e)}"
 
-def test_yfinance_connection():
-    """Test yfinance API connectivity using a known reliable ticker."""
+def test_yfinance_ticker():
+    """Test yfinance Ticker API connectivity."""
     try:
         # Test with SPY as it's highly reliable
         ticker = yf.Ticker("SPY")
@@ -62,7 +62,24 @@ def test_yfinance_connection():
         }
         
     except Exception as e:
-        return False, f"yfinance API test failed: {str(e)}"
+        return False, f"yfinance Ticker API test failed: {str(e)}"
+
+def test_yfinance_download():
+    """Test yfinance download functionality."""
+    try:
+        df = yf.download("SPY", period="1d", progress=False)
+        
+        if df.empty:
+            return False, "Could not download price data"
+            
+        return True, {
+            "rows_retrieved": len(df),
+            "columns": list(df.columns),
+            "latest_close": float(df['Close'].iloc[-1])
+        }
+        
+    except Exception as e:
+        return False, f"yfinance download test failed: {str(e)}"
 
 def test_alpaca_api_direct():
     """Test Alpaca API connectivity directly using HTTP request."""
@@ -119,11 +136,18 @@ def run_startup_tests():
         "result": alpaca_api_result
     }
     
-    # Test yfinance connection
-    success, yfinance_result = test_yfinance_connection()
-    test_results["tests"]["yfinance"] = {
+    # Test yfinance Ticker functionality
+    success, yfinance_ticker_result = test_yfinance_ticker()
+    test_results["tests"]["yfinance_ticker"] = {
         "success": success,
-        "result": yfinance_result
+        "result": yfinance_ticker_result
+    }
+    
+    # Test yfinance download functionality
+    success, yfinance_download_result = test_yfinance_download()
+    test_results["tests"]["yfinance_download"] = {
+        "success": success,
+        "result": yfinance_download_result
     }
     
     # Overall status
