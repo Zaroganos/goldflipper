@@ -510,10 +510,24 @@ def create_play():
         # Update the plays directory path and add status field
         if play['play_class'] == 'OTO':
             plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp')
-            play['status'] = 'temp'
+            play_status = 'TEMP'
         else:
             plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'new')
-            play['status'] = 'new'
+            play_status = 'NEW'
+
+        play['status'] = {
+            "play_status": play_status,
+            "order_id": None,
+            "order_status": None,
+            "position_exists": False,
+            "last_checked": None,
+            "closing_order_id": None,
+            "closing_order_status": None,
+            "contingency_order_id": None,
+            "contingency_order_status": None,
+            "conditionals_handled": False
+        }
+
         os.makedirs(plays_dir, exist_ok=True)
 
         filepath = os.path.join(plays_dir, filename)
