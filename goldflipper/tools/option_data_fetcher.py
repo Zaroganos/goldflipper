@@ -230,13 +230,22 @@ def get_all_plays():
             for filename in os.listdir(folder_path):
                 if filename.endswith('.json'):
                     filepath = os.path.join(folder_path, filename)
-                    with open(filepath, 'r') as f:
-                        play_data = json.load(f)
-                        plays.append({
-                            'folder': folder,
-                            'filename': filename,
-                            'data': play_data
-                        })
+                    try:
+                        with open(filepath, 'r') as f:
+                            play_data = json.load(f)
+                            plays.append({
+                                'folder': folder,
+                                'filename': filename,
+                                'data': play_data
+                            })
+                    except json.JSONDecodeError as e:
+                        logging.error(f"Invalid JSON in file {filepath}: {str(e)}")
+                        display.error(f"Skipping invalid play file: {filename}")
+                        continue
+                    except Exception as e:
+                        logging.error(f"Error reading file {filepath}: {str(e)}")
+                        display.error(f"Error reading file: {filename}")
+                        continue
     return plays
 
 def display_plays(plays):

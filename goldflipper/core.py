@@ -664,8 +664,9 @@ def move_play_to_new(play_file):
     play_data['status']['play_status'] = 'NEW'
     play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    # Use UUIDEncoder because this play might have had Alpaca order IDs
     with open(play_file, 'w') as f:
-        json.dump(play_data, f, indent=4)
+        json.dump(play_data, f, indent=4, cls=UUIDEncoder)
     
     new_dir = os.path.join(os.path.dirname(play_file), '..', 'new')
     os.makedirs(new_dir, exist_ok=True)
@@ -683,8 +684,9 @@ def move_play_to_open(play_file):
     play_data['status']['play_status'] = 'OPEN'
     play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    # Use UUIDEncoder because this play will have Alpaca order IDs
     with open(play_file, 'w') as f:
-        json.dump(play_data, f, indent=4)
+        json.dump(play_data, f, indent=4, cls=UUIDEncoder)
     
     open_dir = os.path.join(os.path.dirname(play_file), '..', 'open')
     os.makedirs(open_dir, exist_ok=True)
@@ -703,8 +705,9 @@ def move_play_to_closed(play_file):
     play_data['status']['position_exists'] = False
     play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    # Use UUIDEncoder because this play will have Alpaca order IDs
     with open(play_file, 'w') as f:
-        json.dump(play_data, f, indent=4)
+        json.dump(play_data, f, indent=4, cls=UUIDEncoder)
     
     closed_dir = os.path.join(os.path.dirname(play_file), '..', 'closed')
     os.makedirs(closed_dir, exist_ok=True)
@@ -729,8 +732,9 @@ def move_play_to_expired(play_file):
         'last_checked': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     
+    # Use UUIDEncoder because this play might have had Alpaca order IDs
     with open(play_file, 'w') as f:
-        json.dump(play_data, f, indent=4)
+        json.dump(play_data, f, indent=4, cls=UUIDEncoder)
     
     expired_dir = os.path.join(os.path.dirname(play_file), '..', 'expired')
     os.makedirs(expired_dir, exist_ok=True)
