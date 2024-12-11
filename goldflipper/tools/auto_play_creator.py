@@ -3,6 +3,12 @@ import json
 import random
 from datetime import datetime, timedelta
 import yfinance as yf
+import sys
+
+# Add the project root to the Python path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(project_root)
+
 from goldflipper.config.config import config
 from goldflipper.utils.display import TerminalDisplay as display
 import logging
@@ -10,7 +16,13 @@ import logging
 class AutoPlayCreator:
     def __init__(self):
         """Initialize the AutoPlayCreator with configuration settings."""
-        self.settings = config.get('auto_play_creator', {})
+        if not config._config:
+            raise ValueError("Configuration not loaded. Please ensure config.py is properly initialized.")
+            
+        self.settings = config._config.get('auto_play_creator')
+        if not self.settings:
+            raise ValueError("Auto Play Creator settings not found in configuration")
+        
         if not self.settings.get('enabled', False):
             raise ValueError("Auto Play Creator is disabled in settings")
             
@@ -24,13 +36,33 @@ class AutoPlayCreator:
         """Fetch current market data for a symbol."""
         try:
             ticker = yf.Ticker(symbol)
+            # First try to get the regular market price
             current_price = ticker.info.get('regularMarketPrice')
+            
+            # If that fails, try to get the current price from history
+            if not current_price:
+                hist = ticker.history(period='1d')
+                if not hist.empty:
+                    current_price = hist['Close'].iloc[-1]
+            
             if not current_price:
                 raise ValueError(f"Could not get price for {symbol}")
                 
             # Get option chain for nearest expiration
             expiry = (datetime.now() + timedelta(days=self.expiration_days)).strftime('%Y-%m-%d')
-            chain = ticker.option_chain(expiry)
+            
+            try:
+                chain = ticker.option_chain(expiry)
+            except Exception as e:
+                # If exact expiry not found, get the nearest available expiration
+                available_dates = ticker.options
+                if not available_dates:
+                    raise ValueError(f"No options available for {symbol}")
+                
+                # Find the nearest expiration date
+                expiry = min(available_dates, key=lambda d: abs(datetime.strptime(d, '%Y-%m-%d') - 
+                                                              (datetime.now() + timedelta(days=self.expiration_days))))
+                chain = ticker.option_chain(expiry)
             
             return {
                 'symbol': symbol,
@@ -40,7 +72,7 @@ class AutoPlayCreator:
                 'expiration': expiry
             }
         except Exception as e:
-            logging.error(f"Error fetching market data for {symbol}: {e}")
+            logging.error(f"Error fetching market data for {symbol}: {str(e)}")
             return None
             
     def find_nearest_strike(self, options_data, current_price):

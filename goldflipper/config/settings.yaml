@@ -178,7 +178,7 @@ auto_play_creator:
   stop_loss_types:                  # Types of stop loss to use
     - STOP
     - LIMIT
-    - CONTINGENCY
+#    - CONTINGENCY
   play_types:                       # Types of plays to create
     - SIMPLE
     - PRIMARY
