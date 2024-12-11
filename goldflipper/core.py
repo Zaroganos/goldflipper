@@ -19,6 +19,7 @@ from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 import json
 from goldflipper.tools.option_data_fetcher import calculate_greeks
+from uuid import UUID
 
 # ==================================================
 # 2. MARKET DATA RETRIEVAL
@@ -156,11 +157,18 @@ def calculate_and_store_premium_levels(play, current_premium):
         contingency_sl_pct = play['stop_loss']['contingency_premium_pct'] / 100
         play['stop_loss']['contingency_SL_option_prem'] = current_premium * (1 - contingency_sl_pct)
 
+class UUIDEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle UUID objects."""
+    def default(self, obj):
+        if isinstance(obj, UUID):
+            return str(obj)
+        return json.JSONEncoder.default(self, obj)
+
 def save_play(play, play_file):
     """Save the updated play data to the specified file."""
     try:
         with open(play_file, 'w') as f:
-            json.dump(play, f, indent=4)
+            json.dump(play, f, indent=4, cls=UUIDEncoder)
         logging.info(f"Play data saved to {play_file}")
         display.success(f"Play data saved to {play_file}")
     except Exception as e:
@@ -317,10 +325,15 @@ def open_position(play, play_file):
     # Initialize status if it doesn't exist
     if 'status' not in play:
         play['status'] = {}
-    play['status']['order_id'] = None
-    play['status']['order_status'] = None
-    play['status']['position_exists'] = False
-    play['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+    # Update all status fields at once in a single dictionary update
+    play['status'].update({
+        'order_id': None,
+        'order_status': None,
+        'position_exists': False,
+        'play_status': 'PENDING',
+        'last_checked': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
     
     # Get current premium before opening position
     current_premium = get_current_option_premium(play)
@@ -383,10 +396,12 @@ def open_position(play, play_file):
         logging.info(f"Order submitted: {response}")
         display.info(f"Order submitted: {response}")
         
-        # Store order details
-        play['status']['order_id'] = response.id
-        play['status']['order_status'] = response.status
-        play['status']['play_status'] = 'PENDING'
+        # Update status fields all at once after order placement
+        play['status'].update({
+            'order_id': str(response.id),  # Convert UUID to string
+            'order_status': response.status,
+            'play_status': 'PENDING'
+        })
         
         # Save the updated play data
         save_play(play, play_file)
