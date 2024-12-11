@@ -732,14 +732,15 @@ def validate_play_order_types(play):
     valid_types = ['market', 'limit']
     
     # Validate entry order type
-    entry_type = play.get('entry_order_type')
+    entry_point = play.get('entry_point', {})
+    entry_type = entry_point.get('order_type')
     if entry_type is None:
-        logging.error("Missing entry_order_type in play")
-        display.error("Missing entry_order_type in play")
+        logging.error("Missing order_type in entry_point")
+        display.error("Missing order_type in entry_point")
         return False
     if entry_type not in valid_types:
-        logging.error(f"Invalid entry_order_type: {entry_type}")
-        display.error(f"Invalid entry_order_type: {entry_type}")
+        logging.error(f"Invalid entry_point order_type: {entry_type}")
+        display.error(f"Invalid entry_point order_type: {entry_type}")
         return False
     
     # Validate take profit order type
