@@ -14,8 +14,40 @@ def load_play(filepath):
     """
     try:
         with open(filepath, 'r') as f:
-            play = json.load(f)
-        return play
+            play_data = json.load(f)
+            
+        if not isinstance(play_data, dict):
+            print(f"Play file {filepath} loaded but data is not a dictionary. Type: {type(play_data)}")
+            return None
+            
+        # Validate required fields
+        required_fields = ['symbol', 'expiration_date', 'trade_type', 'strike_price', 'status']
+        missing_fields = [field for field in required_fields if field not in play_data]
+        
+        if missing_fields:
+            print(f"Play file {filepath} missing required fields: {missing_fields}")
+            return None
+            
+        # Ensure status is a dictionary
+        if not isinstance(play_data.get('status'), dict):
+            play_data['status'] = {
+                'play_status': 'NEW',
+                'order_id': None,
+                'order_status': None,
+                'position_exists': False,
+                'last_checked': None,
+                'closing_order_id': None,
+                'closing_order_status': None,
+                'contingency_order_id': None,
+                'contingency_order_status': None,
+                'conditionals_handled': False
+            }
+            
+        return play_data
+        
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON from {filepath}: {e}")
+        return None
     except Exception as e:
         print(f"Error loading play from {filepath}: {e}")
         return None

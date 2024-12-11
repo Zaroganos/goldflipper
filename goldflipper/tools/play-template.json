@@ -1,4 +1,5 @@
 {
+  "creator": "user or auto",
   "play_name": "string",
   "symbol": "string",
   "expiration_date": "MM/DD/YYYY",
@@ -37,7 +38,16 @@
     "OTO_trigger": "play name of the corresponding OTO conditional play(s)"
   },
   "status": {
-    "play_status": "TEMP / NEW / OPEN / CLOSED / EXPIRED / whatever"
+    "play_status": "TEMP / NEW / PENDING / OPEN / CLOSING / CLOSED / EXPIRED",
+    "order_id": null,
+    "order_status": null,
+    "position_exists": false,
+    "last_checked": null,
+    "closing_order_id": null,
+    "closing_order_status": null,
+    "contingency_order_id": null,
+    "contingency_order_status": null,
+    "conditionals_handled": false
   },
   "logging": {
     "delta_atOpen": null,

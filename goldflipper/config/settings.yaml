@@ -167,3 +167,32 @@ market_hours:
     enabled: false                # Enable/disable extended hours trading
     pre_market_start: "04:00"     # Pre-market start (HH:MM)
     after_market_end: "20:00"     # After-market end (HH:MM)
+
+# Auto Play Creator Settings
+# --------------------------------------------------
+auto_play_creator:
+  enabled: true                     # Enable/disable auto play creation
+  order_types:                      # Types of orders to use
+    - market
+    - limit
+  stop_loss_types:                  # Types of stop loss to use
+    - STOP
+    - LIMIT
+    - CONTINGENCY
+  play_types:                       # Types of plays to create
+    - SIMPLE
+    - PRIMARY
+    - OCO
+    - OTO
+  trade_types:                      # Types of trades to create
+    - CALL
+    - PUT
+    - MIX
+  expiration_days: 7                # Default expiration in days for test plays
+  entry_buffer: 0.01                # Entry price buffer for test plays (e.g., ±$0.01)
+  take_profit_pct: 1.0              # Default take profit percentage
+  stop_loss_pct: 0.5                # Default stop loss percentage
+  test_symbols:                     # Symbols to use for test plays
+    - SPY
+    - AAPL
+    - TSLA

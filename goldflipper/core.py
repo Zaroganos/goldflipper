@@ -313,6 +313,14 @@ def open_position(play, play_file):
         display.error("Failed to retrieve option contract. Aborting order placement.")
         return False
     
+    # Initialize status if it doesn't exist
+    if 'status' not in play:
+        play['status'] = {}
+    play['status']['order_id'] = None
+    play['status']['order_status'] = None
+    play['status']['position_exists'] = False
+    play['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     # Get current premium before opening position
     current_premium = get_current_option_premium(play)
     if current_premium is None:
@@ -348,16 +356,18 @@ def open_position(play, play_file):
     try:
         # Create appropriate order request based on order type
         if play.get('entry_point', {}).get('order_type') == 'limit':
+            # Round limit price to 2 decimal places
+            limit_price = round(current_premium, 2)
             order_req = LimitOrderRequest(
                 symbol=contract.symbol,
                 qty=play['contracts'],
-                limit_price=current_premium,  # Use current premium as limit price
+                limit_price=limit_price,  # Use rounded current premium as limit price
                 side=OrderSide.BUY,
                 type=OrderType.LIMIT,
                 time_in_force=TimeInForce.DAY,
             )
-            logging.info(f"Creating limit buy order with limit price: ${current_premium:.4f}")
-            display.info(f"Creating limit buy order with limit price: ${current_premium:.4f}")
+            logging.info(f"Creating limit buy order with limit price: ${limit_price:.2f}")
+            display.info(f"Creating limit buy order with limit price: ${limit_price:.2f}")
         else:
             order_req = MarketOrderRequest(
                 symbol=contract.symbol,
@@ -372,23 +382,23 @@ def open_position(play, play_file):
         logging.info(f"Order submitted: {response}")
         display.info(f"Order submitted: {response}")
         
-        # Save the updated play data with the entry premium and TP/SL values
+        # Store order details
+        play['status']['order_id'] = response.id
+        play['status']['order_status'] = response.status
+        play['status']['play_status'] = 'PENDING'
+        
+        # Save the updated play data
         save_play(play, play_file)
-        return True
+        
+        return True  # Return true but let status checking handle the move to open
         
     except Exception as e:
         logging.error(f"Error placing order: {e}")
         display.error(f"Error placing order: {e}")
         return False
 
-def close_position(play, close_conditions):
-    """
-    Close position based on the triggered conditions.
-    
-    Args:
-        play (dict): The play data
-        close_conditions (dict): Dict containing condition flags from evaluate_closing_strategy
-    """
+def close_position(play, close_conditions, play_file):
+    """Close position based on the triggered conditions."""
     client = get_alpaca_client()
     contract_symbol = play.get('option_contract_symbol')
 
@@ -400,19 +410,31 @@ def close_position(play, close_conditions):
     qty = play.get('contracts', 1)  # Default to 1 if not specified
     
     try:
-        # Take profit handling (unchanged)
+        # Initialize closing status
+        play['status']['closing_order_id'] = None
+        play['status']['closing_order_status'] = None
+        play['status']['contingency_order_id'] = None
+        play['status']['contingency_order_status'] = None
+        play['status']['play_status'] = 'CLOSING'
+        
+        # Save initial closing status
+        save_play(play, play_file)
+        
+        # Take profit handling
         if close_conditions['is_profit']:
             if play['take_profit'].get('order_type') == 'limit':
+                # Round limit price to 2 decimal places
+                limit_price = round(play['take_profit']['TP_option_prem'], 2)
                 order_req = LimitOrderRequest(
                     symbol=contract_symbol,
                     qty=qty,
-                    limit_price=play['take_profit']['TP_option_prem'],
+                    limit_price=limit_price,
                     side=OrderSide.SELL,
                     type=OrderType.LIMIT,
                     time_in_force=TimeInForce.DAY
                 )
-                logging.info(f"Creating take profit limit sell order at ${play['take_profit']['TP_option_prem']:.4f}")
-                display.info(f"Creating take profit limit sell order at ${play['take_profit']['TP_option_prem']:.4f}")
+                logging.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
+                display.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
                 response = client.submit_order(order_req)
             else:
                 response = client.close_position(
@@ -434,6 +456,7 @@ def close_position(play, close_conditions):
                 except Exception as e:
                     logging.warning(f"Error canceling existing orders: {e}")
                     display.warning(f"Error canceling existing orders: {e}")
+                
                 # If backup condition is met, use market order
                 if close_conditions['is_contingency_loss']:
                     response = client.close_position(
@@ -444,30 +467,34 @@ def close_position(play, close_conditions):
                     display.info("Creating contingency market sell order")
                 # If only primary condition is met, use limit order
                 elif close_conditions['is_primary_loss']:
+                    # Round limit price to 2 decimal places
+                    limit_price = round(play['stop_loss']['SL_option_prem'], 2)
                     order_req = LimitOrderRequest(
                         symbol=contract_symbol,
                         qty=qty,
-                        limit_price=play['stop_loss']['SL_option_prem'],
+                        limit_price=limit_price,
                         side=OrderSide.SELL,
                         type=OrderType.LIMIT,
                         time_in_force=TimeInForce.DAY
                     )
-                    logging.info(f"Creating primary stop loss limit sell order at ${play['stop_loss']['SL_option_prem']:.4f}")
-                    display.info(f"Creating primary stop loss limit sell order at ${play['stop_loss']['SL_option_prem']:.4f}")
+                    logging.info(f"Creating primary stop loss limit sell order at ${limit_price:.2f}")
+                    display.info(f"Creating primary stop loss limit sell order at ${limit_price:.2f}")
                     response = client.submit_order(order_req)
             
             # For regular limit stop loss
             elif play['stop_loss'].get('order_type') == 'limit':
+                # Round limit price to 2 decimal places
+                limit_price = round(play['stop_loss']['SL_option_prem'], 2)
                 order_req = LimitOrderRequest(
                     symbol=contract_symbol,
                     qty=qty,
-                    limit_price=play['stop_loss']['SL_option_prem'],
+                    limit_price=limit_price,
                     side=OrderSide.SELL,
                     type=OrderType.LIMIT,
                     time_in_force=TimeInForce.DAY
                 )
-                logging.info(f"Creating stop loss limit sell order at ${play['stop_loss']['SL_option_prem']:.4f}")
-                display.info(f"Creating stop loss limit sell order at ${play['stop_loss']['SL_option_prem']:.4f}")
+                logging.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
+                display.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
                 response = client.submit_order(order_req)
             
             # For regular market stop loss
@@ -478,22 +505,45 @@ def close_position(play, close_conditions):
                 )
                 logging.info("Creating stop loss market sell order")
                 display.info("Creating stop loss market sell order")
-            logging.info(f"Order submitted: {response}")
-            display.info(f"Order submitted: {response}")
+                
+        logging.info(f"Order submitted: {response}")
+        display.info(f"Order submitted: {response}")
+        
+        # Store closing order details
+        play['status']['closing_order_id'] = response.id
+        play['status']['closing_order_status'] = response.status
+        play['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        save_play(play, play_file)
+        
+        # Only move to closed if market order filled immediately
+        if response.status == 'filled':
+            play['status']['play_status'] = 'CLOSED'
+            play['status']['position_exists'] = False
+            move_play_to_closed(play_file)
+            
         return True
         
-    except APIError as api_err:
-        logging.error(f"API Error closing position for {contract_symbol}: {api_err}")
-        display.error(f"API Error closing position for {contract_symbol}: {api_err}")
-        return False
     except Exception as e:
-        logging.error(f"Unexpected error closing position for {contract_symbol}: {e}")
-        display.error(f"Unexpected error closing position for {contract_symbol}: {e}")
+        logging.error(f"Error closing position: {e}")
+        display.error(f"Error closing position: {e}")
         return False
 
 def monitor_and_manage_position(play, play_file):
     """Monitor position using both stock price and premium conditions if configured."""
     client = get_alpaca_client()
+    
+    # Verify play status is appropriate for monitoring
+    if play.get('status', {}).get('play_status') not in ['OPEN', 'CLOSING']:
+        logging.info(f"Play status {play.get('status', {}).get('play_status')} not appropriate for monitoring")
+        display.info(f"Play status {play.get('status', {}).get('play_status')} not appropriate for monitoring")
+        return True
+        
+    # First verify position status
+    if not check_position_status(play, play_file):
+        logging.info("Position not yet established, skipping monitoring")
+        display.info("Position not yet established, skipping monitoring")
+        return True  # Return True to continue monitoring on next cycle
+        
     contract_symbol = play.get('option_contract_symbol')
     underlying_symbol = play.get('symbol')
     
@@ -565,8 +615,7 @@ def monitor_and_manage_position(play, play_file):
         while close_attempts < max_attempts:
             logging.info(f"Attempting to close position: Attempt {close_attempts + 1}")
             display.info(f"Attempting to close position: Attempt {close_attempts + 1}")
-            if close_position(play, close_conditions):  # Pass close_conditions to close_position
-                move_play_to_closed(play_file)
+            if close_position(play, close_conditions, play_file):
                 logging.info("Position closed successfully")
                 display.info("Position closed successfully")
                 return True
@@ -588,14 +637,16 @@ def monitor_and_manage_position(play, play_file):
 
 # Move to NEW (for OTO triggered plays)
 def move_play_to_new(play_file):
-    # Update status in JSON
+    """Move play to NEW folder and update status."""
     with open(play_file, 'r') as f:
         play_data = json.load(f)
-    play_data['status'] = 'new'
+    
+    play_data['status']['play_status'] = 'NEW'
+    play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     with open(play_file, 'w') as f:
         json.dump(play_data, f, indent=4)
     
-    # Existing move logic
     new_dir = os.path.join(os.path.dirname(play_file), '..', 'new')
     os.makedirs(new_dir, exist_ok=True)
     new_path = os.path.join(new_dir, os.path.basename(play_file))
@@ -605,14 +656,16 @@ def move_play_to_new(play_file):
 
 # Move to OPEN (for plays whose BUY condition has hit)
 def move_play_to_open(play_file):
-    # Update status in JSON
+    """Move play to OPEN folder and update status."""
     with open(play_file, 'r') as f:
         play_data = json.load(f)
-    play_data['status'] = 'open'
+    
+    play_data['status']['play_status'] = 'OPEN'
+    play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     with open(play_file, 'w') as f:
         json.dump(play_data, f, indent=4)
     
-    # Existing move logic
     open_dir = os.path.join(os.path.dirname(play_file), '..', 'open')
     os.makedirs(open_dir, exist_ok=True)
     new_path = os.path.join(open_dir, os.path.basename(play_file))
@@ -622,14 +675,17 @@ def move_play_to_open(play_file):
 
 # Move to CLOSED (for plays whose TP or SL condition has hit)
 def move_play_to_closed(play_file):
-    # Update status in JSON
+    """Move play to CLOSED folder and update status."""
     with open(play_file, 'r') as f:
         play_data = json.load(f)
-    play_data['status'] = 'closed'
+    
+    play_data['status']['play_status'] = 'CLOSED'
+    play_data['status']['position_exists'] = False
+    play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     with open(play_file, 'w') as f:
         json.dump(play_data, f, indent=4)
     
-    # Existing move logic
     closed_dir = os.path.join(os.path.dirname(play_file), '..', 'closed')
     os.makedirs(closed_dir, exist_ok=True)
     new_path = os.path.join(closed_dir, os.path.basename(play_file))
@@ -639,14 +695,23 @@ def move_play_to_closed(play_file):
 
 # Move to EXPIRED (for plays which have expired, and OCO triggered plays)
 def move_play_to_expired(play_file):
-    # Update status in JSON
+    """Move play to EXPIRED folder and update status."""
     with open(play_file, 'r') as f:
         play_data = json.load(f)
-    play_data['status'] = 'expired'
+    
+    play_data['status'] = {
+        'play_status': 'EXPIRED',
+        'order_id': None,
+        'order_status': None,
+        'position_exists': False,
+        'closing_order_id': None,
+        'closing_order_status': None,
+        'last_checked': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
     with open(play_file, 'w') as f:
         json.dump(play_data, f, indent=4)
-
-    # Existing move logic
+    
     expired_dir = os.path.join(os.path.dirname(play_file), '..', 'expired')
     os.makedirs(expired_dir, exist_ok=True)
     new_path = os.path.join(expired_dir, os.path.basename(play_file))
@@ -662,10 +727,17 @@ def move_play_to_expired(play_file):
 def execute_trade(play_file, play_type):
     logging.info(f"Executing {play_type} play: {play_file}")
     display.info(f"Executing {play_type} play: {play_file}")
+    
     play = load_play(play_file)
     if play is None:
         logging.error(f"Failed to load play {play_file}. Aborting trade execution.")
+        display.error(f"Failed to load play {play_file}. Aborting trade execution.")
         return False
+
+    # For PENDING plays, check status before proceeding
+    if play.get('status', {}).get('play_status') == 'PENDING':
+        if not check_position_status(play, play_file):
+            return False  # Don't proceed if position isn't established yet
 
     # Validate order types first
     if not validate_play_order_types(play):
@@ -686,35 +758,9 @@ def execute_trade(play_file, play_type):
     if play_type == "new":
         if evaluate_opening_strategy(symbol, market_data, play):
             if open_position(play, play_file):
-                move_play_to_open(play_file)
-                
-                # Handle conditional plays if this is a PRIMARY play
-                if play.get("class") == "PRIMARY":
-                    plays_base_dir = os.path.dirname(os.path.dirname(play_file))
-                    
-                    # Handle OCO trigger
-                    if "OCO_trigger" in play:
-                        oco_file = play["OCO_trigger"]
-                        oco_path = os.path.join(plays_base_dir, 'new', oco_file)
-                        if os.path.exists(oco_path):
-                            logging.info(f"Processing OCO trigger: {oco_file}")
-                            display.info(f"Processing OCO trigger: {oco_file}")
-                            move_play_to_expired(oco_path)
-                        else:
-                            logging.error(f"OCO trigger file not found: {oco_path}")
-                            display.error(f"OCO trigger file not found: {oco_path}")
-
-                    # Handle OTO trigger
-                    if "OTO_trigger" in play:
-                        oto_file = play["OTO_trigger"]
-                        oto_path = os.path.join(plays_base_dir, 'new', oto_file)
-                        if os.path.exists(oto_path):
-                            logging.info(f"Processing OTO trigger: {oto_file}")
-                            display.info(f"Processing OTO trigger: {oto_file}")
-                            move_play_to_new(oto_path)
-                        else:
-                            logging.error(f"OTO trigger file not found: {oto_path}")
-                            display.error(f"OTO trigger file not found: {oto_path}")
+                # Handle conditional plays only after position is confirmed open
+                if play.get('status', {}).get('position_exists') and play.get("play_class") == "PRIMARY":
+                    handle_conditional_plays(play, play_file)
                 return True
             
     # MONITORING an Open Play
@@ -1077,6 +1123,116 @@ def capture_greeks(play, current_premium):
         logging.error(f"Error capturing Greeks: {e}")  # Updated error message
         display.error(f"Error capturing Greeks: {e}")
         return None, None
+
+def check_position_status(play, play_file):
+    """Check the status of an order/position and update the play file accordingly."""
+    client = get_alpaca_client()
+    
+    try:
+        # Check opening order status
+        if play['status'].get('order_id') and play['status'].get('play_status') == 'PENDING':
+            order = client.get_order_by_id(play['status']['order_id'])
+            
+            # Update order status
+            play['status']['order_status'] = order.status
+            play['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # If order is filled, check position
+            if order.status == 'filled':
+                try:
+                    position = client.get_open_position(play['option_contract_symbol'])
+                    play['status']['position_exists'] = True
+                    play['status']['play_status'] = 'OPEN'
+                    # Move to open folder if not already there
+                    if os.path.basename(os.path.dirname(play_file)) != 'open':
+                        move_play_to_open(play_file)
+                except Exception as e:
+                    if "position does not exist" in str(e):
+                        play['status']['position_exists'] = False
+            
+            # Handle cancelled/rejected orders
+            elif order.status in ['canceled', 'rejected']:
+                play['status']['play_status'] = 'NEW'  # Reset to NEW
+                play['status']['position_exists'] = False
+                play['status']['order_id'] = None  # Clear order ID
+                play['status']['order_status'] = None  # Clear order status
+                if os.path.basename(os.path.dirname(play_file)) != 'new':
+                    move_play_to_new(play_file)
+                
+        # Check closing order status if applicable
+        elif play['status'].get('closing_order_id') and play['status'].get('play_status') == 'CLOSING':
+            closing_order = client.get_order_by_id(play['status']['closing_order_id'])
+            
+            # Update closing order status
+            play['status']['closing_order_status'] = closing_order.status
+            play['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # If closing order is filled
+            if closing_order.status == 'filled':
+                play['status']['play_status'] = 'CLOSED'
+                play['status']['position_exists'] = False
+                move_play_to_closed(play_file)
+            
+            # Handle cancelled/rejected closing orders
+            elif closing_order.status in ['canceled', 'rejected']:
+                play['status']['play_status'] = 'OPEN'  # Reset to OPEN
+                play['status']['closing_order_id'] = None
+                play['status']['closing_order_status'] = None
+                
+        save_play(play, play_file)
+        
+        return play['status']['position_exists']
+            
+    except Exception as e:
+        logging.error(f"Error checking position status: {e}")
+        display.error(f"Error checking position status: {e}")
+        return False
+
+def handle_conditional_plays(play, play_file):
+    """Handle OCO and OTO triggers after position is confirmed open."""
+    if play.get('status', {}).get('conditionals_handled'):
+        return
+        
+    plays_base_dir = os.path.dirname(os.path.dirname(play_file))
+    
+    # Verify this is a PRIMARY play
+    if play.get('play_class') != 'PRIMARY':
+        logging.error("Attempting to handle conditionals for non-PRIMARY play")
+        display.error("Attempting to handle conditionals for non-PRIMARY play")
+        return False
+    
+    # Verify all conditional plays exist before processing any
+    all_conditionals_exist = True
+    if "OCO_trigger" in play:
+        oco_path = os.path.join(plays_base_dir, 'new', play["OCO_trigger"])
+        if not os.path.exists(oco_path):
+            logging.error(f"OCO trigger file not found: {oco_path}")
+            display.error(f"OCO trigger file not found: {oco_path}")
+            all_conditionals_exist = False
+            
+    if "OTO_trigger" in play:
+        oto_path = os.path.join(plays_base_dir, 'new', play["OTO_trigger"])
+        if not os.path.exists(oto_path):
+            logging.error(f"OTO trigger file not found: {oto_path}")
+            display.error(f"OTO trigger file not found: {oto_path}")
+            all_conditionals_exist = False
+    
+    # Only proceed if all conditional plays exist
+    if not all_conditionals_exist:
+        logging.error("Not all conditional plays exist. Skipping conditional handling.")
+        display.error("Not all conditional plays exist. Skipping conditional handling.")
+        return False
+        
+    # Process conditionals
+    if "OCO_trigger" in play:
+        move_play_to_expired(oco_path)
+    if "OTO_trigger" in play:
+        move_play_to_new(oto_path)
+            
+    # Mark conditionals as handled
+    play['status']['conditionals_handled'] = True
+    save_play(play, play_file)
+    return True
 
 if __name__ == "__main__":
     monitor_plays_continuously()

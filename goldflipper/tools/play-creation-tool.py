@@ -408,6 +408,8 @@ def create_play():
 
         play['creation_date'] = datetime.now().strftime('%Y-%m-%d')  # Automatically populate play's creation date
 
+        play['creator'] = 'user'
+
         # Update the plays directory path and add status field
         if play['play_class'] == 'OTO':
             plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp')
