@@ -157,6 +157,35 @@ def calculate_and_store_premium_levels(play, current_premium):
         contingency_sl_pct = play['stop_loss']['contingency_premium_pct'] / 100
         play['stop_loss']['contingency_SL_option_prem'] = current_premium * (1 - contingency_sl_pct)
 
+def calculate_and_store_price_levels(play, entry_stock_price):
+    """Calculate and store TP/SL stock price levels in the play data."""
+    # Store entry stock price
+    play['entry_point']['entry_stock_price'] = entry_stock_price
+    
+    # Calculate take profit target if using stock price percentage
+    if play['take_profit'].get('stock_price_pct'):
+        tp_pct = play['take_profit']['stock_price_pct'] / 100
+        if play['trade_type'].upper() == "CALL":
+            play['take_profit']['TP_stock_price_target'] = entry_stock_price * (1 + tp_pct)
+        else:  # PUT
+            play['take_profit']['TP_stock_price_target'] = entry_stock_price * (1 - tp_pct)
+    
+    # Calculate stop loss targets if using stock price percentage
+    if play['stop_loss'].get('stock_price_pct'):
+        sl_pct = play['stop_loss']['stock_price_pct'] / 100
+        if play['trade_type'].upper() == "CALL":
+            play['stop_loss']['SL_stock_price_target'] = entry_stock_price * (1 - sl_pct)
+        else:  # PUT
+            play['stop_loss']['SL_stock_price_target'] = entry_stock_price * (1 + sl_pct)
+    
+    # Calculate contingency stop loss target if applicable
+    if play['stop_loss'].get('contingency_stock_price_pct'):
+        contingency_sl_pct = play['stop_loss']['contingency_stock_price_pct'] / 100
+        if play['trade_type'].upper() == "CALL":
+            play['stop_loss']['contingency_SL_stock_price_target'] = entry_stock_price * (1 - contingency_sl_pct)
+        else:  # PUT
+            play['stop_loss']['contingency_SL_stock_price_target'] = entry_stock_price * (1 + contingency_sl_pct)
+
 class UUIDEncoder(json.JSONEncoder):
     """Custom JSON encoder to handle UUID objects."""
     def default(self, obj):
@@ -210,6 +239,9 @@ def evaluate_closing_strategy(symbol, market_data, play):
     - Mixed conditions (e.g., TP by stock price, SL by premium %)
     - Multiple conditions (both stock price AND premium % for either TP or SL)
     - Contingency stop loss with primary and backup conditions
+    - Stock price absolute value
+    - Stock price percentage movement
+    - Option premium percentage
     """
     logging.info(f"Evaluating closing strategy for {symbol} using play data...")
     display.info(f"Evaluating closing strategy for {symbol} using play data...")
@@ -221,29 +253,52 @@ def evaluate_closing_strategy(symbol, market_data, play):
     loss_condition = False
     contingency_loss_condition = False
 
-    # Check stock price-based take profit condition
+    # Check stock price-based take profit conditions
     if play['take_profit'].get('stock_price') is not None:
+        # Existing absolute price check
         if trade_type == "CALL":
             profit_condition = last_price >= play['take_profit']['stock_price']
         elif trade_type == "PUT":
             profit_condition = last_price <= play['take_profit']['stock_price']
-
+    elif play['take_profit'].get('TP_stock_price_target') is not None:
+        # Percentage movement check
+        if trade_type == "CALL":
+            profit_condition = last_price >= play['take_profit']['TP_stock_price_target']
+        elif trade_type == "PUT":
+            profit_condition = last_price <= play['take_profit']['TP_stock_price_target']
+    
     # Get stop loss type
     sl_type = play['stop_loss'].get('SL_type', 'STOP')  # Default to STOP for backward compatibility
 
     # Check stock price-based stop loss conditions
     if play['stop_loss'].get('stock_price') is not None:
+        # Existing absolute price check
         if trade_type == "CALL":
             loss_condition = last_price <= play['stop_loss']['stock_price']
-            # Check contingency condition if applicable
-            if sl_type == 'CONTINGENCY' and play['stop_loss'].get('contingency_stock_price') is not None:
-                contingency_loss_condition = last_price <= play['stop_loss']['contingency_stock_price']
         elif trade_type == "PUT":
             loss_condition = last_price >= play['stop_loss']['stock_price']
-            # Check contingency condition if applicable
-            if sl_type == 'CONTINGENCY' and play['stop_loss'].get('contingency_stock_price') is not None:
+    elif play['stop_loss'].get('SL_stock_price_target') is not None:
+        # Percentage movement check
+        if trade_type == "CALL":
+            loss_condition = last_price <= play['stop_loss']['SL_stock_price_target']
+        elif trade_type == "PUT":
+            loss_condition = last_price >= play['stop_loss']['SL_stock_price_target']
+    
+    # Check contingency conditions if applicable
+    if sl_type == 'CONTINGENCY':
+        if play['stop_loss'].get('contingency_stock_price') is not None:
+            # Existing absolute price check
+            if trade_type == "CALL":
+                contingency_loss_condition = last_price <= play['stop_loss']['contingency_stock_price']
+            elif trade_type == "PUT":
                 contingency_loss_condition = last_price >= play['stop_loss']['contingency_stock_price']
-
+        elif play['stop_loss'].get('contingency_SL_stock_price_target') is not None:
+            # Percentage movement check
+            if trade_type == "CALL":
+                contingency_loss_condition = last_price <= play['stop_loss']['contingency_SL_stock_price_target']
+            elif trade_type == "PUT":
+                contingency_loss_condition = last_price >= play['stop_loss']['contingency_SL_stock_price_target']
+    
     # Check premium-based conditions if available
     current_premium = get_current_option_premium(play)
     if current_premium is not None:
@@ -334,6 +389,18 @@ def open_position(play, play_file):
         'play_status': 'PENDING',
         'last_checked': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
+    
+    # Get current stock price before opening position
+    market_data = get_market_data(play['symbol'])
+    if market_data is None or market_data.empty:
+        logging.error("Failed to get current stock price. Aborting order placement.")
+        display.error("Failed to get current stock price. Aborting order placement.")
+        return False
+    
+    entry_stock_price = market_data['Close'].iloc[-1]
+    
+    # Calculate and store price movement levels
+    calculate_and_store_price_levels(play, entry_stock_price)
     
     # Get current premium before opening position
     current_premium = get_current_option_premium(play)

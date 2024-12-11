@@ -11,24 +11,31 @@
   "entry_point": {
     "stock_price": 0.0,
     "order_type": "market or limit",
-    "entry_premium": 0.0
+    "entry_premium": 0.0,
+    "entry_stock_price": null
   },
   "take_profit": {
     "TP_type": "Single or multiple TPs, Mixed, Multiple, etc.",
     "stock_price": 0.0,
+    "stock_price_pct": null,
     "premium_pct": 50.0,
     "order_type": "market or limit",
-    "TP_option_prem": null
+    "TP_option_prem": null,
+    "TP_stock_price_target": null
   },
   "stop_loss": {
     "SL_type": "STOP or LIMIT or CONTINGENCY",
     "stock_price": 0.0,
+    "stock_price_pct": null,
     "premium_pct": 25.0,
     "contingency_stock_price": 0.0,
+    "contingency_stock_price_pct": null,
     "contingency_premium_pct": 25.0,
     "order_type": "market or limit, or array with both if type is contingency",
     "SL_option_prem": null,
-    "contingency_SL_option_prem": null
+    "SL_stock_price_target": null,
+    "contingency_SL_option_prem": null,
+    "contingency_SL_stock_price_target": null
   },
   "play_class": "SIMPLE, or if conditional: PRIMARY or OTO (if OCO, simply enter it as SIMPLE)",
   "strategy": "string",

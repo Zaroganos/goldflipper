@@ -90,16 +90,19 @@ def create_option_contract_symbol(symbol, expiration_date, strike_price, trade_t
     return final_symbol
 
 def get_price_condition_type():
-    """Get user's choice for price condition type (stock price vs premium %)."""
+    """Get user's choice for price condition type."""
+    print("\nSelect price condition type:")
+    print("1. Stock price only (absolute value)")
+    print("2. Option premium % only")
+    print("3. Stock price % movement only")
+    print("4. Both stock price (absolute) AND option premium %")
+    print("5. Both stock price % movement AND option premium %")
+    
     return get_input(
-        "Please choose price condition type:\n"
-        "1. Stock price only\n"
-        "2. Option premium % only\n"
-        "3. Both stock price and option premium %\n"
-        "Choice (1/2/3): ",
+        "Choice (1-5): ",
         int,
-        validation=lambda x: x in [1, 2, 3],
-        error_message="Please enter 1 for stock price, 2 for option premium %, or 3 for both."
+        validation=lambda x: x in [1, 2, 3, 4, 5],
+        error_message="Please enter a number between 1 and 5."
     )
 
 def get_premium_percentage():
@@ -255,9 +258,14 @@ def create_play():
         # Take profit section
         print("\nSetting Take Profit parameters...")
         tp_price_type = get_price_condition_type()
-        play['take_profit'] = {'stock_price': None, 'premium_pct': None, 'order_type': 'market'}
-        
-        if tp_price_type in [1, 3]:  # Stock price or both
+        play['take_profit'] = {
+            'stock_price': None,
+            'stock_price_pct': None,
+            'premium_pct': None,
+            'order_type': 'market'
+        }
+
+        if tp_price_type in [1, 4]:  # Absolute stock price
             tp_stock_price = get_input(
                 "Enter take profit stock price: ",
                 float,
@@ -266,10 +274,28 @@ def create_play():
             )
             play['take_profit']['stock_price'] = tp_stock_price
 
-        if tp_price_type in [2, 3]:  # Premium % or both
+        elif tp_price_type == 3:  # Stock price % movement only
+            tp_stock_price_pct = get_input(
+                "Enter take profit stock price percentage movement: ",
+                float,
+                validation=lambda x: x > 0,
+                error_message="Please enter a valid positive percentage"
+            )
+            play['take_profit']['stock_price_pct'] = tp_stock_price_pct
+
+        if tp_price_type in [2, 4, 5]:  # Any condition involving premium %
             tp_premium_pct = get_premium_percentage()
             play['take_profit']['premium_pct'] = tp_premium_pct
-        
+
+        if tp_price_type == 5:  # Stock price % + premium %
+            tp_stock_price_pct = get_input(
+                "Enter take profit stock price percentage movement: ",
+                float,
+                validation=lambda x: x > 0,
+                error_message="Please enter a valid positive percentage"
+            )
+            play['take_profit']['stock_price_pct'] = tp_stock_price_pct
+
         # Take profit order type
         play['take_profit']['order_type'] = get_order_type_choice(transaction_type="Take Profit")
 
@@ -279,13 +305,17 @@ def create_play():
         play['stop_loss'] = {
             'SL_type': None,
             'stock_price': None,
+            'stock_price_pct': None,
             'premium_pct': None,
             'contingency_stock_price': None,
+            'contingency_stock_price_pct': None,
             'contingency_premium_pct': None,
             'order_type': None,
-            'SL_option_prem': None  # Keeping this from template
+            'SL_option_prem': None,
+            'SL_stock_price_target': None,
+            'contingency_SL_stock_price_target': None
         }
-        
+
         # Get SL type first as it affects how many conditions we need
         sl_type_choice = get_sl_type_choice()
         play['stop_loss']['SL_type'] = (
@@ -293,11 +323,10 @@ def create_play():
             'LIMIT' if sl_type_choice == 2 else
             'CONTINGENCY'
         )
-        
-        # Handle stop loss conditions based on SL_type and price_type
+
         if play['stop_loss']['SL_type'] in ['STOP', 'LIMIT']:
             # Single set of conditions
-            if sl_price_type in [1, 3]:  # Stock price or both
+            if sl_price_type in [1, 4]:  # Absolute stock price
                 sl_stock_price = get_input(
                     "Enter stop loss stock price: ",
                     float,
@@ -306,12 +335,30 @@ def create_play():
                 )
                 play['stop_loss']['stock_price'] = sl_stock_price
 
-            if sl_price_type in [2, 3]:  # Premium % or both
+            elif sl_price_type == 3:  # Stock price % movement only
+                sl_stock_price_pct = get_input(
+                    "Enter stop loss stock price percentage movement: ",
+                    float,
+                    validation=lambda x: x > 0,
+                    error_message="Please enter a valid positive percentage"
+                )
+                play['stop_loss']['stock_price_pct'] = sl_stock_price_pct
+
+            if sl_price_type in [2, 4, 5]:  # Any condition involving premium %
                 sl_premium_pct = get_premium_percentage()
                 play['stop_loss']['premium_pct'] = sl_premium_pct
-                
+
+            if sl_price_type == 5:  # Stock price % + premium %
+                sl_stock_price_pct = get_input(
+                    "Enter stop loss stock price percentage movement: ",
+                    float,
+                    validation=lambda x: x > 0,
+                    error_message="Please enter a valid positive percentage"
+                )
+                play['stop_loss']['stock_price_pct'] = sl_stock_price_pct
+
         else:  # CONTINGENCY type needs two sets of conditions
-            if sl_price_type in [1, 3]:  # Stock price or both
+            if sl_price_type in [1, 4]:  # Absolute stock price
                 print("\nEnter main stop loss conditions:")
                 main_stock_price = get_input(
                     "Enter main stop loss stock price: ",
@@ -336,7 +383,32 @@ def create_play():
                 play['stop_loss']['stock_price'] = main_stock_price
                 play['stop_loss']['contingency_stock_price'] = backup_stock_price
 
-            if sl_price_type in [2, 3]:  # Premium % or both
+            elif sl_price_type == 3:  # Stock price % movement only
+                print("\nEnter main stop loss conditions:")
+                main_stock_price_pct = get_input(
+                    "Enter main stop loss stock price percentage movement: ",
+                    float,
+                    validation=lambda x: x > 0,
+                    error_message="Please enter a valid positive percentage"
+                )
+                
+                while True:
+                    print("\nEnter backup/safety stop loss conditions (must represent a bigger movement):")
+                    backup_stock_price_pct = get_input(
+                        "Enter backup stop loss stock price percentage movement (must be higher than main %): ",
+                        float,
+                        validation=lambda x: x > main_stock_price_pct,
+                        error_message=f"Please enter a percentage higher than {main_stock_price_pct}%"
+                    )
+                    
+                    if backup_stock_price_pct > main_stock_price_pct:
+                        break
+                    print(f"Error: Backup percentage ({backup_stock_price_pct}%) must be higher than main percentage ({main_stock_price_pct}%)")
+                
+                play['stop_loss']['stock_price_pct'] = main_stock_price_pct
+                play['stop_loss']['contingency_stock_price_pct'] = backup_stock_price_pct
+
+            if sl_price_type in [2, 4, 5]:  # Any condition involving premium %
                 print("\nEnter main stop loss conditions:") if sl_price_type == 2 else None
                 main_premium = get_premium_percentage()
                 
@@ -352,6 +424,31 @@ def create_play():
                 
                 play['stop_loss']['premium_pct'] = main_premium
                 play['stop_loss']['contingency_premium_pct'] = backup_premium
+
+            if sl_price_type == 5:  # Stock price % + premium %
+                print("\nEnter main stop loss conditions:")
+                main_stock_price_pct = get_input(
+                    "Enter main stop loss stock price percentage movement: ",
+                    float,
+                    validation=lambda x: x > 0,
+                    error_message="Please enter a valid positive percentage"
+                )
+                
+                while True:
+                    print("\nEnter backup/safety stop loss conditions (must represent a bigger movement):")
+                    backup_stock_price_pct = get_input(
+                        "Enter backup stop loss stock price percentage movement (must be higher than main %): ",
+                        float,
+                        validation=lambda x: x > main_stock_price_pct,
+                        error_message=f"Please enter a percentage higher than {main_stock_price_pct}%"
+                    )
+                    
+                    if backup_stock_price_pct > main_stock_price_pct:
+                        break
+                    print(f"Error: Backup percentage ({backup_stock_price_pct}%) must be higher than main percentage ({main_stock_price_pct}%)")
+                
+                play['stop_loss']['stock_price_pct'] = main_stock_price_pct
+                play['stop_loss']['contingency_stock_price_pct'] = backup_stock_price_pct
 
         # Set order type(s) based on SL_type
         if play['stop_loss']['SL_type'] == 'STOP':
