@@ -171,6 +171,11 @@ def calculate_and_store_premium_levels(play, current_premium):
     if play['stop_loss'].get('premium_pct'):
         sl_pct = play['stop_loss']['premium_pct'] / 100
         play['stop_loss']['SL_option_prem'] = current_premium * (1 - sl_pct)
+    
+    # Add contingency SL premium calculation if it exists
+    if play['stop_loss'].get('contingency_premium_pct'):
+        contingency_sl_pct = play['stop_loss']['contingency_premium_pct'] / 100
+        play['stop_loss']['contingency_SL_option_prem'] = current_premium * (1 - contingency_sl_pct)
 
 def save_play(play, play_file):
     """Save the updated play data to the specified file."""
@@ -211,7 +216,7 @@ def evaluate_closing_strategy(symbol, market_data, play):
     Evaluate if closing conditions are met. Supports:
     - Mixed conditions (e.g., TP by stock price, SL by premium %)
     - Multiple conditions (both stock price AND premium % for either TP or SL)
-    - Either condition being met will trigger the corresponding action
+    - Contingency stop loss with primary and backup conditions
     """
     logging.info(f"Evaluating closing strategy for {symbol} using play data...")
     
@@ -221,6 +226,7 @@ def evaluate_closing_strategy(symbol, market_data, play):
     # Initialize condition flags
     profit_condition = False
     loss_condition = False
+    contingency_loss_condition = False
 
     # Check stock price-based take profit condition
     if play['take_profit'].get('stock_price') is not None:
@@ -229,12 +235,21 @@ def evaluate_closing_strategy(symbol, market_data, play):
         elif trade_type == "PUT":
             profit_condition = last_price <= play['take_profit']['stock_price']
 
-    # Check stock price-based stop loss condition
+    # Get stop loss type
+    sl_type = play['stop_loss'].get('SL_type', 'STOP')  # Default to STOP for backward compatibility
+
+    # Check stock price-based stop loss conditions
     if play['stop_loss'].get('stock_price') is not None:
         if trade_type == "CALL":
             loss_condition = last_price <= play['stop_loss']['stock_price']
+            # Check contingency condition if applicable
+            if sl_type == 'CONTINGENCY' and play['stop_loss'].get('contingency_stock_price') is not None:
+                contingency_loss_condition = last_price <= play['stop_loss']['contingency_stock_price']
         elif trade_type == "PUT":
             loss_condition = last_price >= play['stop_loss']['stock_price']
+            # Check contingency condition if applicable
+            if sl_type == 'CONTINGENCY' and play['stop_loss'].get('contingency_stock_price') is not None:
+                contingency_loss_condition = last_price >= play['stop_loss']['contingency_stock_price']
 
     # Check premium-based conditions if available
     current_premium = get_current_option_premium(play)
@@ -248,13 +263,28 @@ def evaluate_closing_strategy(symbol, market_data, play):
         if play['stop_loss'].get('premium_pct') is not None:
             sl_target = play['stop_loss']['SL_option_prem']
             loss_condition = loss_condition or (current_premium <= sl_target)
+            
+            # Check contingency premium condition if applicable
+            if sl_type == 'CONTINGENCY' and play['stop_loss'].get('contingency_premium_pct') is not None:
+                contingency_sl_target = play['stop_loss']['contingency_SL_option_prem']
+                contingency_loss_condition = contingency_loss_condition or (current_premium <= contingency_sl_target)
 
+    # Log conditions
     if profit_condition:
         logging.info("Take profit condition met")
     if loss_condition:
-        logging.info("Stop loss condition met")
+        logging.info(f"{'Primary' if sl_type == 'CONTINGENCY' else ''} Stop loss condition met")
+    if contingency_loss_condition:
+        logging.info("Contingency (backup) stop loss condition met")
 
-    return profit_condition or loss_condition
+    # Return tuple with condition flags and stop loss type
+    return {
+        'should_close': profit_condition or loss_condition or contingency_loss_condition,
+        'is_profit': profit_condition,
+        'is_primary_loss': loss_condition,
+        'is_contingency_loss': contingency_loss_condition,
+        'sl_type': sl_type
+    }
 
 # ==================================================
 # 4. ORDER PLACEMENT
@@ -376,7 +406,14 @@ def open_position(play, play_file):
         logging.error(f"Error placing order: {e}")
         return False
 
-def close_position(play):
+def close_position(play, close_conditions):
+    """
+    Close position based on the triggered conditions.
+    
+    Args:
+        play (dict): The play data
+        close_conditions (dict): Dict containing condition flags from evaluate_closing_strategy
+    """
     client = get_alpaca_client()
     contract_symbol = play.get('option_contract_symbol')
 
@@ -387,56 +424,79 @@ def close_position(play):
     qty = play.get('contracts', 1)  # Default to 1 if not specified
     
     try:
-        # Check if this is a TP or SL closure by checking conditions
-        is_tp = (
-            (play['take_profit'].get('stock_price') is not None and 
-             float(client.get_latest_trade(play['symbol']).price) >= play['take_profit']['stock_price']) or
-            (play['take_profit'].get('premium_pct') is not None and 
-             get_current_option_premium(play) >= play['take_profit']['TP_option_prem'])
-        )
-        
-        # Handle limit orders
-        if (is_tp and play['take_profit'].get('order_type') == 'limit') or \
-           (not is_tp and play['stop_loss'].get('order_type') == 'limit'):
-            
-            if is_tp:
-                # For TP, use the TP premium target if available
-                limit_price = play['take_profit'].get('TP_option_prem')
-                logging.info(f"Take Profit triggered - Using TP premium target: ${limit_price:.4f}")
+        # Take profit handling (unchanged)
+        if close_conditions['is_profit']:
+            if play['take_profit'].get('order_type') == 'limit':
+                order_req = LimitOrderRequest(
+                    symbol=contract_symbol,
+                    qty=qty,
+                    limit_price=play['take_profit']['TP_option_prem'],
+                    side=OrderSide.SELL,
+                    type=OrderType.LIMIT,
+                    time_in_force=TimeInForce.DAY
+                )
+                logging.info(f"Creating take profit limit sell order at ${play['take_profit']['TP_option_prem']:.4f}")
+                response = client.submit_order(order_req)
             else:
-                # For SL, use the SL premium target if available
-                limit_price = play['stop_loss'].get('SL_option_prem')
-                logging.info(f"Stop Loss triggered - Using SL premium target: ${limit_price:.4f}")
-            
-            # If no premium target set, get current premium
-            if limit_price is None:
-                current_premium = get_current_option_premium(play)
-                if current_premium is None:
-                    logging.error("Failed to get current option premium for limit order.")
-                    return False
-                limit_price = current_premium
-                logging.info(f"Using current premium as limit price: ${limit_price:.4f}")
-            
-            order_req = LimitOrderRequest(
-                symbol=contract_symbol,
-                qty=qty,
-                limit_price=limit_price,
-                side=OrderSide.SELL,
-                type=OrderType.LIMIT,
-                time_in_force=TimeInForce.DAY
-            )
-            logging.info(f"Creating limit sell order with limit price: ${limit_price:.4f}")
-            response = client.submit_order(order_req)
+                response = client.close_position(
+                    symbol_or_asset_id=contract_symbol,
+                    close_options=ClosePositionRequest(qty=str(qty))
+                )
+                logging.info("Creating take profit market sell order")
         
-        # Handle market orders using ClosePositionRequest
+        # Stop loss handling
         else:
-            response = client.close_position(
-                symbol_or_asset_id=contract_symbol,
-                close_options=ClosePositionRequest(qty=str(qty))
-            )
-            logging.info(f"Creating market sell order via ClosePositionRequest for {'TP' if is_tp else 'SL'}")
+            # For contingency stop loss
+            if close_conditions['sl_type'] == 'CONTINGENCY':
+                # Cancel any existing orders first
+                try:
+                    client.cancel_all_orders()
+                    logging.info("Cancelled all existing orders")
+                except Exception as e:
+                    logging.warning(f"Error canceling existing orders: {e}")
+                
+                # If backup condition is met, use market order
+                if close_conditions['is_contingency_loss']:
+                    response = client.close_position(
+                        symbol_or_asset_id=contract_symbol,
+                        close_options=ClosePositionRequest(qty=str(qty))
+                    )
+                    logging.info("Creating contingency market sell order")
+                # If only primary condition is met, use limit order
+                elif close_conditions['is_primary_loss']:
+                    order_req = LimitOrderRequest(
+                        symbol=contract_symbol,
+                        qty=qty,
+                        limit_price=play['stop_loss']['SL_option_prem'],
+                        side=OrderSide.SELL,
+                        type=OrderType.LIMIT,
+                        time_in_force=TimeInForce.DAY
+                    )
+                    logging.info(f"Creating primary stop loss limit sell order at ${play['stop_loss']['SL_option_prem']:.4f}")
+                    response = client.submit_order(order_req)
             
-        logging.info(f"Successfully submitted close order: {response}")
+            # For regular limit stop loss
+            elif play['stop_loss'].get('order_type') == 'limit':
+                order_req = LimitOrderRequest(
+                    symbol=contract_symbol,
+                    qty=qty,
+                    limit_price=play['stop_loss']['SL_option_prem'],
+                    side=OrderSide.SELL,
+                    type=OrderType.LIMIT,
+                    time_in_force=TimeInForce.DAY
+                )
+                logging.info(f"Creating stop loss limit sell order at ${play['stop_loss']['SL_option_prem']:.4f}")
+                response = client.submit_order(order_req)
+            
+            # For regular market stop loss
+            else:
+                response = client.close_position(
+                    symbol_or_asset_id=contract_symbol,
+                    close_options=ClosePositionRequest(qty=str(qty))
+                )
+                logging.info("Creating stop loss market sell order")
+        
+        logging.info(f"Order submitted: {response}")
         return True
         
     except APIError as api_err:
@@ -483,7 +543,15 @@ def monitor_and_manage_position(play, play_file):
         # Log premium targets if using limit orders
         if play['take_profit'].get('order_type') == 'limit' and play['take_profit'].get('TP_option_prem'):
             logging.info(f"TP limit order target: ${play['take_profit']['TP_option_prem']:.4f}")
-        if play['stop_loss'].get('order_type') == 'limit' and play['stop_loss'].get('SL_option_prem'):
+        
+        # Log stop loss targets
+        sl_type = play['stop_loss'].get('SL_type', 'STOP')
+        if sl_type == 'CONTINGENCY':
+            if play['stop_loss'].get('SL_option_prem'):
+                logging.info(f"Primary SL limit order target: ${play['stop_loss']['SL_option_prem']:.4f}")
+            if play['stop_loss'].get('contingency_SL_option_prem'):
+                logging.info(f"Backup SL market order target: ${play['stop_loss']['contingency_SL_option_prem']:.4f}")
+        elif play['stop_loss'].get('order_type') == 'limit' and play['stop_loss'].get('SL_option_prem'):
             logging.info(f"SL limit order target: ${play['stop_loss']['SL_option_prem']:.4f}")
 
     # Verify position is still open
@@ -493,13 +561,14 @@ def monitor_and_manage_position(play, play_file):
         return True
 
     # Evaluate closing conditions
-    if evaluate_closing_strategy(underlying_symbol, market_data, play):
+    close_conditions = evaluate_closing_strategy(underlying_symbol, market_data, play)
+    if close_conditions['should_close']:
         close_attempts = 0
         max_attempts = 3
         
         while close_attempts < max_attempts:
             logging.info(f"Attempting to close position: Attempt {close_attempts + 1}")
-            if close_position(play):
+            if close_position(play, close_conditions):  # Pass close_conditions to close_position
                 move_play_to_closed(play_file)
                 logging.info("Position closed successfully")
                 return True
@@ -652,11 +721,7 @@ def execute_trade(play_file, play_type):
     return False
 
 def validate_play_order_types(play):
-    """Validate order types in play data.
-    
-    Returns:
-        bool: True if all order types are valid, False otherwise
-    """
+    """Validate order types in play data."""
     valid_types = ['market', 'limit']
     
     # Validate entry order type
@@ -675,11 +740,20 @@ def validate_play_order_types(play):
         logging.error(f"Invalid take_profit order_type: {tp_type}")
         return False
     
-    # Validate stop loss order type
+    # Validate stop loss order type(s)
     sl = play.get('stop_loss', {})
-    sl_type = sl.get('order_type')
-    if sl_type is not None and sl_type not in valid_types:
-        logging.error(f"Invalid stop_loss order_type: {sl_type}")
+    sl_type = sl.get('SL_type')
+    sl_order_type = sl.get('order_type')
+    
+    if sl_type == 'CONTINGENCY':
+        if not isinstance(sl_order_type, list) or len(sl_order_type) != 2:
+            logging.error("Contingency stop loss must have array of two order types")
+            return False
+        if sl_order_type != ['limit', 'market']:
+            logging.error("Contingency stop loss must have ['limit', 'market'] order types")
+            return False
+    elif sl_order_type is not None and sl_order_type not in valid_types:
+        logging.error(f"Invalid stop_loss order_type: {sl_order_type}")
         return False
     
     return True

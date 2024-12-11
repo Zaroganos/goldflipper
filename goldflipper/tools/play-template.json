@@ -26,7 +26,8 @@
     "contingency_stock_price": 0.0,
     "contingency_premium_pct": 25.0,
     "order_type": "market or limit, or array with both if type is contingency",
-    "SL_option_prem": null
+    "SL_option_prem": null,
+    "contingency_SL_option_prem": null
   },
   "play_class": "SIMPLE, or if conditional: PRIMARY or OTO (if OCO, simply enter it as SIMPLE)",
   "strategy": "string",

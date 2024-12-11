@@ -236,6 +236,38 @@ def edit_play_field(play_data, field, filepath):
                 }
 
     elif field == 'stop_loss':
+        # First get the stop loss type
+        sl_type = get_input(
+            "Enter stop loss type (1 for STOP, 2 for LIMIT, 3 for CONTINGENCY): ",
+            int,
+            validation=lambda x: x in [1, 2, 3],
+            error_message="Please enter 1 for STOP, 2 for LIMIT, or 3 for CONTINGENCY"
+        )
+        
+        # Convert number to type string
+        sl_type_map = {1: 'STOP', 2: 'LIMIT', 3: 'CONTINGENCY'}
+        sl_type = sl_type_map[sl_type]
+        
+        # Initialize stop loss dictionary
+        play_data['stop_loss'] = {
+            'SL_type': sl_type,
+            'stock_price': None,
+            'premium_pct': None,
+            'contingency_stock_price': None,
+            'contingency_premium_pct': None,
+            'SL_option_prem': None,
+            'contingency_SL_option_prem': None
+        }
+        
+        # Set order type based on SL_type
+        if sl_type == 'STOP':
+            play_data['stop_loss']['order_type'] = 'market'
+        elif sl_type == 'LIMIT':
+            play_data['stop_loss']['order_type'] = 'limit'
+        else:  # CONTINGENCY
+            play_data['stop_loss']['order_type'] = ['limit', 'market']
+        
+        # Get price type
         price_type = get_input(
             "Enter price type (1 for stock price, 2 for option premium %): ",
             int,
@@ -244,33 +276,47 @@ def edit_play_field(play_data, field, filepath):
         )
         
         if price_type == 1:
+            # Stock price based stop loss
             price = get_input(
-                "Enter stop loss stock price: ",
+                "Enter primary stop loss stock price: ",
                 float,
                 error_message="Please enter a valid number"
             )
-            if price is not None:
-                play_data['stop_loss'] = {
-                    'stock_price': price,
-                    'premium_pct': None,
-                    'order_type': 'market',
-                    'SL_option_prem': None
-                }
+            play_data['stop_loss']['stock_price'] = price
+            
+            # If contingency, get backup price
+            if sl_type == 'CONTINGENCY':
+                backup_price = get_input(
+                    "Enter backup (contingency) stop loss stock price: ",
+                    float,
+                    error_message="Please enter a valid number"
+                )
+                play_data['stop_loss']['contingency_stock_price'] = backup_price
                 
         else:
+            # Premium percentage based stop loss
             premium = get_input(
-                "Enter stop loss premium percentage: ",
+                "Enter primary stop loss premium percentage: ",
                 float,
                 validation=lambda x: 0 < x <= 100,
                 error_message="Please enter a percentage between 0 and 100"
             )
-            if premium is not None:
-                play_data['stop_loss'] = {
-                    'stock_price': None,
-                    'premium_pct': premium,
-                    'order_type': 'market',
-                    'SL_option_prem': None
-                }
+            play_data['stop_loss']['premium_pct'] = premium
+            
+            # If contingency, get backup percentage
+            if sl_type == 'CONTINGENCY':
+                while True:
+                    backup_premium = get_input(
+                        f"Enter backup stop loss premium percentage (must be higher than {premium}%): ",
+                        float,
+                        validation=lambda x: 0 < x <= 100,
+                        error_message="Please enter a percentage between 0 and 100"
+                    )
+                    if backup_premium > premium:
+                        break
+                    print(f"Error: Backup percentage must be higher than {premium}%")
+                
+                play_data['stop_loss']['contingency_premium_pct'] = backup_premium
 
     elif field == 'contracts':
         # Only allow editing for plays in 'new' folder
