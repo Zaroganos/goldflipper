@@ -8,6 +8,7 @@ import yfinance as yf
 from goldflipper.json_parser import load_play
 from goldflipper.alpaca_client import get_alpaca_client
 from goldflipper.config.config import config
+from goldflipper.utils.display import TerminalDisplay as display
 from alpaca.trading.requests import (
     GetOptionContractsRequest, 
     LimitOrderRequest, 
@@ -18,38 +19,6 @@ from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 import json
 from goldflipper.tools.option_data_fetcher import calculate_greeks
-
-
-# ==================================================
-# 1. LOGGING CONFIGURATION
-# ==================================================
-# Configure logging to ensure information is recorded both in the console and log files.
-
-def setup_logging():
-    # Get the path to the directory containing the 'goldflipper' folder
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    log_dir = os.path.join(base_dir, 'logs')
-    os.makedirs(log_dir, exist_ok=True)
-
-    log_file = os.path.join(log_dir, 'app_run.log')
-    
-    # Configure handlers with proper encoding
-    console_handler = logging.StreamHandler()
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
-    
-    # Create formatter
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    console_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
-    
-    # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(console_handler)
-    root_logger.addHandler(file_handler)
-
-# Call the setup_logging function at the beginning of the script
-setup_logging()
 
 # ==================================================
 # 2. MARKET DATA RETRIEVAL
@@ -65,27 +34,28 @@ def get_market_data(symbol):
         
     Returns:
         pandas.DataFrame: Market data with timestamp index and OHLCV columns
-        
-    Logs:
-        INFO: Fetch attempt and success
-        ERROR: Any failures during data retrieval
     """
-    logging.info(f"Fetching market data for {symbol}...")
+    display.info(f"Fetching market data for {symbol}...")
+    logging.info(f"Fetching market data for {symbol}")
+    
     try:
         data = yf.download(
             symbol,
             period=config.get('market_data', 'period', default='1d'),
             interval=config.get('market_data', 'interval', default='1m')
         )
+        display.success(f"Market data for {symbol} fetched successfully.")
         logging.info(f"Market data for {symbol} fetched successfully.")
         
         if data.empty:
+            display.error(f"No data returned for {symbol}")
             logging.error(f"No data returned for {symbol}")
             return None
             
         return data
         
     except Exception as e:
+        display.error(f"Error fetching market data for {symbol}: {str(e)}")
         logging.error(f"Error fetching market data for {symbol}: {str(e)}")
         return None
 
@@ -105,7 +75,8 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
     - float: Last price of the option premium
              Returns None if data unavailable
     """
-    logging.info(f"Fetching option premium data for {ticker}...")
+    display.info(f"Fetching option premium data for {ticker}...")
+    logging.info(f"Fetching option premium data for {ticker}")
     
     try:
         stock = yf.Ticker(ticker)
@@ -113,6 +84,7 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
         # Get available expiration dates
         available_dates = stock.options
         if not available_dates:
+            display.error(f"No option data available for {ticker}")
             logging.error(f"No option data available for {ticker}")
             return None
             
@@ -130,16 +102,21 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
             options_data = options_data[options_data['strike'] == float(strike_price)]
             
         if options_data.empty:
+            display.warning(f"No matching options found for {ticker} with given parameters")
             logging.warning(f"No matching options found for {ticker} with given parameters")
             return None
             
         # Get the last price
         last_price = options_data.iloc[0]['lastPrice']
         
+        display.success(f"Option premium data fetched successfully for {ticker}")
         logging.info(f"Option premium data fetched successfully for {ticker}")
+        display.price(f"Last Price: ${last_price:.2f}")
+        logging.info(f"Last Price: ${last_price:.2f}")
         return last_price
         
     except Exception as e:
+        display.error(f"Error fetching option premium data for {ticker}: {str(e)}")
         logging.error(f"Error fetching option premium data for {ticker}: {str(e)}")
         return None
 
@@ -154,6 +131,7 @@ def get_current_option_premium(play):
         )
         return last_price
     except Exception as e:
+        display.error(f"Error getting option premium: {e}")
         logging.error(f"Error getting option premium: {e}")
         return None
 
@@ -183,11 +161,14 @@ def save_play(play, play_file):
         with open(play_file, 'w') as f:
             json.dump(play, f, indent=4)
         logging.info(f"Play data saved to {play_file}")
+        display.success(f"Play data saved to {play_file}")
     except Exception as e:
         logging.error(f"Error saving play data to {play_file}: {e}")
+        display.error(f"Error saving play data to {play_file}: {e}")
 
 def evaluate_opening_strategy(symbol, market_data, play):
     logging.info(f"Evaluating opening strategy for {symbol} using play data...")
+    display.info(f"Evaluating opening strategy for {symbol} using play data...")
 
     entry_point = play.get("entry_point", {}).get("stock_price", 0)
     last_price = market_data["Close"].iloc[-1]
@@ -204,9 +185,12 @@ def evaluate_opening_strategy(symbol, market_data, play):
         comparison = f"between {lower_bound:.2f} and {upper_bound:.2f}" if condition_met else f"not within ±{buffer:.2f} of entry point {entry_point:.2f}"
     else:
         logging.error(f"Invalid trade type: {trade_type}. Must be CALL or PUT.")
+        display.error(f"Invalid trade type: {trade_type}. Must be CALL or PUT.")
         return False
 
     logging.info(f"Opening condition {'met' if condition_met else 'not met'}: "
+                 f"Current price {last_price:.2f} is {comparison} for {trade_type}")
+    display.info(f"Opening condition {'met' if condition_met else 'not met'}: "
                  f"Current price {last_price:.2f} is {comparison} for {trade_type}")
 
     return condition_met
@@ -219,7 +203,7 @@ def evaluate_closing_strategy(symbol, market_data, play):
     - Contingency stop loss with primary and backup conditions
     """
     logging.info(f"Evaluating closing strategy for {symbol} using play data...")
-    
+    display.info(f"Evaluating closing strategy for {symbol} using play data...")
     last_price = market_data["Close"].iloc[-1]
     trade_type = play.get("trade_type", "").upper()
     
@@ -272,10 +256,13 @@ def evaluate_closing_strategy(symbol, market_data, play):
     # Log conditions
     if profit_condition:
         logging.info("Take profit condition met")
+        display.info("Take profit condition met")
     if loss_condition:
         logging.info(f"{'Primary' if sl_type == 'CONTINGENCY' else ''} Stop loss condition met")
+        display.info(f"{'Primary' if sl_type == 'CONTINGENCY' else ''} Stop loss condition met")
     if contingency_loss_condition:
         logging.info("Contingency (backup) stop loss condition met")
+        display.info("Contingency (backup) stop loss condition met")
 
     # Return tuple with condition flags and stop loss type
     return {
@@ -310,31 +297,12 @@ def get_option_contract(play):
     contracts = res.option_contracts
     if contracts:
         logging.info(f"Option contract found: {contracts[0]}")
+        display.info(f"Option contract found: {contracts[0]}")
         return contracts[0]
     else:
         logging.error(f"No option contract found for {symbol} with given parameters")
+        display.error(f"No option contract found for {symbol} with given parameters")
         return None
-
-# LIMIT BUY orders... CURRENTLY INACTIVE! this was auto-generated and probably not needed
-# def calculate_limit_buy_price(contract):
-#     try:
-#         option_ticker = yf.Ticker(contract.root_symbol)
-#         option_data = option_ticker.option_chain(contract.expiration_date.strftime('%Y-%m-%d'))
-#
-#        options = option_data.calls if contract.type == 'call' else option_data.puts
-#        option = options[(options['strike'] == contract.strike_price) & (options['contractSymbol'] == contract.symbol)]
-#        if not option.empty:
-#            bid = option.iloc[0]['bid']
-#            ask = option.iloc[0]['ask']
-#            limit_buy_price = bid + (ask - bid) * 0.25  # Set limit buy price to 25% above the bid price
-#            logging.info(f"Calculated limit buy price for {contract.symbol}: {limit_buy_price:.2f}")
-#            return limit_buy_price
-#        else:
-#            logging.error(f"No option data found for {contract.symbol}")
-#            return None
-#    except Exception as e:
-#        logging.error(f"Error calculating limit buy price for {contract.symbol}: {str(e)}")
-#        return None
 
 def open_position(play, play_file):
     client = get_alpaca_client()
@@ -342,12 +310,14 @@ def open_position(play, play_file):
     
     if not contract:
         logging.error("Failed to retrieve option contract. Aborting order placement.")
+        display.error("Failed to retrieve option contract. Aborting order placement.")
         return False
     
     # Get current premium before opening position
     current_premium = get_current_option_premium(play)
     if current_premium is None:
         logging.error("Failed to get current option premium. Aborting order placement.")
+        display.error("Failed to get current option premium. Aborting order placement.")
         return False
         
     # Store the entry premium in the play data's entry_point object
@@ -355,6 +325,7 @@ def open_position(play, play_file):
         play['entry_point'] = {}
     play['entry_point']['entry_premium'] = current_premium
     logging.info(f"Entry premium: ${current_premium:.4f}")
+    display.info(f"Entry premium: ${current_premium:.4f}")
         
     # Calculate and store TP/SL levels if using premium percentages
     calculate_and_store_premium_levels(play, current_premium)
@@ -371,8 +342,9 @@ def open_position(play, play_file):
     play['logging']['theta_atOpen'] = theta
     
     logging.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
-    
+    display.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
     logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
+    display.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
     try:
         # Create appropriate order request based on order type
         if play.get('entry_point', {}).get('order_type') == 'limit':
@@ -385,6 +357,7 @@ def open_position(play, play_file):
                 time_in_force=TimeInForce.DAY,
             )
             logging.info(f"Creating limit buy order with limit price: ${current_premium:.4f}")
+            display.info(f"Creating limit buy order with limit price: ${current_premium:.4f}")
         else:
             order_req = MarketOrderRequest(
                 symbol=contract.symbol,
@@ -394,9 +367,10 @@ def open_position(play, play_file):
                 time_in_force=TimeInForce.DAY,
             )
             logging.info("Creating market buy order")
-
+            display.info("Creating market buy order")
         response = client.submit_order(order_req)
         logging.info(f"Order submitted: {response}")
+        display.info(f"Order submitted: {response}")
         
         # Save the updated play data with the entry premium and TP/SL values
         save_play(play, play_file)
@@ -404,6 +378,7 @@ def open_position(play, play_file):
         
     except Exception as e:
         logging.error(f"Error placing order: {e}")
+        display.error(f"Error placing order: {e}")
         return False
 
 def close_position(play, close_conditions):
@@ -419,6 +394,7 @@ def close_position(play, close_conditions):
 
     if not contract_symbol:
         logging.error("Option contract symbol not found in play. Cannot close position.")
+        display.error("Option contract symbol not found in play. Cannot close position.")
         return False
 
     qty = play.get('contracts', 1)  # Default to 1 if not specified
@@ -436,6 +412,7 @@ def close_position(play, close_conditions):
                     time_in_force=TimeInForce.DAY
                 )
                 logging.info(f"Creating take profit limit sell order at ${play['take_profit']['TP_option_prem']:.4f}")
+                display.info(f"Creating take profit limit sell order at ${play['take_profit']['TP_option_prem']:.4f}")
                 response = client.submit_order(order_req)
             else:
                 response = client.close_position(
@@ -443,6 +420,7 @@ def close_position(play, close_conditions):
                     close_options=ClosePositionRequest(qty=str(qty))
                 )
                 logging.info("Creating take profit market sell order")
+                display.info("Creating take profit market sell order")
         
         # Stop loss handling
         else:
@@ -452,9 +430,10 @@ def close_position(play, close_conditions):
                 try:
                     client.cancel_all_orders()
                     logging.info("Cancelled all existing orders")
+                    display.info("Cancelled all existing orders")
                 except Exception as e:
                     logging.warning(f"Error canceling existing orders: {e}")
-                
+                    display.warning(f"Error canceling existing orders: {e}")
                 # If backup condition is met, use market order
                 if close_conditions['is_contingency_loss']:
                     response = client.close_position(
@@ -462,6 +441,7 @@ def close_position(play, close_conditions):
                         close_options=ClosePositionRequest(qty=str(qty))
                     )
                     logging.info("Creating contingency market sell order")
+                    display.info("Creating contingency market sell order")
                 # If only primary condition is met, use limit order
                 elif close_conditions['is_primary_loss']:
                     order_req = LimitOrderRequest(
@@ -473,6 +453,7 @@ def close_position(play, close_conditions):
                         time_in_force=TimeInForce.DAY
                     )
                     logging.info(f"Creating primary stop loss limit sell order at ${play['stop_loss']['SL_option_prem']:.4f}")
+                    display.info(f"Creating primary stop loss limit sell order at ${play['stop_loss']['SL_option_prem']:.4f}")
                     response = client.submit_order(order_req)
             
             # For regular limit stop loss
@@ -486,6 +467,7 @@ def close_position(play, close_conditions):
                     time_in_force=TimeInForce.DAY
                 )
                 logging.info(f"Creating stop loss limit sell order at ${play['stop_loss']['SL_option_prem']:.4f}")
+                display.info(f"Creating stop loss limit sell order at ${play['stop_loss']['SL_option_prem']:.4f}")
                 response = client.submit_order(order_req)
             
             # For regular market stop loss
@@ -495,15 +477,18 @@ def close_position(play, close_conditions):
                     close_options=ClosePositionRequest(qty=str(qty))
                 )
                 logging.info("Creating stop loss market sell order")
-        
-        logging.info(f"Order submitted: {response}")
+                display.info("Creating stop loss market sell order")
+            logging.info(f"Order submitted: {response}")
+            display.info(f"Order submitted: {response}")
         return True
         
     except APIError as api_err:
         logging.error(f"API Error closing position for {contract_symbol}: {api_err}")
+        display.error(f"API Error closing position for {contract_symbol}: {api_err}")
         return False
     except Exception as e:
         logging.error(f"Unexpected error closing position for {contract_symbol}: {e}")
+        display.error(f"Unexpected error closing position for {contract_symbol}: {e}")
         return False
 
 def monitor_and_manage_position(play, play_file):
@@ -514,6 +499,7 @@ def monitor_and_manage_position(play, play_file):
     
     if not contract_symbol or not underlying_symbol:
         logging.error("Missing required symbols")
+        display.error("Missing required symbols")
         return False
 
     # Get current market data
@@ -526,8 +512,10 @@ def monitor_and_manage_position(play, play_file):
             current_price = float(client.get_latest_trade(underlying_symbol).price)
             market_data = pd.DataFrame({'Close': [current_price]})
             logging.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
+            display.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
         except Exception as e:
             logging.error(f"Error getting stock price: {e}")
+            display.error(f"Error getting stock price: {e}")
             return False
 
     # Check if we need premium monitoring
@@ -535,29 +523,36 @@ def monitor_and_manage_position(play, play_file):
         current_premium = get_current_option_premium(play)
         if current_premium is None:
             logging.error("Failed to get current option premium.")
+            display.error("Failed to get current option premium.")
             return False
         if market_data is None:
             market_data = pd.DataFrame({'Close': [current_premium]})
         logging.info(f"Current option premium for {contract_symbol}: ${current_premium:.4f}")
-
+        display.info(f"Current option premium for {contract_symbol}: ${current_premium:.4f}")
+    
         # Log premium targets if using limit orders
         if play['take_profit'].get('order_type') == 'limit' and play['take_profit'].get('TP_option_prem'):
             logging.info(f"TP limit order target: ${play['take_profit']['TP_option_prem']:.4f}")
+            display.info(f"TP limit order target: ${play['take_profit']['TP_option_prem']:.4f}")
         
         # Log stop loss targets
         sl_type = play['stop_loss'].get('SL_type', 'STOP')
         if sl_type == 'CONTINGENCY':
             if play['stop_loss'].get('SL_option_prem'):
                 logging.info(f"Primary SL limit order target: ${play['stop_loss']['SL_option_prem']:.4f}")
+                display.info(f"Primary SL limit order target: ${play['stop_loss']['SL_option_prem']:.4f}")
             if play['stop_loss'].get('contingency_SL_option_prem'):
                 logging.info(f"Backup SL market order target: ${play['stop_loss']['contingency_SL_option_prem']:.4f}")
+                display.info(f"Backup SL market order target: ${play['stop_loss']['contingency_SL_option_prem']:.4f}")
         elif play['stop_loss'].get('order_type') == 'limit' and play['stop_loss'].get('SL_option_prem'):
             logging.info(f"SL limit order target: ${play['stop_loss']['SL_option_prem']:.4f}")
+            display.info(f"SL limit order target: ${play['stop_loss']['SL_option_prem']:.4f}")
 
     # Verify position is still open
     position = client.get_open_position(contract_symbol)
     if position is None:
         logging.info(f"Position {contract_symbol} closed.")
+        display.info(f"Position {contract_symbol} closed.")
         return True
 
     # Evaluate closing conditions
@@ -568,15 +563,19 @@ def monitor_and_manage_position(play, play_file):
         
         while close_attempts < max_attempts:
             logging.info(f"Attempting to close position: Attempt {close_attempts + 1}")
+            display.info(f"Attempting to close position: Attempt {close_attempts + 1}")
             if close_position(play, close_conditions):  # Pass close_conditions to close_position
                 move_play_to_closed(play_file)
                 logging.info("Position closed successfully")
+                display.info("Position closed successfully")
                 return True
             close_attempts += 1
             logging.warning(f"Close attempt {close_attempts} failed. Retrying...")
+            display.warning(f"Close attempt {close_attempts} failed. Retrying...")
             time.sleep(2)
         
         logging.error("Failed to close position after maximum attempts")
+        display.error("Failed to close position after maximum attempts")
         return False
 
     return True
@@ -601,6 +600,7 @@ def move_play_to_new(play_file):
     new_path = os.path.join(new_dir, os.path.basename(play_file))
     os.rename(play_file, new_path)
     logging.info(f"Moved play to NEW folder: {new_path}")
+    display.info(f"Moved play to NEW folder: {new_path}")
 
 # Move to OPEN (for plays whose BUY condition has hit)
 def move_play_to_open(play_file):
@@ -617,6 +617,7 @@ def move_play_to_open(play_file):
     new_path = os.path.join(open_dir, os.path.basename(play_file))
     os.rename(play_file, new_path)
     logging.info(f"Moved play to OPEN folder: {new_path}")
+    display.info(f"Moved play to OPEN folder: {new_path}")
 
 # Move to CLOSED (for plays whose TP or SL condition has hit)
 def move_play_to_closed(play_file):
@@ -633,6 +634,7 @@ def move_play_to_closed(play_file):
     new_path = os.path.join(closed_dir, os.path.basename(play_file))
     os.rename(play_file, new_path)
     logging.info(f"Moved play to CLOSED folder: {new_path}")
+    display.info(f"Moved play to CLOSED folder: {new_path}")
 
 # Move to EXPIRED (for plays which have expired, and OCO triggered plays)
 def move_play_to_expired(play_file):
@@ -649,7 +651,7 @@ def move_play_to_expired(play_file):
     new_path = os.path.join(expired_dir, os.path.basename(play_file))
     os.rename(play_file, new_path)
     logging.info(f"Moved play to EXPIRED folder: {new_path}")
-       
+    display.info(f"Moved play to EXPIRED folder: {new_path}")
     
 # ==================================================
 # 6. MAIN TRADE EXECUTION FLOW
@@ -658,7 +660,7 @@ def move_play_to_expired(play_file):
 
 def execute_trade(play_file, play_type):
     logging.info(f"Executing {play_type} play: {play_file}")
-
+    display.info(f"Executing {play_type} play: {play_file}")
     play = load_play(play_file)
     if play is None:
         logging.error(f"Failed to load play {play_file}. Aborting trade execution.")
@@ -667,12 +669,14 @@ def execute_trade(play_file, play_type):
     # Validate order types first
     if not validate_play_order_types(play):
         logging.error(f"Invalid order types in play {play_file}. Aborting trade execution.")
+        display.error(f"Invalid order types in play {play_file}. Aborting trade execution.")
         return False
 
     symbol = play.get("symbol")
     trade_type = play.get("trade_type", "").upper()
     if not symbol or trade_type not in ["CALL", "PUT"]:
         logging.error(f"Play {play_file} is missing 'symbol' or has invalid 'trade_type'. Skipping execution.")
+        display.error(f"Play {play_file} is missing 'symbol' or has invalid 'trade_type'. Skipping execution.")
         return False
 
     market_data = get_market_data(symbol)
@@ -693,9 +697,11 @@ def execute_trade(play_file, play_type):
                         oco_path = os.path.join(plays_base_dir, 'new', oco_file)
                         if os.path.exists(oco_path):
                             logging.info(f"Processing OCO trigger: {oco_file}")
+                            display.info(f"Processing OCO trigger: {oco_file}")
                             move_play_to_expired(oco_path)
                         else:
                             logging.error(f"OCO trigger file not found: {oco_path}")
+                            display.error(f"OCO trigger file not found: {oco_path}")
 
                     # Handle OTO trigger
                     if "OTO_trigger" in play:
@@ -703,10 +709,11 @@ def execute_trade(play_file, play_type):
                         oto_path = os.path.join(plays_base_dir, 'new', oto_file)
                         if os.path.exists(oto_path):
                             logging.info(f"Processing OTO trigger: {oto_file}")
+                            display.info(f"Processing OTO trigger: {oto_file}")
                             move_play_to_new(oto_path)
                         else:
                             logging.error(f"OTO trigger file not found: {oto_path}")
-                
+                            display.error(f"OTO trigger file not found: {oto_path}")
                 return True
             
     # MONITORING an Open Play
@@ -728,9 +735,11 @@ def validate_play_order_types(play):
     entry_type = play.get('entry_order_type')
     if entry_type is None:
         logging.error("Missing entry_order_type in play")
+        display.error("Missing entry_order_type in play")
         return False
     if entry_type not in valid_types:
         logging.error(f"Invalid entry_order_type: {entry_type}")
+        display.error(f"Invalid entry_order_type: {entry_type}")
         return False
     
     # Validate take profit order type
@@ -738,6 +747,7 @@ def validate_play_order_types(play):
     tp_type = tp.get('order_type')
     if tp_type is not None and tp_type not in valid_types:
         logging.error(f"Invalid take_profit order_type: {tp_type}")
+        display.error(f"Invalid take_profit order_type: {tp_type}")
         return False
     
     # Validate stop loss order type(s)
@@ -748,12 +758,15 @@ def validate_play_order_types(play):
     if sl_type == 'CONTINGENCY':
         if not isinstance(sl_order_type, list) or len(sl_order_type) != 2:
             logging.error("Contingency stop loss must have array of two order types")
+            display.error("Contingency stop loss must have array of two order types")
             return False
         if sl_order_type != ['limit', 'market']:
             logging.error("Contingency stop loss must have ['limit', 'market'] order types")
+            display.error("Contingency stop loss must have ['limit', 'market'] order types")
             return False
     elif sl_order_type is not None and sl_order_type not in valid_types:
         logging.error(f"Invalid stop_loss order_type: {sl_order_type}")
+        display.error(f"Invalid stop_loss order_type: {sl_order_type}")
         return False
     
     return True
@@ -785,13 +798,16 @@ def validate_market_hours():
     """
     # Skip validation if disabled in settings
     if not config.get('market_hours', 'enabled', default=True):
-        return True
+        display.info("Market hours validation disabled")
+        logging.info("Market hours validation disabled")
+        return True, 0
         
-    # Get configured timezone with error handling
     try:
         market_tz = ZoneInfo(config.get('market_hours', 'timezone', default='America/New_York'))
     except Exception as e:
-        logging.error(f"Invalid timezone configuration: {e}. Defaulting to America/New_York")
+        error_msg = f"Invalid timezone configuration: {e}. Defaulting to America/New_York"
+        display.error(error_msg)
+        logging.error(error_msg)
         market_tz = ZoneInfo('America/New_York')
     
     current_time = datetime.now(market_tz)
@@ -808,20 +824,24 @@ def validate_market_hours():
                 second=0
             )
         except (ValueError, AttributeError) as e:
-            logging.error(f"Invalid market start time format: {e}. Using default 09:30")
+            error_msg = f"Invalid market start time format: {e}. Using default 09:30"
+            display.error(error_msg)
+            logging.error(error_msg)
             next_market_day = next_market_day.replace(hour=9, minute=30, second=0)
             
         wait_hours = (next_market_day - current_time).total_seconds() / 3600
-        logging.info(f"Market is closed for the weekend. Current time in {market_tz}: {current_time_only}")
-        logging.info(f"Next market open in approximately {int(wait_hours)} hours")
-        return False, int(wait_hours * 60)  # Return minutes to next open
+        display.info(f"Market is closed for the weekend. Current time in {market_tz}: {current_time_only}")
+        display.info(f"Next market open in approximately {int(wait_hours)} hours")
+        logging.info(f"Market closed (weekend). Next open: {next_market_day}")
+        return False, int(wait_hours * 60)
     
-    # Get market hours with error handling
     try:
         market_open = datetime.strptime(config.get('market_hours', 'regular_hours', 'start', default='09:30'), '%H:%M').time()
         market_close = datetime.strptime(config.get('market_hours', 'regular_hours', 'end', default='16:00'), '%H:%M').time()
     except ValueError as e:
-        logging.error(f"Invalid time format in configuration: {e}. Using default market hours")
+        error_msg = f"Invalid time format in configuration: {e}. Using default market hours"
+        display.error(error_msg)
+        logging.error(error_msg)
         market_open = datetime.strptime('09:30', '%H:%M').time()
         market_close = datetime.strptime('16:00', '%H:%M').time()
     
@@ -835,7 +855,9 @@ def validate_market_hours():
             after_market = datetime.strptime(config.get('market_hours', 'extended_hours', 'after_market_end', default='20:00'), '%H:%M').time()
             is_market_open = pre_market <= current_time_only <= after_market
         except ValueError as e:
-            logging.error(f"Invalid extended hours format: {e}. Using default extended hours")
+            error_msg = f"Invalid extended hours format: {e}. Using default extended hours"
+            display.error(error_msg)
+            logging.error(error_msg)
             pre_market = datetime.strptime('04:00', '%H:%M').time()
             after_market = datetime.strptime('20:00', '%H:%M').time()
             is_market_open = pre_market <= current_time_only <= after_market
@@ -853,13 +875,45 @@ def validate_market_hours():
             
         wait_minutes = int((next_open - current_time).total_seconds() / 60)
         
-        logging.info(f"Market is closed. Current time in {market_tz}: {current_time_only}")
-        logging.info(f"Next market open in approximately {wait_minutes} minutes")
+        display.info(f"Market is closed. Current time in {market_tz}: {current_time_only}")
+        display.info(f"Next market open in approximately {wait_minutes} minutes")
+        logging.info(f"Market closed. Next open: {next_open}")
         return False, wait_minutes
         
-    logging.debug(f"Validating market hours at {datetime.now()}")
-    logging.info(f"Market is open. Current time in {market_tz}: {current_time_only}")
+    display.success(f"Market is open. Current time in {market_tz}: {current_time_only}")
+    logging.info(f"Market open. Current time: {current_time_only}")
     return True, 0
+
+def handle_api_error(e, operation):
+    """Handle API errors with appropriate logging and display."""
+    error_msg = f"API error during {operation}: {str(e)}"
+    display.error(error_msg)
+    logging.error(error_msg)
+    
+    if hasattr(e, 'status_code'):
+        display.error(f"Status Code: {e.status_code}")
+        logging.error(f"Status Code: {e.status_code}")
+    
+    if hasattr(e, 'response'):
+        display.error(f"Response: {e.response.text}")
+        logging.error(f"Response: {e.response.text}")
+
+def handle_execution_error(e, operation, retry_count=0):
+    """Handle execution errors with retry logic."""
+    error_msg = f"Error during {operation} (attempt {retry_count + 1}/{MAX_RETRIES}): {str(e)}"
+    display.error(error_msg)
+    logging.error(error_msg)
+    
+    if retry_count < MAX_RETRIES:
+        wait_time = 2 ** retry_count  # Exponential backoff
+        display.warning(f"Retrying in {wait_time} seconds...")
+        logging.warning(f"Retrying in {wait_time} seconds...")
+        time.sleep(wait_time)
+        return True
+    else:
+        display.error(f"Max retries ({MAX_RETRIES}) reached for {operation}")
+        logging.error(f"Max retries ({MAX_RETRIES}) reached for {operation}")
+        return False
 
 def is_market_holiday(date):
     """Check if given date is a US market holiday."""
@@ -876,7 +930,8 @@ def is_market_holiday(date):
 def monitor_plays_continuously():
     plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plays'))
     
-    logging.info(f"Monitoring plays directory: {plays_dir}")
+    display.info(f"Monitoring plays directory: {plays_dir}")
+    logging.info(f"Monitoring plays directory: {plays_dir}")  # Log to file
 
     while True:
         try:
@@ -887,24 +942,24 @@ def monitor_plays_continuously():
                 time.sleep(sleep_time)
                 continue
                 
-            logging.info("\n" + "="*50)
-            logging.info("Checking for new and open plays...")
+            display.header("Checking for new and open plays...")
+            logging.info("Checking for new and open plays")  # Log to file
 
             # Check for expired plays in the "new" folder
             new_play_dir = os.path.join(plays_dir, 'new')
             play_files = [os.path.join(new_play_dir, f) for f in os.listdir(new_play_dir) if f.endswith('.json')]
-            current_date = datetime.now().date()  # Get the current date
+            current_date = datetime.now().date()
             
-            # Handle expired plays (keeping existing functionality)
+            # Handle expired plays
             for play_file in play_files:
                 play = load_play(play_file)
                 if play and 'play_expiration_date' in play:
                     expiration_date = datetime.strptime(play['play_expiration_date'], "%m/%d/%Y").date()
                     if expiration_date < current_date:
-                        move_play_to_expired(play_file)  # Move expired play
-                        logging.info(f"Moved expired play to expired folder: {play_file}")
+                        move_play_to_expired(play_file)
+                        display.warning(f"Moved expired play to expired folder: {play_file}")
+                        logging.warning(f"Moved expired play to expired folder: {play_file}")
 
-            # THIS IS NEW FOR PRINTING CURRENT OPTION DATA. IF SOMETHING IS WRONG, DELETE THIS
             # Print current option data for all active plays
             for play_type in ['new', 'open']:
                 play_dir = os.path.join(plays_dir, play_type)
@@ -914,17 +969,10 @@ def monitor_plays_continuously():
                     play = load_play(play_file)
                     if play:
                         try:
-                            # Format expiration date
                             exp_date = datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d')
-                            
-                            # Get option data
                             stock = yf.Ticker(play['symbol'])
                             chain = stock.option_chain(exp_date)
-                            
-                            # Select appropriate chain
                             options_data = chain.calls if play['trade_type'].lower() == 'call' else chain.puts
-                            
-                            # Filter for specific strike
                             strike = float(play['strike_price'])
                             option = options_data[options_data['strike'] == strike]
                             
@@ -932,36 +980,54 @@ def monitor_plays_continuously():
                                 current_price = stock.info.get('regularMarketPrice', 0)
                                 opt = option.iloc[0]
                                 
-                                logging.info(f"\nPlay: {play['symbol']} {play['trade_type']} ${strike} exp:{exp_date}")
-                                logging.info(f"Status: [{play_type}]")
-                                logging.info(f"Stock Price: ${current_price:.2f}")
-                                logging.info(f"Option Data:")
-                                logging.info(f"  Bid: ${opt['bid']:.2f}")
-                                logging.info(f"  Ask: ${opt['ask']:.2f}")
-                                logging.info(f"  Last: ${opt['lastPrice']:.2f}")
-                                logging.info(f"  Volume: {int(opt['volume'])}")
-                                logging.info(f"  Open Interest: {int(opt['openInterest'])}")
-                                logging.info(f"  Implied Vol: {opt['impliedVolatility']:.2%}")
+                                # Log detailed data to file
+                                logging.info(f"Play data for {play['symbol']}: "
+                                           f"Type={play_type}, "
+                                           f"Strike=${strike}, "
+                                           f"Exp={exp_date}, "
+                                           f"Stock=${current_price:.2f}, "
+                                           f"Bid=${opt['bid']:.2f}, "
+                                           f"Ask=${opt['ask']:.2f}")
+                                
+                                # Display formatted data to terminal
+                                display.header(f"Play: {play['symbol']} {play['trade_type']} ${strike} exp:{exp_date}")
+                                display.status(f"Status: [{play_type}]")
+                                display.price(f"Stock Price: ${current_price:.2f}")
+                                display.info("Option Data:")
+                                display.info(f"  Bid: ${opt['bid']:.2f}")
+                                display.info(f"  Ask: ${opt['ask']:.2f}")
+                                display.info(f"  Last: ${opt['lastPrice']:.2f}")
+                                display.info(f"  Volume: {int(opt['volume'])}")
+                                display.info(f"  Open Interest: {int(opt['openInterest'])}")
+                                display.info(f"  Implied Vol: {opt['impliedVolatility']:.2%}")
                             
                         except Exception as e:
-                            logging.error(f"Error fetching option data for {play['symbol']}: {str(e)}")
+                            error_msg = f"Error fetching option data for {play['symbol']}: {str(e)}"
+                            display.error(error_msg)
+                            logging.error(error_msg)
 
-            # Execute trades (keeping existing functionality)
+            # Execute trades
             for play_type in ['new', 'open']:
                 play_dir = os.path.join(plays_dir, play_type)
                 play_files = [os.path.join(play_dir, f) for f in os.listdir(play_dir) if f.endswith('.json')]
                 
                 for play_file in play_files:
                     if execute_trade(play_file, play_type):
-                        logging.info(f"Successfully executed {play_type} play: {play_file}")
+                        msg = f"Successfully executed {play_type} play: {play_file}"
+                        display.success(msg)
+                        logging.info(msg)
                     else:
-                        logging.info(f"Conditions not met for {play_type} play: {play_file}")
+                        msg = f"Conditions not met for {play_type} play: {play_file}"
+                        display.info(msg)
+                        logging.info(msg)
 
-            logging.info("\nCycle complete. Waiting for next cycle...")
-            logging.info("="*50 + "\n")
+            display.header("Cycle complete. Waiting for next cycle...")
+            logging.info("Cycle complete. Waiting for next cycle")
 
         except Exception as e:
-            logging.error(f"An error occurred during play monitoring: {e}")
+            error_msg = f"An error occurred during play monitoring: {e}"
+            display.error(error_msg)
+            logging.error(error_msg)
 
         time.sleep(30)  # Wait for 30 seconds before re-evaluating
 
@@ -991,6 +1057,7 @@ def capture_greeks(play, current_premium):
         
         if filtered_data.empty:
             logging.error(f"No matching option found for strike {strike}")
+            display.error(f"No matching option found for strike {strike}")
             return None, None
             
         # Use existing calculate_greeks function from option_data_fetcher
@@ -1005,6 +1072,7 @@ def capture_greeks(play, current_premium):
         
     except Exception as e:
         logging.error(f"Error capturing Greeks: {e}")  # Updated error message
+        display.error(f"Error capturing Greeks: {e}")
         return None, None
 
 if __name__ == "__main__":

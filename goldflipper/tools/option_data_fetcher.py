@@ -6,6 +6,7 @@ import os
 import json
 import yaml
 import sys
+from goldflipper.utils.display import TerminalDisplay as display
 
 # Add the project root directory to Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -163,6 +164,7 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
            Returns None if data unavailable
     """
     logging.info(f"Fetching option premium data for {ticker}...")
+    display.info(f"Fetching option premium data for {ticker}...")
     
     try:
         stock = yf.Ticker(ticker)
@@ -171,6 +173,7 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
         available_dates = stock.options
         if not available_dates:
             logging.error(f"No option data available for {ticker}")
+            display.error(f"No option data available for {ticker}")
             return None
             
         # Use provided expiration date or default to nearest
@@ -188,6 +191,7 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
             
         if options_data.empty:
             logging.warning(f"No matching options found for {ticker} with given parameters")
+            display.error(f"No matching options found for {ticker} with given parameters")
             return None
             
         # Get first matching option
@@ -203,10 +207,12 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
         }
         
         logging.info(f"Option premium data fetched successfully for {ticker}")
+        display.info(f"Option premium data fetched successfully for {ticker}")
         return premium_data
         
     except Exception as e:
         logging.error(f"Error fetching option premium data for {ticker}: {str(e)}")
+        display.error(f"Error fetching option premium data for {ticker}: {str(e)}")
         return None
 
 def get_all_plays():
@@ -373,6 +379,7 @@ def calculate_greeks(options_data, underlying_price, expiration_date):
             
         except Exception as e:
             logging.warning(f"Error calculating Greeks for strike {row['strike']}: {str(e)}")
+            display.error(f"Error calculating Greeks for strike {row['strike']}: {str(e)}")
             continue
             
     return options_data
@@ -489,8 +496,10 @@ def main():
                 try:
                     indicator_data = calculate_indicators(ticker, settings)
                     logging.info(f"Calculated indicators for {ticker}")
+                    display.info(f"Calculated indicators for {ticker}")
                 except Exception as e:
                     logging.warning(f"Failed to calculate indicators: {str(e)}")
+                    display.error(f"Failed to calculate indicators: {str(e)}")
             
             # Fetch option data
             stock = yf.Ticker(ticker)
