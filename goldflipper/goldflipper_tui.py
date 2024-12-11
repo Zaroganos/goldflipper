@@ -51,7 +51,7 @@ class WelcomeScreen(Screen):
 
     def run_option_data_fetcher(self):
         tools_dir = os.path.join(os.path.dirname(__file__), "tools")
-        script_path = os.path.join(tools_dir, "option-data-fetcher.py")
+        script_path = os.path.join(tools_dir, "option_data_fetcher.py")
         if os.name == 'nt':  # Windows
             subprocess.Popen(['cmd', '/k', 'python', script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
         else:  # Unix-like systems
