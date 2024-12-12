@@ -479,18 +479,28 @@ def open_position(play, play_file):
     calculate_and_store_premium_levels(play, current_premium)
     
     # Capture Greeks
-    # delta, theta = capture_greeks(play, current_premium)
+    try:
+        logging.debug("Attempting to capture Greeks...")
+        delta, theta = capture_greeks(play, current_premium)
+        
+        # Initialize logging section if it doesn't exist
+        if 'logging' not in play:
+            play['logging'] = {}
+        
+        # Store Greeks
+        if delta is not None and theta is not None:
+            play['logging']['delta_atOpen'] = delta
+            play['logging']['theta_atOpen'] = theta
+            logging.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
+            display.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
+        else:
+            logging.warning("Greeks calculation returned None values")
+            display.warning("Greeks calculation returned None values")
+    except Exception as e:
+        logging.error(f"Error during Greeks capture: {str(e)}")
+        display.error(f"Error during Greeks capture: {str(e)}")
+        # Continue with position opening even if Greeks capture fails
     
-    # Initialize logging section if it doesn't exist
-    #if 'logging' not in play:
-    #    play['logging'] = {}
-    
-    # Store Greeks
-    #play['logging']['delta_atOpen'] = delta
-    #play['logging']['theta_atOpen'] = theta
-    
-    #logging.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
-    #display.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
     logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
     display.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
     try:
