@@ -137,6 +137,14 @@ monitoring:
 orders:
   limit_buy:
     price_buffer: 0.25               # Buffer for limit order prices (25%) (NOT USED)
+  use_bid_price:
+    entry: true                      # Use bid price for entry limit orders
+    take_profit: true                # Use bid price for take profit limit orders
+    stop_loss: true                  # Use bid price for stop loss limit orders
+  limit_order:
+    timeout_enabled: false           # Enable/disable limit order timeout checking
+    max_duration_minutes: 5         # Maximum time to wait for limit order fill
+    check_interval_seconds: 30      # How often to check order status
 
 # File Operations
 # --------------------------------------------------
@@ -189,10 +197,15 @@ auto_play_creator:
     - PUT
     - MIX
   expiration_days: 7                # Default expiration in days for test plays
-  entry_buffer: 0.01                # Entry price buffer for test plays (e.g., ±$0.01)
+  entry_buffer: 0.05                # Entry price buffer for test plays (e.g., ±$0.01)
   take_profit_pct: 1.0              # Default take profit percentage
   stop_loss_pct: 0.5                # Default stop loss percentage
   test_symbols:                     # Symbols to use for test plays
     - SPY
+    - QQQ
     - AAPL
     - TSLA
+    - NVDA
+    - MSFT
+    - GOOGL
+    - AMZN

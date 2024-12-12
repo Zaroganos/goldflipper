@@ -122,6 +122,65 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
         logging.error(f"Error fetching option premium data for {ticker}: {str(e)}")
         return None
 
+def get_option_bid_price(ticker, expiration_date=None, strike_price=None, option_type='call'):
+    """
+    Fetch the bid price for a specific option contract.
+    
+    Parameters:
+    - ticker (str): Stock symbol
+    - expiration_date (str, optional): Option expiration date in 'YYYY-MM-DD' format
+    - strike_price (float, optional): Strike price of the option
+    - option_type (str): 'call' or 'put', defaults to 'call'
+    
+    Returns:
+    - float: Bid price of the option
+             Returns None if data unavailable
+    """
+    display.info(f"Fetching option bid price for {ticker}...")
+    logging.info(f"Fetching option bid price for {ticker}")
+    
+    try:
+        stock = yf.Ticker(ticker)
+        
+        # Get available expiration dates
+        available_dates = stock.options
+        if not available_dates:
+            display.error(f"No option data available for {ticker}")
+            logging.error(f"No option data available for {ticker}")
+            return None
+            
+        # Use provided expiration date or default to nearest
+        target_date = expiration_date if expiration_date in available_dates else available_dates[0]
+        
+        # Get option chain
+        chain = stock.option_chain(target_date)
+        
+        # Select calls or puts
+        options_data = chain.calls if option_type.lower() == 'call' else chain.puts
+        
+        # Filter by strike price if provided
+        if strike_price:
+            options_data = options_data[options_data['strike'] == float(strike_price)]
+            
+        if options_data.empty:
+            display.warning(f"No matching options found for {ticker} with given parameters")
+            logging.warning(f"No matching options found for {ticker} with given parameters")
+            return None
+            
+        # Get the bid price
+        bid_price = options_data.iloc[0]['bid']
+        
+        display.success(f"Option bid price fetched successfully for {ticker}")
+        logging.info(f"Option bid price fetched successfully for {ticker}")
+        display.price(f"Bid Price: ${bid_price:.2f}")
+        logging.info(f"Bid Price: ${bid_price:.2f}")
+        return bid_price
+        
+    except Exception as e:
+        display.error(f"Error fetching option bid price for {ticker}: {str(e)}")
+        logging.error(f"Error fetching option bid price for {ticker}: {str(e)}")
+        return None
+
 def get_current_option_premium(play):
     """Get the current option premium for a play."""
     try:
@@ -437,12 +496,28 @@ def open_position(play, play_file):
     try:
         # Create appropriate order request based on order type
         if play.get('entry_point', {}).get('order_type') == 'limit':
+            # Get bid price if enabled in settings
+            if config.get('orders', 'use_bid_price', 'entry', default=True):
+                limit_price = get_option_bid_price(
+                    ticker=play['symbol'],
+                    expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
+                    strike_price=float(play['strike_price']),
+                    option_type=play['trade_type']
+                )
+                limit_price = validate_bid_price(limit_price, play['symbol'], current_premium)
+                if limit_price is None:
+                    logging.error("Failed to get bid price. Falling back to current premium.")
+                    display.error("Failed to get bid price. Falling back to current premium.")
+                    limit_price = current_premium
+            else:
+                limit_price = current_premium
+                
             # Round limit price to 2 decimal places
-            limit_price = round(current_premium, 2)
+            limit_price = round(limit_price, 2)
             order_req = LimitOrderRequest(
                 symbol=contract.symbol,
                 qty=play['contracts'],
-                limit_price=limit_price,  # Use rounded current premium as limit price
+                limit_price=limit_price,
                 side=OrderSide.BUY,
                 type=OrderType.LIMIT,
                 time_in_force=TimeInForce.DAY,
@@ -493,7 +568,6 @@ def close_position(play, close_conditions, play_file):
     qty = play.get('contracts', 1)  # Default to 1 if not specified
     
     try:
-      
         # Initialize closing status
         play['status']['closing_order_id'] = None
         play['status']['closing_order_status'] = None
@@ -507,8 +581,24 @@ def close_position(play, close_conditions, play_file):
         # Take profit handling
         if close_conditions['is_profit']:
             if play['take_profit'].get('order_type') == 'limit':
+                # Get bid price if enabled in settings
+                if config.get('orders', 'use_bid_price', 'take_profit', default=True):
+                    limit_price = get_option_bid_price(
+                        ticker=play['symbol'],
+                        expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
+                        strike_price=float(play['strike_price']),
+                        option_type=play['trade_type']
+                    )
+                    limit_price = validate_bid_price(limit_price, play['symbol'], play['take_profit']['TP_option_prem'])
+                    if limit_price is None:
+                        logging.error("Failed to get bid price. Falling back to TP target price.")
+                        display.error("Failed to get bid price. Falling back to TP target price.")
+                        limit_price = play['take_profit']['TP_option_prem']
+                else:
+                    limit_price = play['take_profit']['TP_option_prem']
+                
                 # Round limit price to 2 decimal places
-                limit_price = round(play['take_profit']['TP_option_prem'], 2)
+                limit_price = round(limit_price, 2)
                 order_req = LimitOrderRequest(
                     symbol=contract_symbol,
                     qty=qty,
@@ -551,8 +641,24 @@ def close_position(play, close_conditions, play_file):
                     display.info("Creating contingency market sell order")
                 # If only primary condition is met, use limit order
                 elif close_conditions['is_primary_loss']:
+                    # Get bid price if enabled in settings
+                    if config.get('orders', 'use_bid_price', 'stop_loss', default=True):
+                        limit_price = get_option_bid_price(
+                            ticker=play['symbol'],
+                            expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
+                            strike_price=float(play['strike_price']),
+                            option_type=play['trade_type']
+                        )
+                        limit_price = validate_bid_price(limit_price, play['symbol'], play['stop_loss']['SL_option_prem'])
+                        if limit_price is None:
+                            logging.error("Failed to get bid price. Falling back to SL target price.")
+                            display.error("Failed to get bid price. Falling back to SL target price.")
+                            limit_price = play['stop_loss']['SL_option_prem']
+                    else:
+                        limit_price = play['stop_loss']['SL_option_prem']
+                    
                     # Round limit price to 2 decimal places
-                    limit_price = round(play['stop_loss']['SL_option_prem'], 2)
+                    limit_price = round(limit_price, 2)
                     order_req = LimitOrderRequest(
                         symbol=contract_symbol,
                         qty=qty,
@@ -567,8 +673,24 @@ def close_position(play, close_conditions, play_file):
             
             # For regular limit stop loss
             elif play['stop_loss'].get('order_type') == 'limit':
+                # Get bid price if enabled in settings
+                if config.get('orders', 'use_bid_price', 'stop_loss', default=True):
+                    limit_price = get_option_bid_price(
+                        ticker=play['symbol'],
+                        expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
+                        strike_price=float(play['strike_price']),
+                        option_type=play['trade_type']
+                    )
+                    limit_price = validate_bid_price(limit_price, play['symbol'], play['stop_loss']['SL_option_prem'])
+                    if limit_price is None:
+                        logging.error("Failed to get bid price. Falling back to SL target price.")
+                        display.error("Failed to get bid price. Falling back to SL target price.")
+                        limit_price = play['stop_loss']['SL_option_prem']
+                else:
+                    limit_price = play['stop_loss']['SL_option_prem']
+                
                 # Round limit price to 2 decimal places
-                limit_price = round(play['stop_loss']['SL_option_prem'], 2)
+                limit_price = round(limit_price, 2)
                 order_req = LimitOrderRequest(
                     symbol=contract_symbol,
                     qty=qty,
@@ -1228,13 +1350,46 @@ def check_position_status(play, play_file):
             play['status']['order_status'] = order.status
             play['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
+            # Check for limit order timeout only if enabled
+            if (config.get('orders', 'limit_order', 'timeout_enabled', default=True) and 
+                order.status == 'new' and order.type == 'limit'):
+                # Get order creation time
+                order_time = datetime.fromisoformat(order.submitted_at.replace('Z', '+00:00'))
+                current_time = datetime.now(order_time.tzinfo)
+                
+                # Calculate time elapsed
+                max_duration = timedelta(minutes=config.get('orders', 'limit_order', 'max_duration_minutes', default=5))
+                time_elapsed = current_time - order_time
+                
+                # Cancel order if timeout exceeded
+                if time_elapsed > max_duration:
+                    try:
+                        client.cancel_order_by_id(order.id)
+                        logging.warning(f"Cancelled limit order after {max_duration.total_seconds()/60:.1f} minutes")
+                        display.warning(f"Cancelled limit order after {max_duration.total_seconds()/60:.1f} minutes")
+                        
+                        # Reset play status
+                        play['status'].update({
+                            'play_status': 'NEW',
+                            'position_exists': False,
+                            'order_id': None,
+                            'order_status': None
+                        })
+                        
+                        # Move play back to new folder
+                        if os.path.basename(os.path.dirname(play_file)) != 'new':
+                            move_play_to_new(play_file)
+                            
+                    except Exception as e:
+                        logging.error(f"Error cancelling timed-out limit order: {e}")
+                        display.error(f"Error cancelling timed-out limit order: {e}")
+            
             # If order is filled, check position
             if order.status == 'filled':
                 try:
                     position = client.get_open_position(play['option_contract_symbol'])
                     play['status']['position_exists'] = True
                     play['status']['play_status'] = 'OPEN'
-                    # Move to open folder if not already there
                     if os.path.basename(os.path.dirname(play_file)) != 'open':
                         move_play_to_open(play_file)
                 except Exception as e:
@@ -1249,7 +1404,7 @@ def check_position_status(play, play_file):
                 play['status']['order_status'] = None  # Clear order status
                 if os.path.basename(os.path.dirname(play_file)) != 'new':
                     move_play_to_new(play_file)
-                
+                    
         # Check closing order status if applicable
         elif play['status'].get('closing_order_id') and play['status'].get('play_status') == 'CLOSING':
             closing_order = client.get_order_by_id(play['status']['closing_order_id'])
@@ -1257,6 +1412,35 @@ def check_position_status(play, play_file):
             # Update closing order status
             play['status']['closing_order_status'] = closing_order.status
             play['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Check for limit order timeout on closing orders only if enabled
+            if (config.get('orders', 'limit_order', 'timeout_enabled', default=True) and 
+                closing_order.status == 'new' and closing_order.type == 'limit'):
+                # Get order creation time
+                order_time = datetime.fromisoformat(closing_order.submitted_at.replace('Z', '+00:00'))
+                current_time = datetime.now(order_time.tzinfo)
+                
+                # Calculate time elapsed
+                max_duration = timedelta(minutes=config.get('orders', 'limit_order', 'max_duration_minutes', default=5))
+                time_elapsed = current_time - order_time
+                
+                # Cancel order if timeout exceeded
+                if time_elapsed > max_duration:
+                    try:
+                        client.cancel_order_by_id(closing_order.id)
+                        logging.warning(f"Cancelled closing limit order after {max_duration.total_seconds()/60:.1f} minutes")
+                        display.warning(f"Cancelled closing limit order after {max_duration.total_seconds()/60:.1f} minutes")
+                        
+                        # Reset play status back to OPEN
+                        play['status'].update({
+                            'play_status': 'OPEN',
+                            'closing_order_id': None,
+                            'closing_order_status': None
+                        })
+                        
+                    except Exception as e:
+                        logging.error(f"Error cancelling timed-out closing limit order: {e}")
+                        display.error(f"Error cancelling timed-out closing limit order: {e}")
             
             # If closing order is filled
             if closing_order.status == 'filled':
@@ -1269,15 +1453,16 @@ def check_position_status(play, play_file):
                 play['status']['play_status'] = 'OPEN'  # Reset to OPEN
                 play['status']['closing_order_id'] = None
                 play['status']['closing_order_status'] = None
-                
+        
+        # Save updated play status
         save_play(play, play_file)
         
-        return play['status']['position_exists']
-            
     except Exception as e:
         logging.error(f"Error checking position status: {e}")
         display.error(f"Error checking position status: {e}")
         return False
+        
+    return True
 
 def handle_conditional_plays(play, play_file):
     """Handle OCO and OTO triggers after position is confirmed open."""
@@ -1324,6 +1509,31 @@ def handle_conditional_plays(play, play_file):
     play['status']['conditionals_handled'] = True
     save_play(play, play_file)
     return True
+
+def validate_bid_price(bid_price, symbol, fallback_price):
+    """
+    Validate bid price to ensure it's reasonable.
+    
+    Args:
+        bid_price (float): The bid price to validate
+        symbol (str): Symbol for logging
+        fallback_price (float): Price to use if bid is invalid
+        
+    Returns:
+        float: Valid bid price or fallback price
+    """
+    if bid_price is None or bid_price <= 0:
+        logging.warning(f"Invalid bid price ({bid_price}) for {symbol}. Using fallback price.")
+        display.warning(f"Invalid bid price ({bid_price}) for {symbol}. Using fallback price.")
+        return fallback_price
+        
+    # Check if bid is suspiciously low compared to fallback
+    if fallback_price > 0 and bid_price < (fallback_price * 0.5):
+        logging.warning(f"Bid price (${bid_price:.2f}) is less than 50% of fallback price (${fallback_price:.2f})")
+        display.warning(f"Bid price (${bid_price:.2f}) is less than 50% of fallback price (${fallback_price:.2f})")
+        return fallback_price
+        
+    return bid_price
 
 if __name__ == "__main__":
     monitor_plays_continuously()
