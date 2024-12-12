@@ -138,9 +138,9 @@ orders:
   limit_buy:
     price_buffer: 0.25               # Buffer for limit order prices (25%) (NOT USED)
   use_bid_price:
-    entry: true                      # Use bid price for entry limit orders
-    take_profit: true                # Use bid price for take profit limit orders
-    stop_loss: true                  # Use bid price for stop loss limit orders
+    entry: false                      # Use bid price for entry limit orders
+    take_profit: false                # Use bid price for take profit limit orders
+    stop_loss: false                  # Use bid price for stop loss limit orders
   limit_order:
     timeout_enabled: false           # Enable/disable limit order timeout checking
     max_duration_minutes: 5         # Maximum time to wait for limit order fill

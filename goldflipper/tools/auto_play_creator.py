@@ -32,6 +32,9 @@ class AutoPlayCreator:
         self.take_profit_pct = self.settings.get('take_profit_pct', 1.0)
         self.stop_loss_pct = self.settings.get('stop_loss_pct', 0.5)
         
+        # Add execution mode
+        self.execution_mode = None  # Will be set later
+        
     def get_market_data(self, symbol):
         """Fetch current market data for a symbol."""
         try:
@@ -86,8 +89,20 @@ class AutoPlayCreator:
         options = market_data['calls'] if trade_type == 'CALL' else market_data['puts']
         strike = self.find_nearest_strike(options, current_price)
         
-        # Create entry point near current price
-        entry_price = current_price * (1 + random.uniform(-self.entry_buffer, self.entry_buffer))
+        # Set entry price based on execution mode
+        if self.execution_mode == "pure_execution":
+            entry_price = current_price
+        else:  # simulate_real
+            entry_price = current_price * (1 + random.uniform(-self.entry_buffer, self.entry_buffer))
+        
+        # Generate option contract symbol using the same format as play-creation-tool
+        expiration_date = datetime.strptime(market_data['expiration'], '%Y-%m-%d')
+        strike_tenths_cents = int(round(float(strike) * 1000))
+        padded_strike = f"{strike_tenths_cents:08d}"
+        option_type = "C" if trade_type == "CALL" else "P"
+        option_symbol = f"{market_data['symbol']}{expiration_date.strftime('%y%m%d')}{option_type}{padded_strike}"
+        
+        logging.info(f"Generated option contract symbol: {option_symbol}")
         
         play = {
             "play_name": f"AUTO_{market_data['symbol']}_{trade_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -95,6 +110,7 @@ class AutoPlayCreator:
             "expiration_date": datetime.strptime(market_data['expiration'], '%Y-%m-%d').strftime('%m/%d/%Y'),
             "trade_type": trade_type,
             "strike_price": str(strike),
+            "option_contract_symbol": option_symbol,
             "contracts": 1,
             "play_expiration_date": datetime.strptime(market_data['expiration'], '%Y-%m-%d').strftime('%m/%d/%Y'),
             "entry_point": {
@@ -150,8 +166,9 @@ class AutoPlayCreator:
             
         return filepath
         
-    def create_test_plays(self, num_plays=1):
+    def create_test_plays(self, num_plays=1, mode="pure_execution"):
         """Create multiple test plays."""
+        self.execution_mode = mode
         created_plays = []
         
         for _ in range(num_plays):
@@ -182,10 +199,32 @@ def main():
     """Main function to create test plays."""
     try:
         creator = AutoPlayCreator()
-        num_plays = int(input("Enter number of test plays to create: "))
-        created_plays = creator.create_test_plays(num_plays)
         
-        display.info(f"\nCreated {len(created_plays)} test plays:")
+        # Present mode options
+        print("\nSelect execution mode:")
+        print("1. Pure Execution Testing (Entry at current market price)")
+        print("2. Simulate Real Plays")
+        
+        while True:
+            mode_choice = input("\nEnter your choice (1 or 2): ").strip()
+            if mode_choice in ['1', '2']:
+                break
+            print("Invalid choice. Please enter 1 or 2.")
+        
+        mode = "pure_execution" if mode_choice == '1' else "simulate_real"
+        
+        while True:
+            try:
+                num_plays = int(input("\nEnter number of test plays to create: "))
+                if num_plays > 0:
+                    break
+                print("Please enter a positive number.")
+            except ValueError:
+                print("Please enter a valid number.")
+        
+        created_plays = creator.create_test_plays(num_plays, mode)
+        
+        display.info(f"\nCreated {len(created_plays)} test plays in {mode} mode:")
         for play in created_plays:
             display.info(f"- {play}")
             

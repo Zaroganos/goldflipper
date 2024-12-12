@@ -20,6 +20,9 @@ from alpaca.common.exceptions import APIError
 import json
 from goldflipper.tools.option_data_fetcher import calculate_greeks
 from uuid import UUID
+from goldflipper.data.greeks.base import OptionData
+from goldflipper.data.greeks.delta import DeltaCalculator
+from goldflipper.data.greeks.theta import ThetaCalculator
 
 # ==================================================
 # 2. MARKET DATA RETRIEVAL
@@ -1311,19 +1314,16 @@ def monitor_plays_continuously():
 def capture_greeks(play, current_premium):
     """Capture Delta and Theta values for the option play at position opening"""
     try:
-        # Format expiration date for yfinance
-        expiration_date = datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d')
-        
-        # Get market data using existing yfinance setup
+        # Get market data using yfinance
         stock = yf.Ticker(play['symbol'])
+        logging.debug(f"Retrieved ticker for {play['symbol']}")
+        
+        # Get option chain for implied volatility
+        expiration_date = datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d')
         chain = stock.option_chain(expiration_date)
-        underlying_price = stock.info['regularMarketPrice']
         
-        # Get appropriate chain and prepare data
+        # Get appropriate chain and filter for our strike
         options_data = chain.calls if play['trade_type'].lower() == 'call' else chain.puts
-        options_data['option_type'] = play['trade_type'].lower()
-        
-        # Filter for our specific strike
         strike = float(play['strike_price'])
         filtered_data = options_data[options_data['strike'] == strike]
         
@@ -1332,28 +1332,68 @@ def capture_greeks(play, current_premium):
             display.error(f"No matching option found for strike {strike}")
             return None, None
             
-        # Use existing calculate_greeks function from option_data_fetcher
-        greeks_data = calculate_greeks(filtered_data, underlying_price, expiration_date)
+        # Get implied volatility from filtered data
+        implied_volatility = filtered_data.iloc[0]['impliedVolatility']
         
-        if not greeks_data.empty:
-            delta = greeks_data.iloc[0]['delta']
-            theta = greeks_data.iloc[0]['theta']
-            return delta, theta
+        # Get underlying price from stock info with fallbacks
+        try:
+            underlying_price = stock.info.get('regularMarketPrice')
+            if underlying_price is None:
+                underlying_price = stock.fast_info.get('lastPrice')
+            if underlying_price is None:
+                hist = stock.history(period='1d', interval='1m')
+                if not hist.empty:
+                    underlying_price = hist['Close'].iloc[-1]
+                    
+            if underlying_price is None:
+                raise ValueError("Unable to get underlying price")
+                
+            logging.debug(f"Retrieved IV: {implied_volatility:.4f}, Underlying Price: ${underlying_price:.2f}")
             
-        return None, None
+        except Exception as e:
+            logging.error(f"Error getting underlying price: {e}")
+            display.error(f"Error getting underlying price: {e}")
+            return None, None
+        
+        # Create option data object
+        time_to_expiry = (datetime.strptime(expiration_date, '%Y-%m-%d') - datetime.now()).days / 365.0
+        
+        option_data = OptionData(
+            underlying_price=underlying_price,
+            strike_price=strike,
+            time_to_expiry=time_to_expiry,
+            risk_free_rate=0.05,  # Could be made configurable
+            volatility=implied_volatility,
+            dividend_yield=0.0,  # Could be made configurable
+            option_price=current_premium
+        )
+        
+        # Calculate Delta and Theta directly
+        delta_calculator = DeltaCalculator(option_data)
+        theta_calculator = ThetaCalculator(option_data)
+        
+        delta = delta_calculator.calculate(play['trade_type'].lower())
+        theta = theta_calculator.calculate(play['trade_type'].lower())
+        
+        logging.debug(f"Calculated Greeks - Delta: {delta:.4f}, Theta: {theta:.4f}")
+        return delta, theta
         
     except Exception as e:
-        logging.error(f"Error capturing Greeks: {e}")  # Updated error message
-        display.error(f"Error capturing Greeks: {e}")
+        logging.error(f"Error capturing Greeks: {str(e)}")
+        display.error(f"Error capturing Greeks: {str(e)}")
         return None, None
 
 def check_position_status(play, play_file):
     """Check the status of an order/position and update the play file accordingly."""
     client = get_alpaca_client()
     
+    logging.info(f"Checking position status for play: {play.get('play_name', 'unnamed')}")
+    logging.info(f"Current status: {play.get('status', {})}")
+    logging.info(f"Current directory: {os.path.dirname(play_file)}")
+    
     try:
         # Check opening order status
-        if play['status'].get('order_id') and play['status'].get('play_status') == 'PENDING':
+        if play['status'].get('order_id'):  # Removed the PENDING check here
             order = client.get_order_by_id(play['status']['order_id'])
             
             # Update order status
