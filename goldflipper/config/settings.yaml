@@ -34,8 +34,9 @@
 #         - delta
 #         - theta
 
+####################################################################################################
 # Alpaca API Settings
-# --------------------------------------------------
+####################################################################################################
 alpaca:
   api_key: 'PKCBGN33W2QQDYIT7GIY'     # Your Alpaca API key
   secret_key: 'OeeFoeeDLFBqvo8l88V8hvTMi49JNzyUJmgBQlqO'  # Your Alpaca secret key
@@ -51,14 +52,16 @@ paths:
   log_dir: 'logs'                    # Directory for log files
   log_file: 'logs/app.log'           # Main application log file
 
+####################################################################################################
 # Trading Parameters
-# --------------------------------------------------
+####################################################################################################
 trading:
   default_symbol: 'SPY'              # Default trading symbol
   default_quantity: 100              # Default contract quantity
 
+####################################################################################################
 # Market Data Settings
-# --------------------------------------------------
+####################################################################################################
 market_data:
   interval: "1m"                     # Data granularity (1m = 1 minute)
   period: "1d"                       # Data fetch period (1d = 1 day)
@@ -96,58 +99,65 @@ market_data:
 #        - ultima
 #        - parmicharma
 
-  # Technical Indicators settings
-  indicators:
+####################################################################################################
+# Technical Indicators settings
+####################################################################################################
+indicators:
+  enabled: true
+  ttm_squeeze:
     enabled: true
-    ttm_squeeze:
-      enabled: true
-      period: 20
-      bb_multiplier: 2.0
-      kc_multiplier: 1.5
-    ema:
-      enabled: true
-      periods: [9, 21, 55, 200]
-    macd:
-      enabled: true
-      fast_period: 12
-      slow_period: 26
-      signal_period: 9
-    columns:
-      - squeeze_on
-      - momentum
-      - momentum_increasing
-      - ema_above_below
-      - ema_trends
-      - macd_signals
+    period: 20
+    bb_multiplier: 2.0
+    kc_multiplier: 1.5
+  ema:
+    enabled: true
+    periods: [9, 21, 55, 200]
+  macd:
+    enabled: true
+    fast_period: 12
+    slow_period: 26
+    signal_period: 9
+  columns:
+    - squeeze_on
+    - momentum
+    - momentum_increasing
+    - ema_above_below
+    - ema_trends
+    - macd_signals
 
+####################################################################################################
 # Strategy Settings
-# --------------------------------------------------
+####################################################################################################
 entry_strategy:
   buffer: 0.05                       # Price buffer for entry points (±$0.05)
 
+####################################################################################################
 # Position Management
-# --------------------------------------------------
+####################################################################################################
 monitoring:
   max_retries: 3                     # Maximum retry attempts for operations
   retry_delay: 2                     # Delay between retries (seconds)
   polling_interval: 30               # Time between position checks (seconds)
 
+####################################################################################################
 # Order Settings
-# --------------------------------------------------
+####################################################################################################
 orders:
-  limit_buy:
+  limit_buy:                         # THI WAS AUTO GENERATED, NOT USED ATM.
     price_buffer: 0.25               # Buffer for limit order prices (25%) (NOT USED)
-  use_bid_price:
+  bid_price_settings:                # AT THE BID PRICE SETTINGS
+    use_bid_price: true              # Master switch for using bid prices
     entry: true                      # Use bid price for entry limit orders
     take_profit: true                # Use bid price for take profit limit orders
     stop_loss: true                  # Use bid price for stop loss limit orders
   limit_order:
     timeout_enabled: false           # Enable/disable limit order timeout checking
-    max_duration_minutes: 5         # Maximum time to wait for limit order fill
-    check_interval_seconds: 30      # How often to check order status
+    max_duration_minutes: 5          # Maximum time to wait for limit order fill
+    check_interval_seconds: 30       # How often to check order status
 
+####################################################################################################
 # File Operations
-# --------------------------------------------------
+####################################################################################################
 # Directories for play file management
 file_paths:
   plays_dir: "plays"                 # Root directory for all play files
@@ -157,14 +167,16 @@ file_paths:
   expired_dir: "expired"             # Expired plays
   temp_dir: "temp"                   # Temporary play storage
 
+####################################################################################################
 # Logging Configuration
-# --------------------------------------------------
+####################################################################################################
 logging:
   level: "INFO"                      # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
   format: "%(asctime)s - %(levelname)s - %(message)s"  # Log message format
 
+####################################################################################################
 # Market Hours Settings
-# --------------------------------------------------
+####################################################################################################
 market_hours:
   enabled: true                    # Enable/disable market hours validation
   timezone: "America/New_York"     # Market timezone
@@ -176,8 +188,9 @@ market_hours:
     pre_market_start: "04:00"     # Pre-market start (HH:MM)
     after_market_end: "20:00"     # After-market end (HH:MM)
 
+####################################################################################################
 # Auto Play Creator Settings
-# --------------------------------------------------
+####################################################################################################
 auto_play_creator:
   enabled: true                     # Enable/disable auto play creation
   order_types:                      # Types of orders to use
@@ -209,3 +222,41 @@ auto_play_creator:
     - MSFT
     - GOOGL
     - AMZN
+
+####################################################################################################
+# Chart Viewer Settings
+####################################################################################################  
+chart_viewer:
+  indicators:
+    enabled: true
+    ema:
+      enabled: true
+      periods: [9, 21, 55, 200]
+      colors: 
+        - "#1f77b4"  # blue
+        - "#ff7f0e"  # orange
+        - "#2ca02c"  # green
+        - "#d62728"  # red
+    macd:
+      enabled: true
+      fast_period: 12
+      slow_period: 26
+      signal_period: 9
+    rsi:
+      enabled: false
+      period: 14
+    bollinger_bands:
+      enabled: false
+      period: 20
+      std_dev: 2
+    volume:
+      enabled: true
+      ma_period: 20
+  display:
+    style: "charles"  # Options: charles, classic, yahoo, etc.
+    candle_up_color: "green"
+    candle_down_color: "red"
+    background_color: "white"
+    grid: true
+    grid_alpha: 0.2
+    figure_size: [12, 8]  # [width, height] in inches

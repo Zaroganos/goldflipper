@@ -26,7 +26,7 @@ class WelcomeScreen(Screen):
                     Button("View / Edit Current Plays", variant="primary", id="view_plays"),
                     Button("Upkeep and Status", variant="primary", id="system_status"),
                     Button("Configuration", variant="primary", id="configuration"),
-                    Button("Placeholder 2", variant="primary", id="placeholder2"),
+                    Button("Open Chart", variant="primary", id="open_chart"),
                     classes="button-column",
                 ),
                 id="button_container"
@@ -50,6 +50,8 @@ class WelcomeScreen(Screen):
             self.run_configuration()
         elif event.button.id == "auto_play_creator":
             self.run_auto_play_creator()
+        elif event.button.id == "open_chart":
+            self.run_chart_viewer()
         elif event.button.id == "exit":
             self.app.exit()
 
@@ -141,6 +143,20 @@ class WelcomeScreen(Screen):
             else:  # Unix-like systems
                 subprocess.Popen(['gnome-terminal', '--', 'python', 'auto_play_creator.py'], 
                                cwd=tools_dir)
+        except Exception as e:
+            self.notify(f"Error: {str(e)}", severity="error")
+
+    def run_chart_viewer(self):
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            chart_dir = os.path.join(current_dir, "chart")
+            
+            if os.name == 'nt':  # Windows
+                cmd = ['cmd', '/k', 'cd', '/d', chart_dir, '&', 'python', 'chart_viewer.py']
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:  # Unix-like systems
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'chart_viewer.py'], 
+                               cwd=chart_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 

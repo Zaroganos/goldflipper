@@ -297,6 +297,9 @@ def prepare_option_data(row, underlying_price, expiration_date, risk_free_rate=0
 
 def calculate_greeks(options_data, underlying_price, expiration_date):
     """Calculate Greeks for the options chain."""
+    # Create a copy of the DataFrame to avoid SettingWithCopyWarning
+    options_data = options_data.copy()
+    
     # Initialize new columns for Greeks
     options_data['delta'] = None
     options_data['gamma'] = None
@@ -321,73 +324,24 @@ def calculate_greeks(options_data, underlying_price, expiration_date):
             # Prepare option data
             option_data = prepare_option_data(row, underlying_price, expiration_date)
             
-            # Calculate delta
-            delta_calculator = DeltaCalculator(option_data)
-            options_data.at[idx, 'delta'] = delta_calculator.calculate(row['option_type'])
-            
-            # Calculate gamma
-            gamma_calculator = GammaCalculator(option_data)
-            options_data.at[idx, 'gamma'] = gamma_calculator.calculate(row['option_type'])
-            
-            # Calculate theta
-            theta_calculator = ThetaCalculator(option_data)
-            options_data.at[idx, 'theta'] = theta_calculator.calculate(row['option_type'])
-            
-            # Calculate vega
-            vega_calculator = VegaCalculator(option_data)
-            options_data.at[idx, 'vega'] = vega_calculator.calculate(row['option_type'])
-            
-            # Calculate rho
-            rho_calculator = RhoCalculator(option_data)
-            options_data.at[idx, 'rho'] = rho_calculator.calculate(row['option_type'])
-            
-            # Calculate elasticity
-            elasticity_calculator = ElasticityCalculator(option_data)
-            options_data.at[idx, 'elasticity'] = elasticity_calculator.calculate(row['option_type'])
-            
-            # Calculate epsilon
-            epsilon_calculator = EpsilonCalculator(option_data)
-            options_data.at[idx, 'epsilon'] = epsilon_calculator.calculate(row['option_type'])
-            
-            # Calculate vanna
-            vanna_calculator = VannaCalculator(option_data)
-            options_data.at[idx, 'vanna'] = vanna_calculator.calculate(row['option_type'])
-            
-            # Calculate charm
-            charm_calculator = CharmCalculator(option_data)
-            options_data.at[idx, 'charm'] = charm_calculator.calculate(row['option_type'])
-            
-            # Calculate vomma
-            vomma_calculator = VommaCalculator(option_data)
-            options_data.at[idx, 'vomma'] = vomma_calculator.calculate(row['option_type'])
-            
-            # Calculate veta
-            veta_calculator = VetaCalculator(option_data)
-            options_data.at[idx, 'veta'] = veta_calculator.calculate(row['option_type'])
-            
-            # Calculate vera
-            vera_calculator = VeraCalculator(option_data)
-            options_data.at[idx, 'vera'] = vera_calculator.calculate(row['option_type'])
-            
-            # Calculate speed
-            speed_calculator = SpeedCalculator(option_data)
-            options_data.at[idx, 'speed'] = speed_calculator.calculate(row['option_type'])
-            
-            # Calculate zomma
-            zomma_calculator = ZommaCalculator(option_data)
-            options_data.at[idx, 'zomma'] = zomma_calculator.calculate(row['option_type'])
-            
-            # Calculate color
-            color_calculator = ColorCalculator(option_data)
-            options_data.at[idx, 'color'] = color_calculator.calculate(row['option_type'])
-            
-            # Calculate ultima
-            ultima_calculator = UltimaCalculator(option_data)
-            options_data.at[idx, 'ultima'] = ultima_calculator.calculate(row['option_type'])
-            
-            # Calculate parmicharma
-            parmicharma_calculator = ParmicharmaCalculator(option_data)
-            options_data.at[idx, 'parmicharma'] = parmicharma_calculator.calculate(row['option_type'])
+            # Calculate Greeks using .loc to avoid warnings
+            options_data.loc[idx, 'delta'] = DeltaCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'gamma'] = GammaCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'theta'] = ThetaCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'vega'] = VegaCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'rho'] = RhoCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'elasticity'] = ElasticityCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'epsilon'] = EpsilonCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'vanna'] = VannaCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'charm'] = CharmCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'vomma'] = VommaCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'veta'] = VetaCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'vera'] = VeraCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'speed'] = SpeedCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'zomma'] = ZommaCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'color'] = ColorCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'ultima'] = UltimaCalculator(option_data).calculate(row['option_type'])
+            options_data.loc[idx, 'parmicharma'] = ParmicharmaCalculator(option_data).calculate(row['option_type'])
             
         except Exception as e:
             logging.warning(f"Error calculating Greeks for strike {row['strike']}: {str(e)}")
@@ -437,18 +391,24 @@ def calculate_indicators(ticker: str, settings: dict) -> pd.DataFrame:
     
     # Calculate EMAs
     if settings['market_data']['indicators']['ema']['enabled']:
+        logging.debug("Calculating EMAs...")
         ema_calc = EMACalculator(
             market_data,
             periods=settings['market_data']['indicators']['ema']['periods']
         )
         ema_indicators = ema_calc.calculate()
         
+        # Debug log the EMA results
+        logging.debug(f"EMA indicators calculated: {list(ema_indicators.keys())}")
+        
         # Add EMA values and trends to indicators
         for key, value in ema_indicators.items():
             if key.startswith('ema_'):
                 indicators_dict[key] = value.iloc[-1]
+                logging.debug(f"Added EMA value for {key}: {value.iloc[-1]}")
             else:
                 indicators_dict[key] = value.iloc[-1]
+                logging.debug(f"Added EMA trend for {key}: {value.iloc[-1]}")
     
     # Calculate MACD
     if settings['market_data']['indicators']['macd']['enabled']:
@@ -471,7 +431,9 @@ def calculate_indicators(ticker: str, settings: dict) -> pd.DataFrame:
         })
     
     # Create DataFrame with all indicator values
-    return pd.DataFrame([indicators_dict])
+    result_df = pd.DataFrame([indicators_dict])
+    logging.debug(f"Final indicator columns: {list(result_df.columns)}")
+    return result_df
 
 def main():
     """Main function to fetch and display option data."""

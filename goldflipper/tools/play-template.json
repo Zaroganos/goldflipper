@@ -47,6 +47,7 @@
   "status": {
     "play_status": "TEMP / NEW / PENDING / OPEN / CLOSING / CLOSED / EXPIRED",
     "order_id": null,
+    "position_uuid": null,
     "order_status": null,
     "position_exists": false,
     "last_checked": null,

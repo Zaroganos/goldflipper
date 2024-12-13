@@ -510,7 +510,7 @@ def open_position(play, play_file):
         # Create appropriate order request based on order type
         if play.get('entry_point', {}).get('order_type') == 'limit':
             # Get bid price if enabled in settings
-            if config.get('orders', 'use_bid_price', 'entry', default=True):
+            if config.get('orders', 'bid_price_settings', 'entry', default=True):
                 limit_price = get_option_bid_price(
                     ticker=play['symbol'],
                     expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
@@ -595,7 +595,7 @@ def close_position(play, close_conditions, play_file):
         if close_conditions['is_profit']:
             if play['take_profit'].get('order_type') == 'limit':
                 # Get bid price if enabled in settings
-                if config.get('orders', 'use_bid_price', 'take_profit', default=True):
+                if config.get('orders', 'bid_price_settings', 'take_profit', default=True):
                     limit_price = get_option_bid_price(
                         ticker=play['symbol'],
                         expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
@@ -655,7 +655,7 @@ def close_position(play, close_conditions, play_file):
                 # If only primary condition is met, use limit order
                 elif close_conditions['is_primary_loss']:
                     # Get bid price if enabled in settings
-                    if config.get('orders', 'use_bid_price', 'stop_loss', default=True):
+                    if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
                         limit_price = get_option_bid_price(
                             ticker=play['symbol'],
                             expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
@@ -687,7 +687,7 @@ def close_position(play, close_conditions, play_file):
             # For regular limit stop loss
             elif play['stop_loss'].get('order_type') == 'limit':
                 # Get bid price if enabled in settings
-                if config.get('orders', 'use_bid_price', 'stop_loss', default=True):
+                if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
                     limit_price = get_option_bid_price(
                         ticker=play['symbol'],
                         expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),

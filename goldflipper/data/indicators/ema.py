@@ -25,13 +25,16 @@ class EMACalculator(IndicatorCalculator):
         current_price = self.data.close.iloc[-1]
         trends = {}
         
-        for period, ema_values in emas.items():
+        for ema_key, ema_values in emas.items():
+            # Extract period number from the ema_key (e.g., 'ema_9' -> '9')
+            period = ema_key.split('_')[1]
             current_ema = ema_values.iloc[-1]
             prev_ema = ema_values.iloc[-2]
             
+            # Use period number in trend keys to match display function expectations
             trends[f"{period}_above"] = current_price > current_ema
             trends[f"{period}_rising"] = current_ema > prev_ema
-            
+        
         return trends
     
     def calculate(self) -> Dict[str, pd.Series]:
