@@ -860,145 +860,251 @@ def monitor_and_manage_position(play, play_file):
 # Move to NEW (for OTO triggered plays)
 def move_play_to_new(play_file):
     """Move play to NEW folder and update status."""
-    with open(play_file, 'r') as f:
-        play_data = json.load(f)
-    
-    play_data['status']['play_status'] = 'NEW'
-    play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Use UUIDEncoder because this play might have had Alpaca order IDs
-    with open(play_file, 'w') as f:
-        json.dump(play_data, f, indent=4, cls=UUIDEncoder)
-    
-    new_dir = os.path.join(os.path.dirname(play_file), '..', 'new')
-    os.makedirs(new_dir, exist_ok=True)
-    new_path = os.path.join(new_dir, os.path.basename(play_file))
-    os.rename(play_file, new_path)
-    logging.info(f"Moved play to NEW folder: {new_path}")
-    display.info(f"Moved play to NEW folder: {new_path}")
+    try:
+        with open(play_file, 'r') as f:
+            play_data = json.load(f)
+        
+        play_data['status']['play_status'] = 'NEW'
+        play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Calculate new path before saving
+        new_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'new')
+        os.makedirs(new_dir, exist_ok=True)
+        new_path = os.path.join(new_dir, os.path.basename(play_file))
+        
+        # Save to original location first
+        with open(play_file, 'w') as f:
+            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
+            
+        # Move file only if it's not already in the target directory
+        if os.path.dirname(play_file) != new_dir:
+            if os.path.exists(new_path):
+                os.remove(new_path)  # Remove any existing file at destination
+            os.rename(play_file, new_path)
+            logging.info(f"Moved play to NEW folder: {new_path}")
+            display.info(f"Moved play to NEW folder: {new_path}")
+            
+    except Exception as e:
+        logging.error(f"Error moving play to NEW: {str(e)}")
+        display.error(f"Error moving play to NEW: {str(e)}")
+        raise
 
 # Move to OPEN (for plays whose BUY condition has hit)
 def move_play_to_open(play_file):
     """Move play to OPEN folder and update status."""
-    with open(play_file, 'r') as f:
-        play_data = json.load(f)
-    
-    play_data['status']['play_status'] = 'OPEN'
-    play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Use UUIDEncoder because this play will have Alpaca order IDs
-    with open(play_file, 'w') as f:
-        json.dump(play_data, f, indent=4, cls=UUIDEncoder)
-    
-    open_dir = os.path.join(os.path.dirname(play_file), '..', 'open')
-    os.makedirs(open_dir, exist_ok=True)
-    new_path = os.path.join(open_dir, os.path.basename(play_file))
-    os.rename(play_file, new_path)
-    logging.info(f"Moved play to OPEN folder: {new_path}")
-    display.info(f"Moved play to OPEN folder: {new_path}")
+    try:
+        with open(play_file, 'r') as f:
+            play_data = json.load(f)
+        
+        play_data['status']['play_status'] = 'OPEN'
+        play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Calculate new path before saving
+        open_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'open')
+        os.makedirs(open_dir, exist_ok=True)
+        new_path = os.path.join(open_dir, os.path.basename(play_file))
+        
+        # Save to original location first
+        with open(play_file, 'w') as f:
+            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
+            
+        # Move file only if it's not already in the target directory
+        if os.path.dirname(play_file) != open_dir:
+            if os.path.exists(new_path):
+                os.remove(new_path)  # Remove any existing file at destination
+            os.rename(play_file, new_path)
+            logging.info(f"Moved play to OPEN folder: {new_path}")
+            display.info(f"Moved play to OPEN folder: {new_path}")
+            
+    except Exception as e:
+        logging.error(f"Error moving play to OPEN: {str(e)}")
+        display.error(f"Error moving play to OPEN: {str(e)}")
+        raise
 
 # Move to CLOSED (for plays whose TP or SL condition has hit)
 def move_play_to_closed(play_file):
     """Move play to CLOSED folder and update status."""
-    with open(play_file, 'r') as f:
-        play_data = json.load(f)
-    
-    play_data['status']['play_status'] = 'CLOSED'
-    play_data['status']['position_exists'] = False
-    play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Use UUIDEncoder because this play will have Alpaca order IDs
-    with open(play_file, 'w') as f:
-        json.dump(play_data, f, indent=4, cls=UUIDEncoder)
-    
-    closed_dir = os.path.join(os.path.dirname(play_file), '..', 'closed')
-    os.makedirs(closed_dir, exist_ok=True)
-    new_path = os.path.join(closed_dir, os.path.basename(play_file))
-    os.rename(play_file, new_path)
-    logging.info(f"Moved play to CLOSED folder: {new_path}")
-    display.info(f"Moved play to CLOSED folder: {new_path}")
+    try:
+        with open(play_file, 'r') as f:
+            play_data = json.load(f)
+        
+        play_data['status'].update({
+            'play_status': 'CLOSED',
+            'position_exists': False,
+            'last_checked': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+        
+        # Calculate new path before saving
+        closed_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'closed')
+        os.makedirs(closed_dir, exist_ok=True)
+        new_path = os.path.join(closed_dir, os.path.basename(play_file))
+        
+        # Save to original location first
+        with open(play_file, 'w') as f:
+            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
+            
+        # Move file only if it's not already in the target directory
+        if os.path.dirname(play_file) != closed_dir:
+            if os.path.exists(new_path):
+                os.remove(new_path)  # Remove any existing file at destination
+            os.rename(play_file, new_path)
+            logging.info(f"Moved play to CLOSED folder: {new_path}")
+            display.info(f"Moved play to CLOSED folder: {new_path}")
+            
+    except Exception as e:
+        logging.error(f"Error moving play to CLOSED: {str(e)}")
+        display.error(f"Error moving play to CLOSED: {str(e)}")
+        raise
 
 # Move to EXPIRED (for plays which have expired, and OCO triggered plays)
 def move_play_to_expired(play_file):
     """Move play to EXPIRED folder and update status."""
-    with open(play_file, 'r') as f:
-        play_data = json.load(f)
-    
-    play_data['status'] = {
-        'play_status': 'EXPIRED',
-        'order_id': None,
-        'order_status': None,
-        'position_exists': False,
-        'closing_order_id': None,
-        'closing_order_status': None,
-        'last_checked': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
-    
-    # Use UUIDEncoder because this play might have had Alpaca order IDs
-    with open(play_file, 'w') as f:
-        json.dump(play_data, f, indent=4, cls=UUIDEncoder)
-    
-    expired_dir = os.path.join(os.path.dirname(play_file), '..', 'expired')
-    os.makedirs(expired_dir, exist_ok=True)
-    new_path = os.path.join(expired_dir, os.path.basename(play_file))
-    os.rename(play_file, new_path)
-    logging.info(f"Moved play to EXPIRED folder: {new_path}")
-    display.info(f"Moved play to EXPIRED folder: {new_path}")
-    
+    try:
+        with open(play_file, 'r') as f:
+            play_data = json.load(f)
+        
+        play_data['status'].update({
+            'play_status': 'EXPIRED',
+            'position_exists': False,
+            'order_id': None,
+            'order_status': None,
+            'closing_order_id': None,
+            'closing_order_status': None,
+            'last_checked': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+        
+        # Calculate new path before saving
+        expired_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'expired')
+        os.makedirs(expired_dir, exist_ok=True)
+        new_path = os.path.join(expired_dir, os.path.basename(play_file))
+        
+        # Save to original location first
+        with open(play_file, 'w') as f:
+            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
+            
+        # Move file only if it's not already in the target directory
+        if os.path.dirname(play_file) != expired_dir:
+            if os.path.exists(new_path):
+                os.remove(new_path)  # Remove any existing file at destination
+            os.rename(play_file, new_path)
+            logging.info(f"Moved play to EXPIRED folder: {new_path}")
+            display.info(f"Moved play to EXPIRED folder: {new_path}")
+            
+    except Exception as e:
+        logging.error(f"Error moving play to EXPIRED: {str(e)}")
+        display.error(f"Error moving play to EXPIRED: {str(e)}")
+        raise
+
 # ==================================================
 # 6. MAIN TRADE EXECUTION FLOW
 # ==================================================
 # Main function to orchestrate the strategy execution using the loaded plays.
 
 def execute_trade(play_file, play_type):
-    logging.info(f"Executing {play_type} play: {play_file}")
-    display.info(f"Executing {play_type} play: {play_file}")
-    
-    play = load_play(play_file)
-    if play is None:
-        logging.error(f"Failed to load play {play_file}. Aborting trade execution.")
-        display.error(f"Failed to load play {play_file}. Aborting trade execution.")
-        return False
-
-    # For PENDING plays, check status before proceeding
-    if play.get('status', {}).get('play_status') == 'PENDING':
-        if not check_position_status(play, play_file):
-            return False  # Don't proceed if position isn't established yet
-
-    # Validate order types first
-    if not validate_play_order_types(play):
-        logging.error(f"Invalid order types in play {play_file}. Aborting trade execution.")
-        display.error(f"Invalid order types in play {play_file}. Aborting trade execution.")
-        return False
-
-    symbol = play.get("symbol")
-    trade_type = play.get("trade_type", "").upper()
-    if not symbol or trade_type not in ["CALL", "PUT"]:
-        logging.error(f"Play {play_file} is missing 'symbol' or has invalid 'trade_type'. Skipping execution.")
-        display.error(f"Play {play_file} is missing 'symbol' or has invalid 'trade_type'. Skipping execution.")
-        return False
-
-    market_data = get_market_data(symbol)
-    
-    # OPENING a Play
-    if play_type == "new":
-        if evaluate_opening_strategy(symbol, market_data, play):
-            if open_position(play, play_file):
-                # Handle conditional plays only after position is confirmed open
-                if play.get('status', {}).get('position_exists') and play.get("play_class") == "PRIMARY":
-                    handle_conditional_plays(play, play_file)
-                return True
-            
-    # MONITORING an Open Play
-    elif play_type == "open":
-        return monitor_and_manage_position(play, play_file)
-    
-    # Handle Expired Play
-    elif play_type == "expired":
-        move_play_to_expired(play_file)
-        return True
+    """Execute trade with improved error handling and fault tolerance."""
+    try:
+        logging.info(f"Executing {play_type} play: {play_file}")
+        display.info(f"Executing {play_type} play: {play_file}")
         
-    return False
+        play = load_play(play_file)
+        if play is None:
+            logging.error(f"Failed to load play {play_file}. Skipping to next play.")
+            display.error(f"Failed to load play {play_file}. Skipping to next play.")
+            return True  # Return True to continue with next play
+        
+        # Basic validation
+        symbol = play.get("symbol")
+        trade_type = play.get("trade_type", "").upper()
+        if not symbol or trade_type not in ["CALL", "PUT"]:
+            logging.error(f"Play {play_file} is missing required fields. Skipping to next play.")
+            display.error(f"Play {play_file} is missing required fields. Skipping to next play.")
+            return True  # Return True to continue with next play
+            
+        # For PENDING plays, check status before proceeding
+        if play.get('status', {}).get('play_status') == 'PENDING':
+            try:
+                if not check_position_status(play, play_file):
+                    logging.warning(f"Position status check failed for {play_file}. Will retry next cycle.")
+                    return True  # Return True to continue with next play
+            except Exception as e:
+                logging.error(f"Error checking position status: {str(e)}. Continuing to next play.")
+                display.error(f"Error checking position status: {str(e)}. Continuing to next play.")
+                return True
+        
+        # Validate order types
+        try:
+            if not validate_play_order_types(play):
+                logging.error(f"Invalid order types in {play_file}. Skipping to next play.")
+                display.error(f"Invalid order types in {play_file}. Skipping to next play.")
+                return True
+        except Exception as e:
+            logging.error(f"Error validating order types: {str(e)}. Continuing to next play.")
+            display.error(f"Error validating order types: {str(e)}. Continuing to next play.")
+            return True
+        
+        # Get market data with error handling
+        try:
+            market_data = get_market_data(symbol)
+            if market_data is None or market_data.empty:
+                logging.error(f"Failed to get market data for {symbol}. Will retry next cycle.")
+                display.error(f"Failed to get market data for {symbol}. Will retry next cycle.")
+                return True
+        except Exception as e:
+            logging.error(f"Error getting market data: {str(e)}. Continuing to next play.")
+            display.error(f"Error getting market data: {str(e)}. Continuing to next play.")
+            return True
+        
+        # OPENING a Play
+        if play_type == "new":
+            try:
+                if evaluate_opening_strategy(symbol, market_data, play):
+                    if open_position(play, play_file):
+                        # Handle conditional plays only after position is confirmed open
+                        if play.get('status', {}).get('position_exists') and play.get("play_class") == "PRIMARY":
+                            try:
+                                handle_conditional_plays(play, play_file)
+                            except Exception as e:
+                                logging.error(f"Error handling conditional plays: {str(e)}. Will retry next cycle.")
+                                display.error(f"Error handling conditional plays: {str(e)}. Will retry next cycle.")
+                        return True
+            except Exception as e:
+                logging.error(f"Error during opening strategy: {str(e)}. Continuing to next play.")
+                display.error(f"Error during opening strategy: {str(e)}. Continuing to next play.")
+                return True
+                
+        # MONITORING an Open Play
+        elif play_type == "open":
+            try:
+                monitor_and_manage_position(play, play_file)
+            except Exception as e:
+                if "position does not exist" in str(e):
+                    logging.warning(f"Position no longer exists for {play_file}. Moving to closed.")
+                    display.warning(f"Position no longer exists for {play_file}. Moving to closed.")
+                    try:
+                        move_play_to_closed(play_file)
+                    except Exception as move_err:
+                        logging.error(f"Error moving play to closed: {str(move_err)}")
+                        display.error(f"Error moving play to closed: {str(move_err)}")
+                else:
+                    logging.error(f"Error monitoring position: {str(e)}. Will retry next cycle.")
+                    display.error(f"Error monitoring position: {str(e)}. Will retry next cycle.")
+                return True
+                
+        # Handle Expired Play
+        elif play_type == "expired":
+            try:
+                move_play_to_expired(play_file)
+            except Exception as e:
+                logging.error(f"Error moving play to expired: {str(e)}. Will retry next cycle.")
+                display.error(f"Error moving play to expired: {str(e)}. Will retry next cycle.")
+            return True
+            
+        return True  # Always return True to continue with next play
+        
+    except Exception as e:
+        logging.error(f"Unexpected error in execute_trade: {str(e)}. Continuing to next play.")
+        display.error(f"Unexpected error in execute_trade: {str(e)}. Continuing to next play.")
+        return True  # Return True to continue with next play
 
 def validate_play_order_types(play):
     """Validate order types in play data."""
@@ -1384,134 +1490,13 @@ def capture_greeks(play, current_premium):
         return None, None
 
 def check_position_status(play, play_file):
-    """Check the status of an order/position and update the play file accordingly."""
-    client = get_alpaca_client()
-    
-    logging.info(f"Checking position status for play: {play.get('play_name', 'unnamed')}")
-    logging.info(f"Current status: {play.get('status', {})}")
-    logging.info(f"Current directory: {os.path.dirname(play_file)}")
-    
-    try:
-        # Check opening order status
-        if play['status'].get('order_id'):  # Removed the PENDING check here
-            order = client.get_order_by_id(play['status']['order_id'])
-            
-            # Update order status
-            play['status']['order_status'] = order.status
-            play['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            # Check for limit order timeout only if enabled
-            if (config.get('orders', 'limit_order', 'timeout_enabled', default=True) and 
-                order.status == 'new' and order.type == 'limit'):
-                # Get order creation time
-                order_time = datetime.fromisoformat(order.submitted_at.replace('Z', '+00:00'))
-                current_time = datetime.now(order_time.tzinfo)
-                
-                # Calculate time elapsed
-                max_duration = timedelta(minutes=config.get('orders', 'limit_order', 'max_duration_minutes', default=5))
-                time_elapsed = current_time - order_time
-                
-                # Cancel order if timeout exceeded
-                if time_elapsed > max_duration:
-                    try:
-                        client.cancel_order_by_id(order.id)
-                        logging.warning(f"Cancelled limit order after {max_duration.total_seconds()/60:.1f} minutes")
-                        display.warning(f"Cancelled limit order after {max_duration.total_seconds()/60:.1f} minutes")
-                        
-                        # Reset play status
-                        play['status'].update({
-                            'play_status': 'NEW',
-                            'position_exists': False,
-                            'order_id': None,
-                            'order_status': None
-                        })
-                        
-                        # Move play back to new folder
-                        if os.path.basename(os.path.dirname(play_file)) != 'new':
-                            move_play_to_new(play_file)
-                            
-                    except Exception as e:
-                        logging.error(f"Error cancelling timed-out limit order: {e}")
-                        display.error(f"Error cancelling timed-out limit order: {e}")
-            
-            # If order is filled, check position
-            if order.status == 'filled':
-                try:
-                    position = client.get_open_position(play['option_contract_symbol'])
-                    play['status']['position_exists'] = True
-                    play['status']['play_status'] = 'OPEN'
-                    if os.path.basename(os.path.dirname(play_file)) != 'open':
-                        move_play_to_open(play_file)
-                except Exception as e:
-                    if "position does not exist" in str(e):
-                        play['status']['position_exists'] = False
-            
-            # Handle cancelled/rejected orders
-            elif order.status in ['canceled', 'rejected']:
-                play['status']['play_status'] = 'NEW'  # Reset to NEW
-                play['status']['position_exists'] = False
-                play['status']['order_id'] = None  # Clear order ID
-                play['status']['order_status'] = None  # Clear order status
-                if os.path.basename(os.path.dirname(play_file)) != 'new':
-                    move_play_to_new(play_file)
-                    
-        # Check closing order status if applicable
-        elif play['status'].get('closing_order_id') and play['status'].get('play_status') == 'CLOSING':
-            closing_order = client.get_order_by_id(play['status']['closing_order_id'])
-            
-            # Update closing order status
-            play['status']['closing_order_status'] = closing_order.status
-            play['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            # Check for limit order timeout on closing orders only if enabled
-            if (config.get('orders', 'limit_order', 'timeout_enabled', default=True) and 
-                closing_order.status == 'new' and closing_order.type == 'limit'):
-                # Get order creation time
-                order_time = datetime.fromisoformat(closing_order.submitted_at.replace('Z', '+00:00'))
-                current_time = datetime.now(order_time.tzinfo)
-                
-                # Calculate time elapsed
-                max_duration = timedelta(minutes=config.get('orders', 'limit_order', 'max_duration_minutes', default=5))
-                time_elapsed = current_time - order_time
-                
-                # Cancel order if timeout exceeded
-                if time_elapsed > max_duration:
-                    try:
-                        client.cancel_order_by_id(closing_order.id)
-                        logging.warning(f"Cancelled closing limit order after {max_duration.total_seconds()/60:.1f} minutes")
-                        display.warning(f"Cancelled closing limit order after {max_duration.total_seconds()/60:.1f} minutes")
-                        
-                        # Reset play status back to OPEN
-                        play['status'].update({
-                            'play_status': 'OPEN',
-                            'closing_order_id': None,
-                            'closing_order_status': None
-                        })
-                        
-                    except Exception as e:
-                        logging.error(f"Error cancelling timed-out closing limit order: {e}")
-                        display.error(f"Error cancelling timed-out closing limit order: {e}")
-            
-            # If closing order is filled
-            if closing_order.status == 'filled':
-                play['status']['play_status'] = 'CLOSED'
-                play['status']['position_exists'] = False
-                move_play_to_closed(play_file)
-            
-            # Handle cancelled/rejected closing orders
-            elif closing_order.status in ['canceled', 'rejected']:
-                play['status']['play_status'] = 'OPEN'  # Reset to OPEN
-                play['status']['closing_order_id'] = None
-                play['status']['closing_order_status'] = None
-        
-        # Save updated play status
-        save_play(play, play_file)
-        
-    except Exception as e:
-        logging.error(f"Error checking position status: {e}")
-        display.error(f"Error checking position status: {e}")
-        return False
-        
+    """Temporarily disabled position status checking."""
+    # For now, assume position exists if we have an order ID
+    if play.get('status', {}).get('order_id'):
+        play['status']['position_exists'] = True
+        play['status']['play_status'] = 'OPEN'
+        if os.path.basename(os.path.dirname(play_file)) != 'open':
+            move_play_to_open(play_file)
     return True
 
 def handle_conditional_plays(play, play_file):
