@@ -35,6 +35,15 @@ class EMACalculator(IndicatorCalculator):
             trends[f"{period}_above"] = current_price > current_ema
             trends[f"{period}_rising"] = current_ema > prev_ema
         
+        # Add 9/21 EMA crossover check if both periods exist
+        if 'ema_9' in emas and 'ema_21' in emas:
+            trends['9_21_crossover_bullish'] = emas['ema_9'].iloc[-1] > emas['ema_21'].iloc[-1]
+            # Also add previous state to detect crossover events
+            trends['9_21_crossover_up'] = (emas['ema_9'].iloc[-1] > emas['ema_21'].iloc[-1]) and \
+                                         (emas['ema_9'].iloc[-2] <= emas['ema_21'].iloc[-2])
+            trends['9_21_crossover_down'] = (emas['ema_9'].iloc[-1] < emas['ema_21'].iloc[-1]) and \
+                                           (emas['ema_9'].iloc[-2] >= emas['ema_21'].iloc[-2])
+        
         return trends
     
     def calculate(self) -> Dict[str, pd.Series]:

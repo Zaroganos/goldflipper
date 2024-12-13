@@ -51,34 +51,75 @@ def display_indicator_summary(indicator_data):
     print("\nTechnical Indicators Summary:")
     
     # TTM Squeeze
-    if 'squeeze_on' in indicator_data:
+    if 'squeeze_on' in indicator_data.columns:
         print("\nTTM Squeeze:")
-        print(f"Status: {'ON' if indicator_data['squeeze_on'].iloc[-1] else 'OFF'}")
-        print(f"Momentum: {indicator_data['momentum'].iloc[-1]:.2f}")
-        print(f"Momentum Trend: {'↑ INCREASING' if indicator_data['momentum_increasing'].iloc[-1] else '↓ DECREASING'}")
+        try:
+            squeeze_on = indicator_data['squeeze_on'].iloc[0]
+            momentum = indicator_data['momentum'].iloc[0]
+            momentum_increasing = indicator_data['momentum_increasing'].iloc[0]
+            
+            print(f"Status: {'ON (Compression)' if squeeze_on else 'OFF (No Squeeze)'}")
+            print(f"Momentum: {momentum:.2f}")
+            print(f"Momentum Trend: {'↑ INCREASING' if momentum_increasing else '↓ DECREASING'}")
+        except Exception as e:
+            print(f"Error processing TTM Squeeze data: {str(e)}")
     
     # EMAs
     ema_periods = [int(key.split('_')[1]) for key in indicator_data.columns if key.startswith('ema_')]
     if ema_periods:
         print("\nEMA Status:")
         for period in sorted(ema_periods):
-            above_key = f"{period}_above"
-            rising_key = f"{period}_rising"
-            ema_key = f"ema_{period}"
-            if all(key in indicator_data for key in [ema_key, above_key, rising_key]):
-                print(f"EMA-{period}: {indicator_data[ema_key].iloc[-1]:.2f} "
-                      f"| {'↑ ABOVE' if indicator_data[above_key].iloc[-1] else '↓ BELOW'} Price "
-                      f"| {'↗ RISING' if indicator_data[rising_key].iloc[-1] else '↘ FALLING'}")
+            try:
+                above_key = f"{period}_above"
+                rising_key = f"{period}_rising"
+                ema_key = f"ema_{period}"
+                
+                ema_value = indicator_data[ema_key].iloc[0]
+                above_value = indicator_data[above_key].iloc[0]
+                rising_value = indicator_data[rising_key].iloc[0]
+                
+                print(f"EMA-{period}: {ema_value:.2f} "
+                      f"| {'↑ ABOVE' if above_value else '↓ BELOW'} Price "
+                      f"| {'↗ RISING' if rising_value else '↘ FALLING'}")
+            except Exception as e:
+                print(f"Error processing EMA-{period}: {str(e)}")
+        
+        # Add 9/21 EMA Crossover check
+        if 'ema_9' in indicator_data.columns and 'ema_21' in indicator_data.columns:
+            ema9 = indicator_data['ema_9'].iloc[0]
+            ema21 = indicator_data['ema_21'].iloc[0]
+            print(f"\nEMA 9/21 Crossover: {'↑ BULLISH (9 > 21)' if ema9 > ema21 else '↓ BEARISH (9 < 21)'}")
     
     # MACD
-    if 'macd_line' in indicator_data:
+    if 'macd_line' in indicator_data.columns:
         print("\nMACD Status:")
-        print(f"MACD: {indicator_data['macd_line'].iloc[-1]:.2f} "
-              f"({'↑ ABOVE' if indicator_data['macd_above_signal'].iloc[-1] else '↓ BELOW'} Signal)")
-        print(f"Signal: {indicator_data['signal_line'].iloc[-1]:.2f}")
-        print(f"Histogram: {indicator_data['macd_histogram'].iloc[-1]:.2f} "
-              f"({'↗ INCREASING' if indicator_data['histogram_increasing'].iloc[-1] else '↘ DECREASING'})")
-        print(f"MACD Trend: {'↗ RISING' if indicator_data['macd_increasing'].iloc[-1] else '↘ FALLING'}")
+        try:
+            macd_value = indicator_data['macd_line'].iloc[0]
+            signal_value = indicator_data['signal_line'].iloc[0]
+            histogram_value = indicator_data['macd_histogram'].iloc[0]
+            above_signal = indicator_data['macd_above_signal'].iloc[0]
+            hist_increasing = indicator_data['histogram_increasing'].iloc[0]
+            macd_increasing = indicator_data['macd_increasing'].iloc[0]
+            crossover_up = indicator_data['macd_crossover_up'].iloc[0]
+            crossover_down = indicator_data['macd_crossover_down'].iloc[0]
+            
+            print(f"MACD: {macd_value:.2f} ({'↑ ABOVE' if above_signal else '↓ BELOW'} Signal)")
+            print(f"Signal: {signal_value:.2f}")
+            print(f"Histogram: {histogram_value:.2f} "
+                  f"({'↗ INCREASING' if hist_increasing else '↘ DECREASING'})")
+            print(f"MACD Trend: {'↗ RISING' if macd_increasing else '↘ FALLING'}")
+            
+            # Add crossover signals with explicit "no signal" message
+            print("\nCrossover Status:", end=" ")
+            if crossover_up:
+                print("⚠️ BULLISH CROSSOVER SIGNAL ⚠️")
+            elif crossover_down:
+                print("⚠️ BEARISH CROSSOVER SIGNAL ⚠️")
+            else:
+                print("No MACD crossover signals detected")
+            
+        except Exception as e:
+            print(f"Error processing MACD data: {str(e)}")
     
     print("-" * 50)
 
@@ -370,70 +411,70 @@ def calculate_indicators(ticker: str, settings: dict) -> pd.DataFrame:
         low=hist['Low'],
         close=hist['Close'],
         volume=hist['Volume'],
-        period=settings['market_data']['indicators']['ttm_squeeze']['period']
+        period=settings['indicators']['ttm_squeeze']['period']
     )
     
     indicators_dict = {}
     
-    # Calculate TTM Squeeze
-    if settings['market_data']['indicators']['ttm_squeeze']['enabled']:
-        ttm_calc = TTMSqueezeCalculator(
-            market_data,
-            bb_mult=settings['market_data']['indicators']['ttm_squeeze']['bb_multiplier'],
-            kc_mult=settings['market_data']['indicators']['ttm_squeeze']['kc_multiplier']
-        )
-        ttm_indicators = ttm_calc.calculate()
-        indicators_dict.update({
-            'squeeze_on': ttm_indicators['squeeze_on'].iloc[-1],
-            'momentum': ttm_indicators['momentum'].iloc[-1],
-            'momentum_increasing': ttm_indicators['momentum_increasing'].iloc[-1]
-        })
-    
-    # Calculate EMAs
-    if settings['market_data']['indicators']['ema']['enabled']:
-        logging.debug("Calculating EMAs...")
-        ema_calc = EMACalculator(
-            market_data,
-            periods=settings['market_data']['indicators']['ema']['periods']
-        )
-        ema_indicators = ema_calc.calculate()
+    try:
+        # Calculate TTM Squeeze
+        if settings['indicators']['ttm_squeeze']['enabled']:
+            ttm_calc = TTMSqueezeCalculator(
+                market_data,
+                bb_mult=settings['indicators']['ttm_squeeze']['bb_multiplier'],
+                kc_mult=settings['indicators']['ttm_squeeze']['kc_multiplier']
+            )
+            ttm_indicators = ttm_calc.calculate()
+            # Extract single values from Series
+            indicators_dict.update({
+                'squeeze_on': ttm_indicators['squeeze_on'].iloc[0],
+                'momentum': ttm_indicators['momentum'].iloc[0],
+                'momentum_increasing': ttm_indicators['momentum_increasing'].iloc[0]
+            })
         
-        # Debug log the EMA results
-        logging.debug(f"EMA indicators calculated: {list(ema_indicators.keys())}")
+        # Calculate EMAs
+        if settings['indicators']['ema']['enabled']:
+            ema_calc = EMACalculator(
+                market_data,
+                periods=settings['indicators']['ema']['periods']
+            )
+            ema_indicators = ema_calc.calculate()
+            # Extract single values from Series
+            for key, value in ema_indicators.items():
+                if key.startswith('ema_'):
+                    indicators_dict[key] = value.iloc[-1]  # Get last value for EMAs
+                else:
+                    indicators_dict[key] = value.iloc[0]  # Get first value for boolean indicators
         
-        # Add EMA values and trends to indicators
-        for key, value in ema_indicators.items():
-            if key.startswith('ema_'):
-                indicators_dict[key] = value.iloc[-1]
-                logging.debug(f"Added EMA value for {key}: {value.iloc[-1]}")
-            else:
-                indicators_dict[key] = value.iloc[-1]
-                logging.debug(f"Added EMA trend for {key}: {value.iloc[-1]}")
-    
-    # Calculate MACD
-    if settings['market_data']['indicators']['macd']['enabled']:
-        macd_calc = MACDCalculator(
-            market_data,
-            fast_period=settings['market_data']['indicators']['macd']['fast_period'],
-            slow_period=settings['market_data']['indicators']['macd']['slow_period'],
-            signal_period=settings['market_data']['indicators']['macd']['signal_period']
-        )
-        macd_indicators = macd_calc.calculate()
+        # Calculate MACD
+        if settings['indicators']['macd']['enabled']:
+            macd_calc = MACDCalculator(
+                market_data,
+                fast_period=settings['indicators']['macd']['fast_period'],
+                slow_period=settings['indicators']['macd']['slow_period'],
+                signal_period=settings['indicators']['macd']['signal_period']
+            )
+            macd_indicators = macd_calc.calculate()
+            # Extract single values from Series
+            indicators_dict.update({
+                'macd_line': macd_indicators['macd_line'].iloc[-1],
+                'signal_line': macd_indicators['signal_line'].iloc[-1],
+                'macd_histogram': macd_indicators['macd_histogram'].iloc[-1],
+                'macd_above_signal': macd_indicators['macd_above_signal'].iloc[0],
+                'histogram_increasing': macd_indicators['histogram_increasing'].iloc[0],
+                'macd_increasing': macd_indicators['macd_increasing'].iloc[0],
+                'macd_crossover_up': macd_indicators['macd_crossover_up'].iloc[0],
+                'macd_crossover_down': macd_indicators['macd_crossover_down'].iloc[0]
+            })
         
-        # Add MACD values and signals to indicators
-        indicators_dict.update({
-            'macd_line': macd_indicators['macd_line'].iloc[-1],
-            'signal_line': macd_indicators['signal_line'].iloc[-1],
-            'macd_histogram': macd_indicators['macd_histogram'].iloc[-1],
-            'macd_above_signal': macd_indicators['macd_above_signal'].iloc[-1],
-            'histogram_increasing': macd_indicators['histogram_increasing'].iloc[-1],
-            'macd_increasing': macd_indicators['macd_increasing'].iloc[-1]
-        })
-    
-    # Create DataFrame with all indicator values
-    result_df = pd.DataFrame([indicators_dict])
-    logging.debug(f"Final indicator columns: {list(result_df.columns)}")
-    return result_df
+        # Convert all indicators to a DataFrame
+        result_df = pd.DataFrame([indicators_dict])
+        logging.debug(f"Calculated indicators: {list(result_df.columns)}")
+        return result_df
+        
+    except Exception as e:
+        logging.error(f"Error calculating indicators: {str(e)}")
+        raise Exception(f"Error calculating indicators: {str(e)}")
 
 def main():
     """Main function to fetch and display option data."""
@@ -466,7 +507,7 @@ def main():
             
             # Calculate indicators first
             indicator_data = None
-            if settings['market_data']['indicators']['enabled']:
+            if settings['indicators']['enabled']:
                 try:
                     indicator_data = calculate_indicators(ticker, settings)
                     logging.info(f"Calculated indicators for {ticker}")

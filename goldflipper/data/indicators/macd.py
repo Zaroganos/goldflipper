@@ -42,6 +42,8 @@ class MACDCalculator(IndicatorCalculator):
             - 'macd_above_signal': Boolean indicating if MACD is above signal line
             - 'histogram_increasing': Boolean indicating if histogram is increasing
             - 'macd_increasing': Boolean indicating if MACD line is increasing
+            - 'macd_crossover_up': Boolean indicating MACD crossing above signal line
+            - 'macd_crossover_down': Boolean indicating MACD crossing below signal line
         """
         # Calculate EMAs
         fast_ema = self._calculate_ema(self.data.close, self.fast_period)
@@ -56,10 +58,20 @@ class MACDCalculator(IndicatorCalculator):
         # Calculate histogram
         histogram = macd_line - signal_line
         
-        # Calculate trend indicators
-        macd_above_signal = macd_line > signal_line
-        histogram_increasing = histogram > histogram.shift(1)
-        macd_increasing = macd_line > macd_line.shift(1)
+        # Get latest values for boolean indicators
+        macd_above_signal = pd.Series([macd_line.iloc[-1] > signal_line.iloc[-1]])
+        histogram_increasing = pd.Series([histogram.iloc[-1] > histogram.iloc[-2]])
+        macd_increasing = pd.Series([macd_line.iloc[-1] > macd_line.iloc[-2]])
+        
+        # Calculate crossovers (for latest point)
+        macd_crossover_up = pd.Series([
+            (macd_line.iloc[-1] > signal_line.iloc[-1]) and 
+            (macd_line.iloc[-2] <= signal_line.iloc[-2])
+        ])
+        macd_crossover_down = pd.Series([
+            (macd_line.iloc[-1] < signal_line.iloc[-1]) and 
+            (macd_line.iloc[-2] >= signal_line.iloc[-2])
+        ])
         
         return {
             'macd_line': macd_line,
@@ -67,5 +79,7 @@ class MACDCalculator(IndicatorCalculator):
             'macd_histogram': histogram,
             'macd_above_signal': macd_above_signal,
             'histogram_increasing': histogram_increasing,
-            'macd_increasing': macd_increasing
+            'macd_increasing': macd_increasing,
+            'macd_crossover_up': macd_crossover_up,
+            'macd_crossover_down': macd_crossover_down
         } 

@@ -60,22 +60,26 @@ class TTMSqueezeCalculator(IndicatorCalculator):
         
         Returns:
             Dict containing:
-            - 'squeeze_on': Boolean series indicating squeeze condition
-            - 'momentum': Momentum values
-            - 'momentum_increasing': Boolean series indicating increasing momentum
+            - 'squeeze_on': Boolean indicating squeeze condition
+            - 'momentum': Current momentum value
+            - 'momentum_increasing': Boolean indicating increasing momentum
         """
         upper_bb, lower_bb = self._calculate_bollinger_bands()
         upper_kc, lower_kc = self._calculate_keltner_channels()
         
-        # Squeeze is on when Bollinger Bands are inside Keltner Channels
-        squeeze_on = (lower_bb > lower_kc) & (upper_bb < upper_kc)
+        # Calculate squeeze condition for all data points
+        squeeze_condition = (lower_bb > lower_kc) & (upper_bb < upper_kc)
         
         # Calculate momentum
         momentum = self._calculate_momentum()
-        momentum_increasing = momentum > momentum.shift(1)
+        
+        # Get latest values for indicators
+        squeeze_on = pd.Series([squeeze_condition.iloc[-1]])
+        current_momentum = pd.Series([momentum.iloc[-1]])
+        momentum_increasing = pd.Series([momentum.iloc[-1] > momentum.iloc[-2]])
         
         return {
             'squeeze_on': squeeze_on,
-            'momentum': momentum,
+            'momentum': current_momentum,
             'momentum_increasing': momentum_increasing
         } 
