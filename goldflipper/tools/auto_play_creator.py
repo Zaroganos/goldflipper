@@ -83,6 +83,35 @@ class AutoPlayCreator:
         strikes = options_data['strike'].values
         return strikes[abs(strikes - current_price).argmin()]
         
+    def get_enabled_tp_sl_types(self):
+        """Get the enabled TP-SL types from settings."""
+        return self.settings.get('TP-SL_types', ['PREMIUM_PCT'])
+
+    def generate_tp_sl_values(self, entry_price, trade_type='CALL'):
+        """Generate TP/SL values based on enabled types."""
+        enabled_types = self.get_enabled_tp_sl_types()
+        # Randomly select how many types to use (at least 1, up to all enabled types)
+        num_types = random.randint(1, len(enabled_types))
+        selected_types = random.sample(enabled_types, num_types)
+        
+        tp_values = {}
+        sl_values = {}
+        
+        for tp_type in selected_types:
+            if tp_type == 'STOCK_PRICE':
+                tp_values['stock_price'] = round(entry_price * (1 + self.take_profit_pct/100), 2) if trade_type == 'CALL' \
+                                         else round(entry_price * (1 - self.take_profit_pct/100), 2)
+                sl_values['stock_price'] = round(entry_price * (1 - self.stop_loss_pct/100), 2) if trade_type == 'CALL' \
+                                         else round(entry_price * (1 + self.stop_loss_pct/100), 2)
+            elif tp_type == 'PREMIUM_PCT':
+                tp_values['premium_pct'] = self.take_profit_pct
+                sl_values['premium_pct'] = self.stop_loss_pct
+            elif tp_type == 'STOCK_PRICE_PCT':
+                tp_values['stock_price_pct'] = self.take_profit_pct
+                sl_values['stock_price_pct'] = self.stop_loss_pct
+        
+        return tp_values, sl_values
+
     def create_play_data(self, market_data, trade_type='CALL'):
         """Create a single play based on market data."""
         current_price = market_data['price']
@@ -95,14 +124,15 @@ class AutoPlayCreator:
         else:  # simulate_real
             entry_price = current_price * (1 + random.uniform(-self.entry_buffer, self.entry_buffer))
         
-        # Generate option contract symbol using the same format as play-creation-tool
+        # Generate TP/SL values based on enabled types
+        tp_values, sl_values = self.generate_tp_sl_values(entry_price, trade_type)
+        
+        # Generate option contract symbol
         expiration_date = datetime.strptime(market_data['expiration'], '%Y-%m-%d')
         strike_tenths_cents = int(round(float(strike) * 1000))
         padded_strike = f"{strike_tenths_cents:08d}"
         option_type = "C" if trade_type == "CALL" else "P"
         option_symbol = f"{market_data['symbol']}{expiration_date.strftime('%y%m%d')}{option_type}{padded_strike}"
-        
-        logging.info(f"Generated option contract symbol: {option_symbol}")
         
         play = {
             "play_name": f"AUTO_{market_data['symbol']}_{trade_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -119,17 +149,13 @@ class AutoPlayCreator:
                 "entry_premium": None  # Will be populated when order is placed
             },
             "take_profit": {
-                "stock_price": round(entry_price * (1 + self.take_profit_pct/100), 2) if trade_type == 'CALL' 
-                             else round(entry_price * (1 - self.take_profit_pct/100), 2),
-                "premium_pct": self.take_profit_pct,
+                **tp_values,  # Unpack all TP values
                 "order_type": "market",
                 "TP_option_prem": None
             },
             "stop_loss": {
+                **sl_values,  # Unpack all SL values
                 "SL_type": random.choice(self.settings.get('stop_loss_types', ['STOP'])),
-                "stock_price": round(entry_price * (1 - self.stop_loss_pct/100), 2) if trade_type == 'CALL'
-                             else round(entry_price * (1 + self.stop_loss_pct/100), 2),
-                "premium_pct": self.stop_loss_pct,
                 "order_type": "market",
                 "SL_option_prem": None
             },

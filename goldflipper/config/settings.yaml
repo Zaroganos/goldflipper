@@ -196,6 +196,11 @@ auto_play_creator:
   order_types:                      # Types of orders to use
     - market
     - limit
+  TP-SL_types:                # Types of take profit and stop loss to use
+    - STOCK_PRICE
+    - PREMIUM_PCT
+    - STOCK_PRICE_PCT
+  
   stop_loss_types:                  # Types of stop loss to use
     - STOP
     - LIMIT
