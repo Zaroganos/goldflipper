@@ -50,7 +50,6 @@
     "position_uuid": null,
     "order_status": null,
     "position_exists": false,
-    "last_checked": null,
     "closing_order_id": null,
     "closing_order_status": null,
     "contingency_order_id": null,

@@ -455,7 +455,6 @@ def open_position(play, play_file):
         'order_status': None,
         'position_exists': False,
         'play_status': 'PENDING',
-        'last_checked': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
     
     # Get current stock price before opening position
@@ -737,7 +736,6 @@ def close_position(play, close_conditions, play_file):
         # Store closing order details
         play['status']['closing_order_id'] = response.id
         play['status']['closing_order_status'] = response.status
-        play['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         save_play(play, play_file)
         
         # Only move to closed if market order filled immediately
@@ -871,7 +869,6 @@ def move_play_to_new(play_file):
             play_data = json.load(f)
         
         play_data['status']['play_status'] = 'NEW'
-        play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Calculate new path before saving
         new_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'new')
@@ -912,7 +909,6 @@ def move_play_to_open(play_file):
             play_data = json.load(f)
         
         play_data['status']['play_status'] = 'OPEN'
-        play_data['status']['last_checked'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Calculate new path before saving
         open_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'open')
@@ -955,7 +951,6 @@ def move_play_to_closed(play_file):
         play_data['status'].update({
             'play_status': 'CLOSED',
             'position_exists': False,
-            'last_checked': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
         
         # Calculate new path before saving
@@ -994,7 +989,6 @@ def move_play_to_expired(play_file):
             'order_status': None,
             'closing_order_id': None,
             'closing_order_status': None,
-            'last_checked': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
         
         # Calculate new path before saving

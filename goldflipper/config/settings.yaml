@@ -210,9 +210,9 @@ auto_play_creator:
 
   play_types:                       # Types of plays to create
     - SIMPLE
-    - PRIMARY
-    - OCO
-    - OTO
+#    - PRIMARY
+#    - OCO
+#    - OTO
 
   trade_types:                      # Types of trades to create
     - CALL
