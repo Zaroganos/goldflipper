@@ -889,6 +889,14 @@ def move_play_to_new(play_file):
         display.error(f"Error moving play to NEW: {str(e)}")
         raise
 
+# Move to PENDING-OPENING (for plays whose BUY condition has hit but limit order has not yet been filled    )
+def move_play_to_pending_opening(play_file):
+    pending_opening_dir = os.path.join(os.path.dirname(play_file), '..', 'pending-opening')
+    os.makedirs(pending_opening_dir, exist_ok=True)
+    new_path = os.path.join(pending_opening_dir, os.path.basename(play_file))
+    os.rename(play_file, new_path)
+    logging.info(f"Moved play to PENDING-OPENING folder: {new_path}")
+
 # Move to OPEN (for plays whose BUY condition has hit)
 def move_play_to_open(play_file):
     """Move play to OPEN folder and update status."""
@@ -920,6 +928,14 @@ def move_play_to_open(play_file):
         logging.error(f"Error moving play to OPEN: {str(e)}")
         display.error(f"Error moving play to OPEN: {str(e)}")
         raise
+
+# Move to PENDING-CLOSING (for plays whose SELL condition has hit but limit order has not yet been filled)
+def move_play_to_pending_closing(play_file):
+    pending_closing_dir = os.path.join(os.path.dirname(play_file), '..', 'pending-closing')
+    os.makedirs(pending_closing_dir, exist_ok=True)
+    new_path = os.path.join(pending_closing_dir, os.path.basename(play_file))
+    os.rename(play_file, new_path)
+    logging.info(f"Moved play to PENDING-CLOSING folder: {new_path}")
 
 # Move to CLOSED (for plays whose TP or SL condition has hit)
 def move_play_to_closed(play_file):
