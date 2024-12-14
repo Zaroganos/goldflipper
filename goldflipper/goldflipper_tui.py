@@ -20,6 +20,8 @@ class WelcomeScreen(Screen):
                     Button("Fetch Option Data", variant="primary", id="option_data_fetcher"),
                     Button("Launch Trading System", variant="success", id="start_monitor"),
                     Button("Auto Play Creator", variant="primary", id="auto_play_creator"),
+                    Button("Get Alpaca Info", variant="primary", id="get_alpaca_info"),
+                    Button("Reserved", variant="primary", id="reserved"),
                     classes="button-column",
                 ),
                 Container(
@@ -52,6 +54,8 @@ class WelcomeScreen(Screen):
             self.run_auto_play_creator()
         elif event.button.id == "open_chart":
             self.run_chart_viewer()
+        elif event.button.id == "get_alpaca_info":
+            self.run_get_alpaca_info()
         elif event.button.id == "exit":
             self.app.exit()
 
@@ -157,6 +161,20 @@ class WelcomeScreen(Screen):
             else:  # Unix-like systems
                 subprocess.Popen(['gnome-terminal', '--', 'python', 'chart_viewer.py'], 
                                cwd=chart_dir)
+        except Exception as e:
+            self.notify(f"Error: {str(e)}", severity="error")
+
+    def run_get_alpaca_info(self):
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            tools_dir = os.path.join(current_dir, "tools")
+            
+            if os.name == 'nt':  # Windows
+                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'get_alpaca_info.py']
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:  # Unix-like systems
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'get_alpaca_info.py'], 
+                               cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 

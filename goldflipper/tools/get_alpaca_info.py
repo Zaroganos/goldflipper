@@ -7,6 +7,7 @@ from goldflipper.utils.display import TerminalDisplay as display
 import logging
 from datetime import datetime
 from typing import Optional, Tuple, Dict, Any
+import json
 
 def get_order_info(order_id: str) -> Optional[Dict[str, Any]]:
     """
@@ -85,7 +86,14 @@ def get_all_orders(status: str = 'open') -> Optional[Dict[str, Dict[str, Any]]]:
     """
     client = get_alpaca_client()
     try:
-        orders = client.get_orders(status=status)
+        # The new API doesn't use status as a parameter
+        # Instead, we should filter the results after getting them
+        orders = client.get_orders()
+        
+        # Filter orders based on status parameter
+        if status != 'all':
+            orders = [order for order in orders if order.status == status]
+            
         return {
             str(order.id): {
                 'symbol': order.symbol,
@@ -145,25 +153,107 @@ def main():
     if not test_alpaca_connection():
         return
 
-    # Get all open orders
-    display.header("Checking Open Orders...")
-    open_orders = get_all_orders('open')
-    if open_orders:
-        for order_id, info in open_orders.items():
-            display.info(f"Order ID: {order_id}")
-            for key, value in info.items():
-                display.info(f"  {key}: {value}")
-    else:
-        display.info("No open orders found")
+    # Define a standard separator length
+    SEP_LENGTH = 50
+
+    # Get base plays directory
+    base_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'plays')
+    folders = ['new', 'pending-opening', 'open', 'pending-closing', 'closed', 'expired']
+
+    display.header("Checking Plays Status...")
+    
+    for folder in folders:
+        folder_path = os.path.join(base_dir, folder)
+        if not os.path.exists(folder_path):
+            continue
+            
+        display.header(f"\nChecking {folder.upper()} folder")
+        
+        # Get all JSON files in the folder
+        play_files = [f for f in os.listdir(folder_path) if f.endswith('.json')]
+        
+        if not play_files:
+            display.info(f"No plays found in {folder}")
+            continue
+            
+        for play_file in play_files:
+            file_path = os.path.join(folder_path, play_file)
+            try:
+                with open(file_path, 'r') as f:
+                    play = json.load(f)
+                
+                # Create a visual separator for each play
+                display.success("=" * SEP_LENGTH)  # Green top border
+                display.header(f"Play: {play.get('play_name', play_file)}")
+                display.success("-" * SEP_LENGTH)  # Green separator
+                
+                # Check if play has status and order_id
+                if 'status' in play:
+                    # Check for main order_id
+                    if play['status'].get('order_id'):
+                        order_id = play['status']['order_id']
+                        display.info(f"Main Order ID: {order_id}")
+                        
+                        order_info = get_order_info(order_id)
+                        if order_info:
+                            for key, value in order_info.items():
+                                key_str = f"  {key}:"
+                                display.info(f"{key_str:<30} {value}")
+                        else:
+                            display.warning("No main order information found")
+                    
+                    # Check for closing_order_id
+                    if play['status'].get('closing_order_id'):
+                        closing_order_id = play['status']['closing_order_id']
+                        display.info(f"\nClosing Order ID: {closing_order_id}")
+                        
+                        closing_order_info = get_order_info(closing_order_id)
+                        if closing_order_info:
+                            for key, value in closing_order_info.items():
+                                key_str = f"  {key}:"
+                                display.info(f"{key_str:<30} {value}")
+                        else:
+                            display.warning("No closing order information found")
+                            
+                    # Check for contingency_order_id
+                    if play['status'].get('contingency_order_id'):
+                        contingency_order_id = play['status']['contingency_order_id']
+                        display.info(f"\nContingency Order ID: {contingency_order_id}")
+                        
+                        contingency_order_info = get_order_info(contingency_order_id)
+                        if contingency_order_info:
+                            for key, value in contingency_order_info.items():
+                                key_str = f"  {key}:"
+                                display.info(f"{key_str:<30} {value}")
+                        else:
+                            display.warning("No contingency order information found")
+                            
+                    if not any([play['status'].get('order_id'),
+                              play['status'].get('closing_order_id'),
+                              play['status'].get('contingency_order_id')]):
+                        display.info("\nNo order IDs found in play")
+                else:
+                    display.info("\nNo status information found in play")
+                
+                # Close the play card
+                display.success("=" * SEP_LENGTH + "\n")  # Green bottom border
+                    
+            except Exception as e:
+                display.error(f"Error processing {play_file}: {str(e)}")
+                continue
 
     # Get all positions
-    display.header("Checking Open Positions...")
+    display.header("\nChecking Open Positions...")
     positions = get_all_positions()
     if positions:
         for symbol, info in positions.items():
-            display.info(f"Symbol: {symbol}")
+            display.success("=" * SEP_LENGTH)  # Green top border
+            display.header(f"Symbol: {symbol}")
+            display.success("-" * SEP_LENGTH)  # Green separator
             for key, value in info.items():
-                display.info(f"  {key}: {value}")
+                key_str = f"  {key}:"
+                display.info(f"{key_str:<30} {value}")
+            display.success("=" * SEP_LENGTH + "\n")  # Green bottom border
     else:
         display.info("No open positions found")
 
