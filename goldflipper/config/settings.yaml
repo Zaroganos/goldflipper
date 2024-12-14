@@ -160,12 +160,14 @@ orders:
 ####################################################################################################
 # Directories for play file management
 file_paths:
-  plays_dir: "plays"                 # Root directory for all play files
-  new_dir: "new"                     # New/pending plays
-  open_dir: "open"                   # Currently active plays
-  closed_dir: "closed"               # Completed plays
-  expired_dir: "expired"             # Expired plays
-  temp_dir: "temp"                   # Temporary play storage
+  plays_dir: "plays"                      # Root directory for all play files
+  new_dir: "new"                          # New/pending plays
+  pending_opening_dir: "pending-opening"  # Plays whose BUY condition has hit but limit order has not yet been filled
+  open_dir: "open"                        # Currently active plays
+  pending_closing_dir: "pending-closing"  # Plays whose SELL condition has hit but limit order has not yet been filled
+  closed_dir: "closed"                    # Completed plays
+  expired_dir: "expired"                  # Expired plays
+  temp_dir: "temp"                        # Temporary play storage
 
 ####################################################################################################
 # Logging Configuration
@@ -182,7 +184,7 @@ market_hours:
   timezone: "America/New_York"     # Market timezone
   regular_hours:
     start: "09:30"                # Regular market open (HH:MM)
-    end: "16:00"                  # Regular market close (HH:MM)
+    end: "16:15"                  # Regular market close (HH:MM) -- note, SPY trades until 16:15
   extended_hours:
     enabled: false                # Enable/disable extended hours trading
     pre_market_start: "04:00"     # Pre-market start (HH:MM)
@@ -205,11 +207,13 @@ auto_play_creator:
     - STOP
     - LIMIT
 #    - CONTINGENCY
+
   play_types:                       # Types of plays to create
     - SIMPLE
     - PRIMARY
     - OCO
     - OTO
+
   trade_types:                      # Types of trades to create
     - CALL
     - PUT
