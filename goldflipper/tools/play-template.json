@@ -45,7 +45,7 @@
     "OTO_trigger": "play name of the corresponding OTO conditional play(s)"
   },
   "status": {
-    "play_status": "TEMP / NEW / PENDING / OPEN / CLOSING / CLOSED / EXPIRED",
+    "play_status": "TEMP / NEW / PENDING-OPENING / OPEN / PENDING-CLOSING / CLOSED / EXPIRED",
     "order_id": null,
     "position_uuid": null,
     "order_status": null,
