@@ -25,6 +25,12 @@ from goldflipper.data.greeks.delta import DeltaCalculator
 from goldflipper.data.greeks.theta import ThetaCalculator
 
 # ==================================================
+# 1. BROKERAGE DATA RETRIEVAL
+# ==================================================
+
+
+
+
 # 2. MARKET DATA RETRIEVAL
 # ==================================================
 # Function to fetch the latest market data using yfinance.

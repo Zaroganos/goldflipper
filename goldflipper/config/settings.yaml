@@ -180,7 +180,7 @@ logging:
 # Market Hours Settings
 ####################################################################################################
 market_hours:
-  enabled: true                    # Enable/disable market hours validation
+  enabled: false                    # Enable/disable market hours validation
   timezone: "America/New_York"     # Market timezone
   regular_hours:
     start: "09:30"                # Regular market open (HH:MM)
@@ -196,7 +196,7 @@ market_hours:
 auto_play_creator:
   enabled: true                     # Enable/disable auto play creation
   order_types:                      # Types of orders to use
-    - market
+#    - market
     - limit
   TP-SL_types:                # Types of take profit and stop loss to use
     - STOCK_PRICE
