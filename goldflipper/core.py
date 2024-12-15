@@ -280,8 +280,8 @@ def evaluate_opening_strategy(symbol, market_data, play):
     last_price = market_data["Close"].iloc[-1]
     trade_type = play.get("trade_type", "").upper()
 
-    # Define a buffer of ±5 cents
-    buffer = 0.05
+    # Define a buffer of ±n cents
+    buffer = 0.20
     lower_bound = entry_point - buffer
     upper_bound = entry_point + buffer
 
