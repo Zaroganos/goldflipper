@@ -264,8 +264,8 @@ auto_play_creator:
   take_profit_pct: 1.0              # Default take profit percentage
   stop_loss_pct: 0.5                # Default stop loss percentage
   test_symbols:                     # Symbols to use for test plays
-    - SPY
-    - QQQ
+#    - SPY
+#    - QQQ
     - AAPL
     - TSLA
     - NVDA
