@@ -21,7 +21,6 @@ class WelcomeScreen(Screen):
                     Button("Launch Trading System", variant="success", id="start_monitor"),
                     Button("Auto Play Creator", variant="primary", id="auto_play_creator"),
                     Button("Get Alpaca Info", variant="primary", id="get_alpaca_info"),
-                    Button("Reserved", variant="primary", id="reserved"),
                     classes="button-column",
                 ),
                 Container(
@@ -29,6 +28,7 @@ class WelcomeScreen(Screen):
                     Button("Upkeep and Status", variant="primary", id="system_status"),
                     Button("Configuration", variant="primary", id="configuration"),
                     Button("Open Chart", variant="primary", id="open_chart"),
+                    Button("Reserved", variant="primary", id="reserved"),
                     classes="button-column",
                 ),
                 id="button_container"

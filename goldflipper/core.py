@@ -27,10 +27,10 @@ from goldflipper.data.greeks.theta import ThetaCalculator
 # ==================================================
 # 1. BROKERAGE DATA RETRIEVAL
 # ==================================================
+# This is unused for now. See get_alpaca_info.py for a testing form.
 
 
-
-
+# ==================================================
 # 2. MARKET DATA RETRIEVAL
 # ==================================================
 # Function to fetch the latest market data using yfinance.
