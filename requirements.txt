@@ -12,3 +12,6 @@ notebook>=7.0.0
 textual>=0.38.1
 psutil>=5.9.0
 nest-asyncio>=1.5.0
+PyYAML>=6.0.1
+colorama>=0.4.6
+rich>=13.0.0
