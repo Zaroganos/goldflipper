@@ -53,6 +53,47 @@ paths:
   log_file: 'logs/app.log'           # Main application log file
 
 ####################################################################################################
+# Strategy Settings
+####################################################################################################
+options_swings:
+  enabled: true
+  entry_order_types:                      # Types of orders to use
+    - market
+    - limit
+
+  TP-SL_types:                # Types of take profit and stop loss to use
+    - STOCK_PRICE
+    - PREMIUM_PCT
+    - STOCK_PRICE_PCT
+  
+  Take_Profit:
+    multiple_TPs: true
+    TP_order_types:
+      - market
+      - limit
+
+  SL_order_types:                  # Types of stop loss to use
+    - STOP
+    - LIMIT
+    - CONTINGENCY
+
+  play_types:                       # Types of plays to create
+    - SIMPLE
+#    - PRIMARY
+#    - OCO
+#    - OTO
+  # Default values for live plays
+  expiration_days: 14                # Default expiration in days for live plays
+  entry_buffer: 0.05                # Entry price buffer for live plays (e.g., ±$0.01)
+  take_profit_pct: 50.0              # Default take profit percentage
+  stop_loss_pct: 25.5                # Default stop loss percentage
+
+# Kegan's Strategy: Options Spreads
+spreads:
+  enabled: false
+
+
+####################################################################################################
 # Trading Parameters
 ####################################################################################################
 trading:
