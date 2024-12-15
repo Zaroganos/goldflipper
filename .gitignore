@@ -6,13 +6,17 @@ env/
 
 # Plays folder (change if need to keep some set of plays shared)
 goldflipper/plays/new/*
+goldflipper/plays/pending-opening/*
 goldflipper/plays/open/*
+goldflipper/plays/pending-closing/*
 goldflipper/plays/closed/*
 goldflipper/plays/expired/*
 goldflipper/plays/old/*
 goldflipper/plays/temp/*
 !goldflipper/plays/new/.gitkeep
+!goldflipper/plays/pending-opening/.gitkeep
 !goldflipper/plays/open/.gitkeep
+!goldflipper/plays/pending-closing/.gitkeep
 !goldflipper/plays/closed/.gitkeep
 !goldflipper/plays/expired/.gitkeep
 !goldflipper/plays/old/.gitkeep

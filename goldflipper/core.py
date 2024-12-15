@@ -1306,6 +1306,16 @@ def validate_market_hours():
     # Check if within regular market hours
     is_market_open = market_open <= current_time_only <= market_close
     
+    # If it's 4:16 PM (within a 30-second window), handle pending plays
+    cleanup_time = datetime.strptime('16:16', '%H:%M').time()
+    cleanup_window_start = (datetime.combine(datetime.today(), cleanup_time) - timedelta(seconds=15)).time()
+    cleanup_window_end = (datetime.combine(datetime.today(), cleanup_time) + timedelta(seconds=45)).time()
+    
+    if cleanup_window_start <= current_time_only <= cleanup_window_end:
+        logging.info("Market closed (4:15 PM). Processing pending plays...")
+        display.info("Market closed (4:15 PM). Processing pending plays...")
+        handle_end_of_day_pending_plays()
+    
     # Handle extended hours if enabled
     if not is_market_open and config.get('market_hours', 'extended_hours', 'enabled', default=False):
         try:
@@ -1682,6 +1692,63 @@ def validate_bid_price(bid_price, symbol, fallback_price):
         return fallback_price
         
     return bid_price
+
+def handle_end_of_day_pending_plays():
+    """Move pending plays back to their previous states at market close."""
+    try:
+        # Handle pending-opening plays
+        pending_opening_dir = os.path.join(os.getcwd(), 'pending-opening')
+        if os.path.exists(pending_opening_dir):
+            play_files = [os.path.join(pending_opening_dir, f) for f in os.listdir(pending_opening_dir) 
+                         if f.endswith('.json')]
+            for play_file in play_files:
+                try:
+                    # Cancel any existing orders first
+                    with open(play_file, 'r') as f:
+                        play = json.load(f)
+                    if play.get('status', {}).get('order_id'):
+                        try:
+                            client = get_alpaca_client()
+                            client.cancel_order_by_id(play['status']['order_id'])
+                            logging.info(f"Cancelled pending opening order: {play['status']['order_id']}")
+                            display.info(f"Cancelled pending opening order: {play['status']['order_id']}")
+                        except Exception as e:
+                            logging.warning(f"Error cancelling order: {e}")
+                            display.warning(f"Error cancelling order: {e}")
+                    
+                    move_play_to_new(play_file)
+                except Exception as e:
+                    logging.error(f"Error processing pending-opening play {play_file}: {e}")
+                    display.error(f"Error processing pending-opening play {play_file}: {e}")
+
+        # Handle pending-closing plays
+        pending_closing_dir = os.path.join(os.getcwd(), 'pending-closing')
+        if os.path.exists(pending_closing_dir):
+            play_files = [os.path.join(pending_closing_dir, f) for f in os.listdir(pending_closing_dir) 
+                         if f.endswith('.json')]
+            for play_file in play_files:
+                try:
+                    # Cancel any existing orders first
+                    with open(play_file, 'r') as f:
+                        play = json.load(f)
+                    if play.get('status', {}).get('closing_order_id'):
+                        try:
+                            client = get_alpaca_client()
+                            client.cancel_order_by_id(play['status']['closing_order_id'])
+                            logging.info(f"Cancelled pending closing order: {play['status']['closing_order_id']}")
+                            display.info(f"Cancelled pending closing order: {play['status']['closing_order_id']}")
+                        except Exception as e:
+                            logging.warning(f"Error cancelling order: {e}")
+                            display.warning(f"Error cancelling order: {e}")
+                    
+                    move_play_to_open(play_file)
+                except Exception as e:
+                    logging.error(f"Error processing pending-closing play {play_file}: {e}")
+                    display.error(f"Error processing pending-closing play {play_file}: {e}")
+
+    except Exception as e:
+        logging.error(f"Error handling end of day pending plays: {e}")
+        display.error(f"Error handling end of day pending plays: {e}")
 
 if __name__ == "__main__":
     monitor_plays_continuously()
