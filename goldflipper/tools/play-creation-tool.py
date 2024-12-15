@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 import platform
 import subprocess
+import yaml
 
 def get_input(prompt, input_type=str, validation=None, error_message="Invalid input. Please try again.", optional=False):
     """
