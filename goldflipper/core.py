@@ -454,7 +454,6 @@ def open_position(play, play_file):
         'order_id': None,
         'order_status': None,
         'position_exists': False,
-        'play_status': 'PENDING',
     })
     
     # Get current stock price before opening position
@@ -511,9 +510,12 @@ def open_position(play, play_file):
     
     logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
     display.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
+    
     try:
         # Create appropriate order request based on order type
-        if play.get('entry_point', {}).get('order_type') == 'limit':
+        is_limit_order = play.get('entry_point', {}).get('order_type') == 'limit'
+        
+        if is_limit_order:
             # Get bid price if enabled in settings
             if config.get('orders', 'bid_price_settings', 'entry', default=True):
                 limit_price = get_option_bid_price(
@@ -552,6 +554,7 @@ def open_position(play, play_file):
             )
             logging.info("Creating market buy order")
             display.info("Creating market buy order")
+            
         response = client.submit_order(order_req)
         logging.info(f"Order submitted: {response}")
         display.info(f"Order submitted: {response}")
@@ -560,13 +563,22 @@ def open_position(play, play_file):
         play['status'].update({
             'order_id': str(response.id),  # Convert UUID to string
             'order_status': response.status,
-            'play_status': 'PENDING'
         })
         
-        # Save the updated play data
-        save_play(play, play_file)
+        # Handle different order types appropriately
+        if is_limit_order:
+            save_play(play, play_file)
+            move_play_to_pending_opening(play_file)
+            logging.info("Play moved to PENDING-OPENING state upon limit order placement")
+            display.info("Play moved to PENDING-OPENING state upon limit order placement")
+        else:
+            # For market orders, move directly to OPEN
+            save_play(play, play_file)
+            move_play_to_open(play_file)
+            logging.info("Play moved to OPEN state upon market order placement")
+            display.info("Play moved to OPEN state upon market order placement")
         
-        return True  # Return true but let status checking handle the move to open
+        return True
         
     except Exception as e:
         logging.error(f"Error placing order: {e}")
@@ -591,7 +603,6 @@ def close_position(play, close_conditions, play_file):
         play['status']['closing_order_status'] = None
         play['status']['contingency_order_id'] = None
         play['status']['contingency_order_status'] = None
-        play['status']['play_status'] = 'CLOSING'
         
         # Save initial closing status
         save_play(play, play_file)
@@ -628,6 +639,17 @@ def close_position(play, close_conditions, play_file):
                 logging.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
                 display.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
                 response = client.submit_order(order_req)
+                
+                # Add PENDING-CLOSING transition for limit orders
+                play['status'].update({
+                    'closing_order_id': str(response.id),
+                    'closing_order_status': response.status,
+                    'play_status': 'PENDING-CLOSING'
+                })
+                save_play(play, play_file)
+                move_play_to_pending_closing(play_file)
+                logging.info("Play moved to PENDING-CLOSING state for TP limit order")
+                display.info("Play moved to PENDING-CLOSING state for TP limit order")
             else:
                 response = client.close_position(
                     symbol_or_asset_id=contract_symbol,
@@ -635,6 +657,13 @@ def close_position(play, close_conditions, play_file):
                 )
                 logging.info("Creating take profit market sell order")
                 display.info("Creating take profit market sell order")
+                
+                # Move directly to CLOSED for market orders
+                play['status']['position_exists'] = False
+                save_play(play, play_file)
+                move_play_to_closed(play_file)
+                logging.info("Play moved to CLOSED state for market TP order")
+                display.info("Play moved to CLOSED state for market TP order")
         
         # Stop loss handling
         else:
@@ -657,6 +686,14 @@ def close_position(play, close_conditions, play_file):
                     )
                     logging.info("Creating contingency market sell order")
                     display.info("Creating contingency market sell order")
+                    
+                    # Move directly to CLOSED for market orders
+                    play['status']['position_exists'] = False
+                    save_play(play, play_file)
+                    move_play_to_closed(play_file)
+                    logging.info("Play moved to CLOSED state for contingency market SL order")
+                    display.info("Play moved to CLOSED state for contingency market SL order")
+                    
                 # If only primary condition is met, use limit order
                 elif close_conditions['is_primary_loss']:
                     # Get bid price if enabled in settings
@@ -688,6 +725,16 @@ def close_position(play, close_conditions, play_file):
                     logging.info(f"Creating primary stop loss limit sell order at ${limit_price:.2f}")
                     display.info(f"Creating primary stop loss limit sell order at ${limit_price:.2f}")
                     response = client.submit_order(order_req)
+                    
+                    # Add PENDING-CLOSING transition for limit orders
+                    play['status'].update({
+                        'closing_order_id': str(response.id),
+                        'closing_order_status': response.status,
+                    })
+                    save_play(play, play_file)
+                    move_play_to_pending_closing(play_file)
+                    logging.info("Play moved to PENDING-CLOSING state for primary limit SL order")
+                    display.info("Play moved to PENDING-CLOSING state for primary limit SL order")
             
             # For regular limit stop loss
             elif play['stop_loss'].get('order_type') == 'limit':
@@ -720,6 +767,16 @@ def close_position(play, close_conditions, play_file):
                 logging.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
                 display.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
                 response = client.submit_order(order_req)
+                
+                # Add PENDING-CLOSING transition for limit orders
+                play['status'].update({
+                    'closing_order_id': str(response.id),
+                    'closing_order_status': response.status,
+                })
+                save_play(play, play_file)
+                move_play_to_pending_closing(play_file)
+                logging.info("Play moved to PENDING-CLOSING state for limit SL order")
+                display.info("Play moved to PENDING-CLOSING state for limit SL order")
             
             # For regular market stop loss
             else:
@@ -730,20 +787,16 @@ def close_position(play, close_conditions, play_file):
                 logging.info("Creating stop loss market sell order")
                 display.info("Creating stop loss market sell order")
                 
+                # Move directly to CLOSED for market orders
+                play['status']['position_exists'] = False
+                save_play(play, play_file)
+                move_play_to_closed(play_file)
+                logging.info("Play moved to CLOSED state for market SL order")
+                display.info("Play moved to CLOSED state for market SL order")
+        
         logging.info(f"Order submitted: {response}")
         display.info(f"Order submitted: {response}")
         
-        # Store closing order details
-        play['status']['closing_order_id'] = response.id
-        play['status']['closing_order_status'] = response.status
-        save_play(play, play_file)
-        
-        # Only move to closed if market order filled immediately
-        if response.status == 'filled':
-            play['status']['play_status'] = 'CLOSED'
-            play['status']['position_exists'] = False
-            move_play_to_closed(play_file)
-            
         return True
         
     except Exception as e:
@@ -756,7 +809,7 @@ def monitor_and_manage_position(play, play_file):
     client = get_alpaca_client()
     
     # Verify play status is appropriate for monitoring
-    if play.get('status', {}).get('play_status') not in ['OPEN', 'CLOSING']:
+    if play.get('status', {}).get('play_status') not in ['OPEN', 'PENDING-CLOSING']:
         logging.info(f"Play status {play.get('status', {}).get('play_status')} not appropriate for monitoring")
         display.info(f"Play status {play.get('status', {}).get('play_status')} not appropriate for monitoring")
         return True
@@ -894,6 +947,9 @@ def move_play_to_new(play_file):
 
 # Move to PENDING-OPENING (for plays whose BUY condition has hit but limit order has not yet been filled)
 def move_play_to_pending_opening(play_file):
+    with open(play_file, 'r') as f:
+        play_data = json.load(f)
+    play_data['status']['play_status'] = 'PENDING-OPENING'
     pending_opening_dir = os.path.join(os.path.dirname(play_file), '..', 'pending-opening')
     os.makedirs(pending_opening_dir, exist_ok=True)
     new_path = os.path.join(pending_opening_dir, os.path.basename(play_file))
@@ -934,6 +990,9 @@ def move_play_to_open(play_file):
 
 # Move to PENDING-CLOSING (for plays whose SELL condition has hit but limit order has not yet been filled)
 def move_play_to_pending_closing(play_file):
+    with open(play_file, 'r') as f:
+        play_data = json.load(f)
+    play_data['status']['play_status'] = 'PENDING-CLOSING'
     pending_closing_dir = os.path.join(os.path.dirname(play_file), '..', 'pending-closing')
     os.makedirs(pending_closing_dir, exist_ok=True)
     new_path = os.path.join(pending_closing_dir, os.path.basename(play_file))
@@ -1039,10 +1098,11 @@ def execute_trade(play_file, play_type):
             return True  # Return True to continue with next play
             
         # For PENDING plays, check status before proceeding
-        if play.get('status', {}).get('play_status') == 'PENDING':
+        if play.get('status', {}).get('play_status') == 'PENDING-OPENING' or play.get('status', {}).get('play_status') == 'PENDING-CLOSING':
             try:
                 if not check_position_status(play, play_file):
                     logging.warning(f"Position status check failed for {play_file}. Will retry next cycle.")
+                    display.warning(f"Position status check failed for {play_file}. Will retry next cycle.")
                     return True  # Return True to continue with next play
             except Exception as e:
                 logging.error(f"Error checking position status: {str(e)}. Continuing to next play.")
@@ -1508,13 +1568,48 @@ def capture_greeks(play, current_premium):
         return None, None
 
 def check_position_status(play, play_file):
-    """Temporarily disabled position status checking."""
-    # For now, assume position exists if we have an order ID
-    if play.get('status', {}).get('order_id'):
-        play['status']['position_exists'] = True
-        play['status']['play_status'] = 'OPEN'
-        if os.path.basename(os.path.dirname(play_file)) != 'open':
-            move_play_to_open(play_file)
+    """Check position status and update accordingly."""
+    current_status = play.get('status', {}).get('play_status')
+    
+    # If we're in PENDING-CLOSING, check the closing order status
+    if current_status == 'PENDING-CLOSING':
+        if play.get('status', {}).get('closing_order_id'):
+            try:
+                client = get_alpaca_client()
+                order = client.get_order_by_id(play['status']['closing_order_id'])
+                
+                if order.status == 'filled':
+                    # Order filled, move to closed
+                    play['status']['position_exists'] = False
+                    move_play_to_closed(play_file)
+                elif order.status in ['canceled', 'expired', 'rejected']:
+                    # Order failed, revert to OPEN
+                    move_play_to_open(play_file)
+                # else: stay in PENDING-CLOSING
+                
+            except Exception as e:
+                logging.error(f"Error checking closing order status: {e}")
+                return False
+                
+    # If we're in PENDING-OPENING, check the opening order status
+    elif current_status == 'PENDING-OPENING':
+        if play.get('status', {}).get('order_id'):
+            try:
+                client = get_alpaca_client()
+                order = client.get_order_by_id(play['status']['order_id'])
+                
+                if order.status == 'filled':
+                    play['status']['position_exists'] = True
+                    move_play_to_open(play_file)
+                elif order.status in ['canceled', 'expired', 'rejected']:
+                    # Order failed, revert to NEW
+                    move_play_to_new(play_file)
+                # else: stay in PENDING-OPENING
+                
+            except Exception as e:
+                logging.error(f"Error checking opening order status: {e}")
+                return False
+    
     return True
 
 def handle_conditional_plays(play, play_file):
