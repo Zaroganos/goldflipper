@@ -101,21 +101,37 @@ class AutoPlayCreator:
         num_types = random.randint(1, len(enabled_types))
         selected_types = random.sample(enabled_types, num_types)
         
-        tp_values = {}
-        sl_values = {}
+        tp_values = {
+            'TP_option_prem': 0.0,  # Initialize with 0.0 instead of None
+            'premium_pct': 0.0
+        }
+        sl_values = {
+            'SL_option_prem': 0.0,  # Initialize with 0.0 instead of None
+            'premium_pct': 0.0
+        }
         
         for tp_type in selected_types:
             if tp_type == 'STOCK_PRICE':
+                # Calculate actual price targets
                 tp_values['stock_price'] = round(entry_price * (1 + self.take_profit_pct/100), 2) if trade_type == 'CALL' \
                                          else round(entry_price * (1 - self.take_profit_pct/100), 2)
                 sl_values['stock_price'] = round(entry_price * (1 - self.stop_loss_pct/100), 2) if trade_type == 'CALL' \
                                          else round(entry_price * (1 + self.stop_loss_pct/100), 2)
+            
             elif tp_type == 'PREMIUM_PCT':
                 tp_values['premium_pct'] = self.take_profit_pct
                 sl_values['premium_pct'] = self.stop_loss_pct
+            
             elif tp_type == 'STOCK_PRICE_PCT':
+                # Set both percentage and calculated target prices
                 tp_values['stock_price_pct'] = self.take_profit_pct
                 sl_values['stock_price_pct'] = self.stop_loss_pct
+                
+                # Calculate and set actual price targets
+                tp_values['stock_price'] = round(entry_price * (1 + self.take_profit_pct/100), 2) if trade_type == 'CALL' \
+                                         else round(entry_price * (1 - self.take_profit_pct/100), 2)
+                sl_values['stock_price'] = round(entry_price * (1 - self.stop_loss_pct/100), 2) if trade_type == 'CALL' \
+                                         else round(entry_price * (1 + self.stop_loss_pct/100), 2)
         
         return tp_values, sl_values
 
@@ -141,20 +157,38 @@ class AutoPlayCreator:
         option_type = "C" if trade_type == "CALL" else "P"
         option_symbol = f"{market_data['symbol']}{expiration_date.strftime('%y%m%d')}{option_type}{padded_strike}"
         
-        stop_loss_dict = {
+        # Initialize entry point with non-null values
+        entry_point = {
+            "stock_price": round(entry_price, 2),
+            "order_type": random.choice(self.settings.get('order_types', ['market'])),
+            "entry_premium": 0.0  # Initialize with 0.0 instead of None
+        }
+        
+        # Initialize take profit with non-null values
+        take_profit = {
+            **tp_values,  # Unpack all TP values
+            "order_type": "market",
+            "TP_option_prem": 0.0,  # Initialize with 0.0
+            "premium_pct": tp_values.get('premium_pct', 0.0),  # Ensure premium_pct exists
+            "stock_price": tp_values.get('stock_price', round(entry_price * (1 + self.take_profit_pct/100), 2))
+        }
+        
+        # Initialize stop loss with non-null values
+        stop_loss = {
             **sl_values,  # Unpack all SL values
             "SL_type": random.choice(self.settings.get('stop_loss_types', ['STOP'])),
-            "order_type": None,  # Will be set based on SL_type
-            "SL_option_prem": None
+            "order_type": "market",  # Default to market, will be updated based on SL_type
+            "SL_option_prem": 0.0,  # Initialize with 0.0
+            "premium_pct": sl_values.get('premium_pct', 0.0),  # Ensure premium_pct exists
+            "stock_price": sl_values.get('stock_price', round(entry_price * (1 - self.stop_loss_pct/100), 2))
         }
-
-        # Set order type based on SL_type
-        if stop_loss_dict["SL_type"] == "STOP":
-            stop_loss_dict["order_type"] = "market"
-        elif stop_loss_dict["SL_type"] == "LIMIT":
-            stop_loss_dict["order_type"] = "limit"
-        # Note: Contingency type not implemented yet for auto plays
-
+        
+        # Update stop loss order type based on SL_type
+        if stop_loss["SL_type"] == "STOP":
+            stop_loss["order_type"] = "market"
+        elif stop_loss["SL_type"] == "LIMIT":
+            stop_loss["order_type"] = "limit"
+        
         play = {
             "play_name": f"AUTO_{market_data['symbol']}_{trade_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             "symbol": market_data['symbol'],
@@ -164,30 +198,22 @@ class AutoPlayCreator:
             "option_contract_symbol": option_symbol,
             "contracts": 1,
             "play_expiration_date": datetime.strptime(market_data['expiration'], '%Y-%m-%d').strftime('%m/%d/%Y'),
-            "entry_point": {
-                "stock_price": round(entry_price, 2),
-                "order_type": random.choice(self.settings.get('order_types', ['market'])),
-                "entry_premium": None  # Will be populated when order is placed
-            },
-            "take_profit": {
-                **tp_values,  # Unpack all TP values
-                "order_type": "market",
-                "TP_option_prem": None
-            },
-            "stop_loss": stop_loss_dict,
+            "entry_point": entry_point,
+            "take_profit": take_profit,
+            "stop_loss": stop_loss,
             "play_class": "SIMPLE",
             "strategy": "Option Swings",
             "creation_date": datetime.now().strftime('%Y-%m-%d'),
             "status": {
                 "play_status": "NEW",
-                "order_id": None,
-                "order_status": None,
+                "order_id": "",  # Initialize with empty string instead of None
+                "order_status": "",  # Initialize with empty string instead of None
                 "position_exists": False,
-                "last_checked": None,
-                "closing_order_id": None,
-                "closing_order_status": None,
-                "contingency_order_id": None,
-                "contingency_order_status": None,
+                "last_checked": "",  # Initialize with empty string instead of None
+                "closing_order_id": "",  # Initialize with empty string instead of None
+                "closing_order_status": "",  # Initialize with empty string instead of None
+                "contingency_order_id": "",  # Initialize with empty string instead of None
+                "contingency_order_status": "",  # Initialize with empty string instead of None
                 "conditionals_handled": False
             },
             "creator": "auto"
