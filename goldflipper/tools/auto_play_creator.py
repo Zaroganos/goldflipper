@@ -35,6 +35,13 @@ class AutoPlayCreator:
         # Add execution mode
         self.execution_mode = None  # Will be set later
         
+        # Validate stop loss types in settings
+        valid_sl_types = ['STOP', 'LIMIT']  # We'll add 'CONTINGENCY' later when implemented
+        configured_sl_types = self.settings.get('stop_loss_types', ['STOP'])
+        invalid_types = [t for t in configured_sl_types if t not in valid_sl_types]
+        if invalid_types:
+            raise ValueError(f"Invalid stop loss types in settings: {invalid_types}. Valid types are: {valid_sl_types}")
+        
     def get_market_data(self, symbol):
         """Fetch current market data for a symbol."""
         try:
@@ -134,6 +141,20 @@ class AutoPlayCreator:
         option_type = "C" if trade_type == "CALL" else "P"
         option_symbol = f"{market_data['symbol']}{expiration_date.strftime('%y%m%d')}{option_type}{padded_strike}"
         
+        stop_loss_dict = {
+            **sl_values,  # Unpack all SL values
+            "SL_type": random.choice(self.settings.get('stop_loss_types', ['STOP'])),
+            "order_type": None,  # Will be set based on SL_type
+            "SL_option_prem": None
+        }
+
+        # Set order type based on SL_type
+        if stop_loss_dict["SL_type"] == "STOP":
+            stop_loss_dict["order_type"] = "market"
+        elif stop_loss_dict["SL_type"] == "LIMIT":
+            stop_loss_dict["order_type"] = "limit"
+        # Note: Contingency type not implemented yet for auto plays
+
         play = {
             "play_name": f"AUTO_{market_data['symbol']}_{trade_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             "symbol": market_data['symbol'],
@@ -153,12 +174,7 @@ class AutoPlayCreator:
                 "order_type": "market",
                 "TP_option_prem": None
             },
-            "stop_loss": {
-                **sl_values,  # Unpack all SL values
-                "SL_type": random.choice(self.settings.get('stop_loss_types', ['STOP'])),
-                "order_type": "market",
-                "SL_option_prem": None
-            },
+            "stop_loss": stop_loss_dict,
             "play_class": "SIMPLE",
             "strategy": "Option Swings",
             "creation_date": datetime.now().strftime('%Y-%m-%d'),

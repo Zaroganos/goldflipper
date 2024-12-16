@@ -82,7 +82,7 @@ options_swings:
 #    - PRIMARY
 #    - OCO
 #    - OTO
-  # Default values for live plays
+  # Default values for live plays (NOT CURRENTLY IN USE. FOR FUTURE STREAMLINING/DEFAULTS)
   expiration_days: 14                # Default expiration in days for live plays
   entry_buffer: 0.05                # Entry price buffer for live plays (e.g., ±$0.01)
   take_profit_pct: 50.0              # Default take profit percentage
@@ -238,7 +238,7 @@ auto_play_creator:
   enabled: true                     # Enable/disable auto play creation
   order_types:                      # Types of orders to use
     - market
-    - limit
+#    - limit
   TP-SL_types:                # Types of take profit and stop loss to use
     - STOCK_PRICE
     - PREMIUM_PCT
@@ -246,7 +246,7 @@ auto_play_creator:
   
   stop_loss_types:                  # Types of stop loss to use
     - STOP
-    - LIMIT
+#    - LIMIT
 #    - CONTINGENCY
 
   play_types:                       # Types of plays to create
