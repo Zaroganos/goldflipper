@@ -261,8 +261,8 @@ auto_play_creator:
     - MIX
   expiration_days: 7                # Default expiration in days for test plays
   entry_buffer: 0.05                # Entry price buffer for test plays (e.g., ±$0.01)
-  take_profit_pct: 1.0              # Default take profit percentage
-  stop_loss_pct: 0.5                # Default stop loss percentage
+  take_profit_pct: 2.0              # Default take profit percentage
+  stop_loss_pct: 1.0                # Default stop loss percentage
   test_symbols:                     # Symbols to use for test plays
 #    - SPY
 #    - QQQ

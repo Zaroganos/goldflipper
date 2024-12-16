@@ -330,6 +330,42 @@ def get_current_option_premium(play):
         logging.error(f"Error getting option premium: {e}")
         return None
 
+def get_current_stock_price(symbol):
+    """Get current stock price using both yfinance methods with fallback."""
+    try:
+        # Method 1: Try download method first (usually more reliable)
+        data = yf.download(symbol, period='1d', interval='1m')
+        if not data.empty:
+            price_from_download = data['Close'].iloc[-1]
+            logging.info(f"Got price from download method: ${price_from_download:.2f}")
+            display.info(f"Got price from download method: ${price_from_download:.2f}")
+            return price_from_download
+            
+        # Method 2: Fallback to Ticker method
+        logging.info("Falling back to Ticker method...")
+        display.info("Falling back to Ticker method...")
+        stock = yf.Ticker(symbol)
+        info = stock.info
+        price_from_ticker = (
+            info.get('regularMarketPrice') or 
+            info.get('currentPrice') or 
+            info.get('lastPrice')
+        )
+        
+        if price_from_ticker:
+            logging.info(f"Got price from Ticker method: ${price_from_ticker:.2f}")
+            display.info(f"Got price from Ticker method: ${price_from_ticker:.2f}")
+            return price_from_ticker
+            
+        logging.error(f"Could not get valid price for {symbol} using either method")
+        display.error(f"Could not get valid price for {symbol} using either method")
+        return None
+        
+    except Exception as e:
+        logging.error(f"Error getting stock price for {symbol}: {e}")
+        display.error(f"Error getting stock price for {symbol}: {e}")
+        return None
+
 # ==================================================
 # 3. STRATEGY EVALUATION
 # ==================================================
@@ -958,11 +994,15 @@ def monitor_and_manage_position(play, play_file):
     current_premium = None
     
     # Check if we need stock price monitoring
-    if play['take_profit'].get('stock_price') is not None or play['stop_loss'].get('stock_price') is not None:
-
+    if play['take_profit'].get('stock_price') is not None or play['stop_loss'].get('stock_price') is not None or \
+       play['take_profit'].get('stock_price_pct') is not None or play['stop_loss'].get('stock_price_pct') is not None:
         try:
-            stock = yf.Ticker(underlying_symbol)
-            current_price = stock.info.get('regularMarketPrice', 0)
+            current_price = get_current_stock_price(underlying_symbol)
+            if current_price is None:
+                logging.error(f"Failed to get valid stock price for {underlying_symbol}")
+                display.error(f"Failed to get valid stock price for {underlying_symbol}")
+                return False
+                
             market_data = pd.DataFrame({'Close': [current_price]})
             logging.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
             display.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
@@ -970,8 +1010,6 @@ def monitor_and_manage_position(play, play_file):
             logging.error(f"Error getting stock price: {e}")
             display.error(f"Error getting stock price: {e}")
             return False
-        current_price = market_data['Close'].iloc[-1]
-        logging.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
 
     # Check if we need premium monitoring
     if play['take_profit'].get('premium_pct') is not None or play['stop_loss'].get('premium_pct') is not None:
