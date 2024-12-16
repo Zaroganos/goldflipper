@@ -224,8 +224,8 @@ market_hours:
   enabled: false                    # Enable/disable market hours validation
   timezone: "America/New_York"     # Market timezone
   regular_hours:
-    start: "09:30"                # Regular market open (HH:MM)
-    end: "16:15"                  # Regular market close (HH:MM) -- note, SPY trades until 16:15
+    start: "09:29"                # Regular market open (HH:MM) -- start one minute early to account for cycle time
+    end: "16:16"                  # Regular market close (HH:MM) -- note, SPY trades until 16:16
   extended_hours:
     enabled: false                # Enable/disable extended hours trading
     pre_market_start: "04:00"     # Pre-market start (HH:MM)
