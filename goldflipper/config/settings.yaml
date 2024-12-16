@@ -238,7 +238,7 @@ auto_play_creator:
   enabled: true                     # Enable/disable auto play creation
   order_types:                      # Types of orders to use
     - market
-#    - limit
+    - limit
   TP-SL_types:                # Types of take profit and stop loss to use
     - STOCK_PRICE
     - PREMIUM_PCT
@@ -246,7 +246,7 @@ auto_play_creator:
   
   stop_loss_types:                  # Types of stop loss to use
     - STOP
-#    - LIMIT
+    - LIMIT
 #    - CONTINGENCY
 
   play_types:                       # Types of plays to create
