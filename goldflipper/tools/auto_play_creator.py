@@ -190,7 +190,7 @@ class AutoPlayCreator:
             stop_loss["order_type"] = "limit"
         
         play = {
-            "play_name": f"AUTO_{market_data['symbol']}_{trade_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            "play_name": self.generate_play_name(option_symbol),
             "symbol": market_data['symbol'],
             "expiration_date": datetime.strptime(market_data['expiration'], '%Y-%m-%d').strftime('%m/%d/%Y'),
             "trade_type": trade_type,
@@ -262,6 +262,20 @@ class AutoPlayCreator:
                 logging.error(f"Error creating play for {symbol}: {e}")
                 
         return created_plays
+
+    def generate_play_name(self, option_symbol):
+        """Generate a play name following the standard convention with auto prefix and random suffix."""
+        import random
+        import string
+        
+        # Generate random 3-digit string
+        random_suffix = ''.join(random.choices(string.digits, k=3))
+        
+        # Get current timestamp in the same format as play-creation-tool
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Combine components: AUTO_symbol_timestamp_randomsuffix
+        return f"AUTO_{option_symbol}_{timestamp}_{random_suffix}"
 
 def main():
     """Main function to create test plays."""
