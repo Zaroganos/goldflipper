@@ -5,19 +5,7 @@ import yfinance as yf
 # Or check the docstring
 print(yf.Ticker.option_chain.__doc__)
 
-ticker = yf.Ticker("AAPL")
-chain = ticker.option_chain('2024-12-06')
+ticker = yf.Ticker("SPY")
+chain = ticker.option_chain('2025-01-03')
 
-# Try to access Greeks (if available)
-try:
-    # For calls
-    greeks_calls = chain.calls[['strike', 'delta', 'gamma', 'theta', 'vega']]
-    print("Call Options Greeks:")
-    print(greeks_calls.head())
-    
-    # For puts
-    greeks_puts = chain.puts[['strike', 'delta', 'gamma', 'theta', 'vega']]
-    print("\nPut Options Greeks:")
-    print(greeks_puts.head())
-except KeyError as e:
-    print(f"Some Greeks data not available: {e}")
+print(chain)
