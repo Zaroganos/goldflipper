@@ -273,25 +273,56 @@ def get_tp_parameters(tp_number=None, total_tps=None):
 
     return tp_data
 
-def create_play():
-    """
-    Interactive tool to create a play for options trading, following the minimal template.
-    """
-    TerminalDisplay.header("Options Play Creation Tool", show_timestamp=False)
+class FileHandler:
+    """Handles file operations for play configurations."""
     
-    while True:
-        play = {}
-
-        TerminalDisplay.info("Enter play details:", show_timestamp=False)
+    def __init__(self, base_dir=None):
+        if base_dir is None:
+            self.base_dir = os.path.join(project_root, 'plays')
+        else:
+            self.base_dir = base_dir
         
-        play['symbol'] = get_input(
+        # Ensure the plays directory exists
+        os.makedirs(self.base_dir, exist_ok=True)
+    
+    def save_play(self, play, filename):
+        """Save the play configuration to a JSON file."""
+        filepath = os.path.join(self.base_dir, filename)
+        
+        try:
+            with open(filepath, 'w') as f:
+                json.dump(play, f, indent=4)
+            TerminalDisplay.success(f"Play saved successfully to: {filepath}", show_timestamp=False)
+            return True
+        except Exception as e:
+            TerminalDisplay.error(f"Error saving play: {str(e)}", show_timestamp=False)
+            return False
+
+class PlayBuilder:
+    """Handles the construction and validation of option play configurations."""
+    
+    def __init__(self):
+        self.play = {}
+        self.settings = self._load_settings()
+        self.file_handler = FileHandler()
+        self.tp_cache = []  # Cache for storing multiple TP configurations
+    
+    def _load_settings(self):
+        """Load settings from yaml file."""
+        settings_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'settings.yaml')
+        with open(settings_path, 'r') as f:
+            return yaml.safe_load(f)
+    
+    def build_base_play(self):
+        """Collect and validate basic play information."""
+        self.play['symbol'] = get_input(
             "Enter the ticker symbol (e.g., SPY): ",
             str,
             validation=lambda x: len(x) > 0,
             error_message="Ticker symbol cannot be empty."
         ).upper()
 
-        play['trade_type'] = get_input(
+        self.play['trade_type'] = get_input(
             "Enter the trade type (CALL or PUT): ",
             str,
             validation=lambda x: validate_choice(x, ["CALL", "PUT"]),
@@ -300,119 +331,119 @@ def create_play():
 
         # Entry point setup
         TerminalDisplay.info("\nSetting Entry Point Parameters:", show_timestamp=False)
-        play['entry_point'] = {}
-        play['entry_point']['stock_price'] = get_input(
+        self.play['entry_point'] = {}
+        self.play['entry_point']['stock_price'] = get_input(
             "Enter the entry stock price: ",
             float,
             error_message="Please enter a valid number for the entry price."
         )
-        play['entry_point']['order_type'] = get_order_type_choice(transaction_type="Entry")
+        self.play['entry_point']['order_type'] = get_order_type_choice(transaction_type="Entry")
 
-        # Save strike price as a string
-        play['strike_price'] = str(get_input(
+        self._add_strike_price()
+        self._add_expiration_date()
+        self._add_contracts()
+        self._generate_contract_symbol()
+        self._set_play_name()
+        self._add_play_class()
+        self._add_play_metadata()
+
+        return self.play
+    
+    def _add_strike_price(self):
+        """Add strike price to the play configuration."""
+        self.play['strike_price'] = str(get_input(
             "Enter the strike price: ",
             float,
             error_message="Please enter a valid number for the strike price."
         ))
 
-        play['expiration_date'] = get_input(
+    def _add_expiration_date(self):
+        """Add expiration date to the play configuration."""
+        self.play['expiration_date'] = get_input(
             "Enter the option contract expiration date (MM/DD/YYYY): ",
             str,
             validation=lambda x: datetime.strptime(x, "%m/%d/%Y"),
             error_message="Please enter a valid date in MM/DD/YYYY format."
         )
 
-        play['contracts'] = get_input(
+    def _add_contracts(self):
+        """Add number of contracts to the play configuration."""
+        self.play['contracts'] = get_input(
             "Enter the number of contracts: ",
             int,
             validation=lambda x: x > 0,
             error_message="Please enter a positive integer for the number of contracts."
         )
 
-        # Prompt for an optional play name
-        play_name_input = get_input(
-            "Enter the play's name (optional, press Enter to skip): ",
-            str,
-            validation=lambda x: True,  # No specific validation
-            error_message="Invalid input.",
-            optional=True
-        )
-
-        # Automatically generate the option contract symbol
+    def _generate_contract_symbol(self):
+        """Generate and add the option contract symbol to the play configuration."""
         try:
-            play['option_contract_symbol'] = create_option_contract_symbol(
-                play['symbol'],
-                play['expiration_date'],
-                play['strike_price'],
-                play['trade_type']
+            self.play['option_contract_symbol'] = create_option_contract_symbol(
+                self.play['symbol'],
+                self.play['expiration_date'],
+                self.play['strike_price'],
+                self.play['trade_type']
             )
-            TerminalDisplay.success(f"Generated option contract symbol: {play['option_contract_symbol']}", show_timestamp=False)
+            TerminalDisplay.success(f"Generated option contract symbol: {self.play['option_contract_symbol']}", show_timestamp=False)
         except ValueError as ve:
             TerminalDisplay.error(f"Error generating option contract symbol: {ve}", show_timestamp=False)
-            return
+            raise
 
-        # Determine the play's name
-        if play_name_input:
-            play['play_name'] = play_name_input
-            filename = sanitize_filename(play['play_name']) + ".json"
-        else:
-            system_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-            default_name = f"{play['option_contract_symbol']}_{system_time}"
-            play['play_name'] = default_name
-            filename = default_name + ".json"
-
-        # Take profit section
-        TerminalDisplay.header("Take Profit Configuration", show_timestamp=False)
-        
-        # Load settings to check if multiple TPs are enabled
-        settings_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'settings.yaml')
-        with open(settings_path, 'r') as f:
-            settings = yaml.safe_load(f)
-        
-        multiple_tps_enabled = settings.get('options_swings', {}).get('Take_Profit', {}).get('multiple_TPs', False)
-        
-        if multiple_tps_enabled and get_multiple_tp_choice():
-            num_tps = get_number_of_tps()
-            base_play = play.copy()  # Store our base play data
-            plays_to_create = []
-
-            # Get stop loss parameters first (will be same for all plays)
-            print("\nSetting Stop Loss parameters (will apply to all Take Profit levels)...")
-            sl_price_types = get_price_condition_type()
-            base_play['stop_loss'] = {}
-            
-            # Get all the stop loss parameters using existing logic
-            sl_type_choice = get_sl_type_choice()
-            base_play['stop_loss']['SL_type'] = (
-                'STOP' if sl_type_choice == 1 else
-                'LIMIT' if sl_type_choice == 2 else
-                'CONTINGENCY'
+    def _set_play_name(self, play_name_input=None):
+        """Set the play name and generate filename."""
+        if play_name_input is None:
+            play_name_input = get_input(
+                "Enter the play's name (optional, press Enter to skip): ",
+                str,
+                validation=lambda x: True,
+                error_message="Invalid input.",
+                optional=True
             )
 
-            # Create each play with its own TP
-            for i in range(num_tps):
-                current_play = base_play.copy()
-                current_play['take_profit'] = get_tp_parameters(i + 1, num_tps)
-                current_play['play_name'] = f"{base_play['play_name']}_{i+1}"
-                plays_to_create.append(current_play)
+        if play_name_input:
+            self.play['play_name'] = play_name_input
+            self.filename = sanitize_filename(self.play['play_name']) + ".json"
         else:
-            # Single TP using the same function
-            play['take_profit'] = get_tp_parameters()
-
-        # Stop loss section
+            system_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+            default_name = f"{self.play['option_contract_symbol']}_{system_time}"
+            self.play['play_name'] = default_name
+            self.filename = default_name + ".json"
+        
+        TerminalDisplay.success(f"Generated play name: {self.play['play_name']}", show_timestamp=False)
+    
+    def add_take_profits(self):
+        """Add take profit configuration to the play."""
+        TerminalDisplay.header("Take Profit Configuration", show_timestamp=False)
+        
+        multiple_tps_enabled = self.settings.get('options_swings', {}).get('Take_Profit', {}).get('multiple_TPs', False)
+        
+        if multiple_tps_enabled and get_multiple_tp_choice():
+            self._handle_multiple_take_profits()
+        else:
+            self.tp_cache = [get_tp_parameters()]  # Single TP stored in cache
+            
+        return self.play
+    
+    def _handle_multiple_take_profits(self):
+        """Handle configuration of multiple take profit levels."""
+        num_tps = get_number_of_tps()
+        
+        for i in range(num_tps):
+            tp_data = get_tp_parameters(tp_number=i+1, total_tps=num_tps)
+            self.tp_cache.append(tp_data)
+    
+    def add_stop_loss(self):
+        """Add stop loss configuration to the play."""
         TerminalDisplay.header("Stop Loss Configuration", show_timestamp=False)
+        
         sl_price_types = get_price_condition_type()
-        play['stop_loss'] = {}  # Initialize empty dict instead of one with null values
-
-        # Get SL type first as it affects how many conditions we need
-        sl_type_choice = get_sl_type_choice()
-        play['stop_loss']['SL_type'] = (
-            'STOP' if sl_type_choice == 1 else
-            'LIMIT' if sl_type_choice == 2 else
-            'CONTINGENCY'
-        )
-
-        if play['stop_loss']['SL_type'] in ['STOP', 'LIMIT']:
+        sl_type = get_sl_type_choice()
+        
+        sl_data = {
+            'SL_type': 'STOP' if sl_type == 1 else 'LIMIT' if sl_type == 2 else 'CONTINGENCY'
+        }
+        
+        if sl_data['SL_type'] in ['STOP', 'LIMIT']:
             # Single set of conditions
             if 1 in sl_price_types:  # Absolute stock price
                 sl_stock_price = get_input(
@@ -421,7 +452,7 @@ def create_play():
                     validation=lambda x: x > 0,
                     error_message="Please enter a valid positive number for the stop loss stock price."
                 )
-                play['stop_loss']['stock_price'] = sl_stock_price
+                sl_data['stock_price'] = sl_stock_price
 
             if 3 in sl_price_types:  # Stock price % movement
                 sl_stock_price_pct = get_input(
@@ -430,11 +461,11 @@ def create_play():
                     validation=lambda x: x > 0,
                     error_message="Please enter a valid positive percentage"
                 )
-                play['stop_loss']['stock_price_pct'] = sl_stock_price_pct
+                sl_data['stock_price_pct'] = sl_stock_price_pct
 
             if 2 in sl_price_types:  # Option premium %
                 sl_premium_pct = get_premium_percentage()
-                play['stop_loss']['premium_pct'] = sl_premium_pct
+                sl_data['premium_pct'] = sl_premium_pct
 
         else:  # CONTINGENCY type needs two sets of conditions
             if 1 in sl_price_types:  # Absolute stock price
@@ -449,18 +480,18 @@ def create_play():
                 while True:
                     TerminalDisplay.info("\nEnter backup/safety stop loss conditions (must be worse than main price):", show_timestamp=False)
                     backup_stock_price = get_input(
-                        f"Enter backup stop loss stock price ({'lower' if play['trade_type'] == 'CALL' else 'higher'} than {main_stock_price}): ",
+                        f"Enter backup stop loss stock price ({'lower' if self.play['trade_type'] == 'CALL' else 'higher'} than {main_stock_price}): ",
                         float,
                         validation=lambda x: x > 0,
                         error_message="Please enter a valid positive number for the backup stop loss stock price."
                     )
                     
-                    if validate_contingency_prices(main_stock_price, backup_stock_price, True, play['trade_type']):
+                    if validate_contingency_prices(main_stock_price, backup_stock_price, True, self.play['trade_type']):
                         break
-                    TerminalDisplay.error(f"Error: Backup price must be {'lower' if play['trade_type'] == 'CALL' else 'higher'} than the main price ({main_stock_price}) for a {play['trade_type']}", show_timestamp=False)
+                    TerminalDisplay.error(f"Error: Backup price must be {'lower' if self.play['trade_type'] == 'CALL' else 'higher'} than the main price ({main_stock_price}) for a {self.play['trade_type']}", show_timestamp=False)
                 
-                play['stop_loss']['stock_price'] = main_stock_price
-                play['stop_loss']['contingency_stock_price'] = backup_stock_price
+                sl_data['stock_price'] = main_stock_price
+                sl_data['contingency_stock_price'] = backup_stock_price
 
             if 3 in sl_price_types:  # Stock price % movement
                 TerminalDisplay.info("\nEnter main stop loss conditions:", show_timestamp=False)
@@ -484,8 +515,8 @@ def create_play():
                         break
                     TerminalDisplay.error(f"Error: Backup percentage ({backup_stock_price_pct}%) must be higher than main percentage ({main_stock_price_pct}%)", show_timestamp=False)
                 
-                play['stop_loss']['stock_price_pct'] = main_stock_price_pct
-                play['stop_loss']['contingency_stock_price_pct'] = backup_stock_price_pct
+                sl_data['stock_price_pct'] = main_stock_price_pct
+                sl_data['contingency_stock_price_pct'] = backup_stock_price_pct
 
             if 2 in sl_price_types:  # Option premium %
                 TerminalDisplay.info("\nEnter main stop loss conditions:", show_timestamp=False) if len(sl_price_types) == 1 else None
@@ -497,76 +528,60 @@ def create_play():
                     TerminalDisplay.info(f"Backup must be higher than {main_premium}% (representing a bigger loss)", show_timestamp=False)
                     backup_premium = get_premium_percentage()
                     
-                    if validate_contingency_prices(main_premium, backup_premium, False, play['trade_type']):
+                    if validate_contingency_prices(main_premium, backup_premium, False, self.play['trade_type']):
                         break
                     TerminalDisplay.error(f"Error: Backup loss percentage ({backup_premium}%) must be higher than main loss percentage ({main_premium}%) to represent a bigger loss", show_timestamp=False)
                 
-                play['stop_loss']['premium_pct'] = main_premium
-                play['stop_loss']['contingency_premium_pct'] = backup_premium
+                sl_data['premium_pct'] = main_premium
+                sl_data['contingency_premium_pct'] = backup_premium
 
         # Set order type(s) based on SL_type
-        if play['stop_loss']['SL_type'] == 'STOP':
-            play['stop_loss']['order_type'] = 'market'
-        elif play['stop_loss']['SL_type'] == 'LIMIT':
-            play['stop_loss']['order_type'] = 'limit'
+        if sl_data['SL_type'] == 'STOP':
+            sl_data['order_type'] = 'market'
+        elif sl_data['SL_type'] == 'LIMIT':
+            sl_data['order_type'] = 'limit'
         else:  # CONTINGENCY
-            play['stop_loss']['order_type'] = ['limit', 'market']  # Always this combination for contingency
+            sl_data['order_type'] = ['limit', 'market']  # Always this combination for contingency
 
-        play['play_expiration_date'] = get_input(
-            f"Enter the play's expiration date (MM/DD/YYYY), or press Enter to make it {play['expiration_date']} by default.): ",
-            str,
-            optional=True  # Allow the user to skip input
-        )
-        # Set default to previously entered expiration_date if no input is provided
-        if not play['play_expiration_date']:
-            play['play_expiration_date'] = play['expiration_date']
-        else:
-            # Validate the new input
-            datetime.strptime(play['play_expiration_date'], "%m/%d/%Y")  # This will raise an error if invalid
-
-        # CONSIDER CHANGING THIS...
-        play['play_class'] = (get_input(
+        self.play['stop_loss'] = sl_data
+        return self.play
+    
+    def _add_play_class(self):
+        """Add play class and handle conditional plays."""
+        self.play['play_class'] = (get_input(
             "Enter the conditional play class (PRIMARY, or --> OCO or OTO), or press Enter for Simple: ",
             str,
             validation=lambda x: validate_choice(x, [True, "PRIMARY", "OCO", "OTO"]),
             error_message="Invalid play class. Please press Enter or enter 'PRIMARY', 'OCO', or 'OTO'.",
             optional=True
-        ) or "Simple").upper()  #Simple by default
-        
-        if play['play_class'] == 'PRIMARY':
-            # Prompt user to choose an existing play from "new" or "temp" folders
+        ) or "Simple").upper()
+
+        if self.play['play_class'] == 'PRIMARY':
             existing_play = get_input(
                 "Link a conditional play to this primary play. Choose an existing play from ['new' if OCO], or ['temp' if OTO], folders (provide the full play name, including the .json extension. Hint: view current plays): ",
                 str,
                 validation=lambda x: os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'new', x)) or 
-                                    os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp', x)),
+                                   os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp', x)),
                 error_message="Play not found in 'new' or 'OTO' folders."
             )
 
             # Check which folder the play is in and set the appropriate field
             if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'new', existing_play)):
-                play['conditional_plays'] = {'OCO_trigger': existing_play}
+                self.play['conditional_plays'] = {'OCO_trigger': existing_play}
             elif os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp', existing_play)):
-                play['conditional_plays'] = {'OTO_trigger': existing_play}
+                self.play['conditional_plays'] = {'OTO_trigger': existing_play}
 
-        play['strategy'] = (
-            'Option Swings' if play['play_class'] == 'SIMPLE' else
+    def _add_play_metadata(self):
+        """Add strategy, creation date, and status information."""
+        self.play['strategy'] = (
+            'Option Swings' if self.play['play_class'] == 'SIMPLE' else
             'Branching Brackets Option Swings'
         )
+        self.play['creation_date'] = datetime.now().strftime('%Y-%m-%d')
+        self.play['creator'] = 'user'
 
-        play['creation_date'] = datetime.now().strftime('%Y-%m-%d')  # Automatically populate play's creation date
-
-        play['creator'] = 'user'
-
-        # Update the plays directory path and add status field
-        if play['play_class'] == 'OTO':
-            plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp')
-            play_status = 'TEMP'
-        else:
-            plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'new')
-            play_status = 'NEW'
-
-        play['status'] = {
+        play_status = 'TEMP' if self.play['play_class'] == 'OTO' else 'NEW'
+        self.play['status'] = {
             "play_status": play_status,
             "order_id": None,
             "order_status": None,
@@ -579,42 +594,102 @@ def create_play():
             "conditionals_handled": False
         }
 
-        os.makedirs(plays_dir, exist_ok=True)
-
-        filepath = os.path.join(plays_dir, filename)
-        with open(filepath, 'w') as f:
-            json.dump(play, f, indent=4)
-
-        TerminalDisplay.success(f"Play saved successfully to {filepath}", show_timestamp=False)
-
-        # Open the file in text editor
-        try:
-            if platform.system() == "Windows":
-                subprocess.run(["notepad.exe", filepath])
-            elif platform.system() == "Darwin":  # macOS
-                subprocess.run(["open", "-t", filepath])
-            else:  # Linux
-                subprocess.run(["xdg-open", filepath])
-            TerminalDisplay.info("Opening play file in text editor...", show_timestamp=False)
-        except Exception as e:
-            TerminalDisplay.warning(f"Could not open file automatically: {e}", show_timestamp=False)
-
-        
-
-        # Ask the user if they want to create another play
-        another_play = get_input(
-            "Do you want to create another play? (Y/N): ",
+        # Add play expiration date
+        self.play['play_expiration_date'] = get_input(
+            f"Enter the play's expiration date (MM/DD/YYYY), or press Enter to make it {self.play['expiration_date']} by default.): ",
             str,
-            validation=lambda x: x.upper() in ["Y", "N"],
-            error_message="Please enter 'Y' or 'N'."
-        ).upper()
+            validation=lambda x: datetime.strptime(x, "%m/%d/%Y"),  # Validates date format
+            error_message="Please enter a valid date in MM/DD/YYYY format.",
+            optional=True
+        )
+        
+        # Set default to previously entered expiration_date if no input is provided
+        if not self.play['play_expiration_date']:
+            self.play['play_expiration_date'] = self.play['expiration_date']
 
-        if another_play == "Y":
-            os.system('cls' if platform.system() == "Windows" else 'clear')  # Clear the screen
-            continue  # Continue to create another play
+    def save(self):
+        """Save the play configuration(s)."""
+        base_play_name = self.play['play_name']
+        base_filename = self.filename.replace('.json', '')
+        
+        # Determine the appropriate directory based on play class
+        if self.play['play_class'] == 'OTO':
+            plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp')
         else:
-            TerminalDisplay.info("Exiting the play creation tool.", show_timestamp=False)
-            break  # Exit the loop if the user does not want to create another play
+            plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'new')
+        
+        os.makedirs(plays_dir, exist_ok=True)
+        
+        # For each cached TP configuration, create and save a separate play file
+        for i, tp_config in enumerate(self.tp_cache, 1):
+            current_play = self.play.copy()
+            
+            # If multiple TPs, append number to play name and filename
+            if len(self.tp_cache) > 1:
+                current_play['play_name'] = f"{base_play_name}_TP{i}"
+                current_filename = f"{base_filename}_TP{i}.json"
+            else:
+                current_filename = self.filename
+            
+            current_play['take_profit'] = tp_config
+            
+            filepath = os.path.join(plays_dir, current_filename)
+            try:
+                with open(filepath, 'w') as f:
+                    json.dump(current_play, f, indent=4)
+                TerminalDisplay.success(f"Play saved successfully to: {filepath}", show_timestamp=False)
+                
+                # Open the file in text editor
+                try:
+                    if platform.system() == "Windows":
+                        subprocess.run(["notepad.exe", filepath])
+                    elif platform.system() == "Darwin":  # macOS
+                        subprocess.run(["open", "-t", filepath])
+                    else:  # Linux
+                        subprocess.run(["xdg-open", filepath])
+                    TerminalDisplay.info("Opening play file in text editor...", show_timestamp=False)
+                except Exception as e:
+                    TerminalDisplay.warning(f"Could not open file automatically: {e}", show_timestamp=False)
+                    
+            except Exception as e:
+                TerminalDisplay.error(f"Error saving play: {str(e)}", show_timestamp=False)
+                return False
+        
+        return True
+
+def create_play():
+    """
+    Interactive tool to create a play for options trading, following the minimal template.
+    """
+    TerminalDisplay.header("Options Play Creation Tool", show_timestamp=False)
+    
+    while True:
+        try:
+            builder = PlayBuilder()
+            play = builder.build_base_play()
+            builder.add_take_profits()  # Now stores TPs in cache
+            builder.add_stop_loss()
+            
+            if builder.save():
+                # Ask if user wants to create another play
+                another_play = get_input(
+                    "Do you want to create another play? (Y/N): ",
+                    str,
+                    validation=lambda x: x.upper() in ["Y", "N"],
+                    error_message="Please enter 'Y' or 'N'."
+                ).upper()
+
+                if another_play == "Y":
+                    os.system('cls' if platform.system() == "Windows" else 'clear')  # Clear the screen
+                    continue
+                else:
+                    TerminalDisplay.info("Exiting the play creation tool.", show_timestamp=False)
+                    break
+            return None
+            
+        except ValueError as ve:
+            TerminalDisplay.error(f"Error creating play: {ve}", show_timestamp=False)
+            return None
 
 if __name__ == "__main__":
     create_play()
