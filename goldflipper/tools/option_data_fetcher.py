@@ -394,9 +394,27 @@ def calculate_greeks(options_data, underlying_price, expiration_date):
 def get_current_stock_price(stock):
     """Get current stock price from yfinance."""
     try:
-        return stock.info['currentPrice']
-    except (KeyError, AttributeError) as e:
-        raise Exception(f"Could not fetch stock price: {str(e)}")
+        # First attempt: try to get lastPrice from fast_info
+        price = stock.fast_info['lastPrice']
+        logging.info(f"Using real-time price from fast_info")
+        display.info(f"For Stock data: using yfinance real-time price from fast_info", show_timestamp=False)
+        return price
+    except (KeyError, AttributeError):
+        try:
+            # Second attempt: try regular info
+            price = stock.info['currentPrice']
+            logging.info(f"Using fallback method 1: currentPrice from stock.info")
+            display.warning(f"Using fallback method 1: Price data may be slightly delayed")
+            return price
+        except (KeyError, AttributeError):
+            try:
+                # Last resort: get most recent price from today's data
+                price = stock.history(period='1d', interval='1m')['Close'].iloc[-1]
+                logging.warning(f"Using fallback method 2: Most recent minute data")
+                display.warning(f"Using fallback method 2: Price data may be stale (from most recent minute)")
+                return price
+            except Exception as e:
+                raise Exception(f"Could not fetch stock price using any method: {str(e)}")
 
 def calculate_indicators(ticker: str, settings: dict) -> pd.DataFrame:
     """Calculate technical indicators for the underlying stock"""
@@ -518,6 +536,8 @@ def main():
             
             # Fetch option data
             stock = yf.Ticker(ticker)
+            logging.info(f"Using yfinance method: stock.option_chain()")
+            display.info(f"For Options data: using yfinance method: stock.option_chain()", show_timestamp=False)
             chain = stock.option_chain(expiration_date)
             underlying_price = get_current_stock_price(stock)
             
