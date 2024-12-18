@@ -310,8 +310,42 @@ class PlayBuilder:
     def _load_settings(self):
         """Load settings from yaml file."""
         settings_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'settings.yaml')
-        with open(settings_path, 'r') as f:
-            return yaml.safe_load(f)
+        
+        try:
+            if not os.path.exists(settings_path):
+                TerminalDisplay.error(f"Settings file not found at: {settings_path}", show_timestamp=False)
+                raise FileNotFoundError(f"Settings file not found at: {settings_path}")
+
+            with open(settings_path, 'r') as f:
+                settings = yaml.safe_load(f)
+                
+            # Validate essential settings structure
+            if not isinstance(settings, dict):
+                raise ValueError("Settings file must contain a valid YAML dictionary")
+                
+            # Validate required settings sections
+            required_sections = ['options_swings']
+            missing_sections = [section for section in required_sections if section not in settings]
+            
+            if missing_sections:
+                raise ValueError(f"Missing required settings sections: {', '.join(missing_sections)}")
+                
+            # Validate Take_Profit settings
+            if 'Take_Profit' not in settings.get('options_swings', {}):
+                TerminalDisplay.warning("Take_Profit settings not found. Multiple TPs will be disabled.", show_timestamp=False)
+                settings['options_swings']['Take_Profit'] = {'multiple_TPs': False}
+                
+            return settings
+            
+        except yaml.YAMLError as e:
+            TerminalDisplay.error(f"Error parsing settings file: {e}", show_timestamp=False)
+            # Return default settings
+            return {'options_swings': {'Take_Profit': {'multiple_TPs': False}}}
+            
+        except Exception as e:
+            TerminalDisplay.error(f"Unexpected error loading settings: {e}", show_timestamp=False)
+            # Return default settings
+            return {'options_swings': {'Take_Profit': {'multiple_TPs': False}}}
     
     def build_base_play(self):
         """Collect and validate basic play information."""
@@ -606,6 +640,8 @@ class PlayBuilder:
         # Set default to previously entered expiration_date if no input is provided
         if not self.play['play_expiration_date']:
             self.play['play_expiration_date'] = self.play['expiration_date']
+        
+        TerminalDisplay.success(f"Set play expiration date: {self.play['play_expiration_date']}", show_timestamp=False)
 
     def save(self):
         """Save the play configuration(s)."""
