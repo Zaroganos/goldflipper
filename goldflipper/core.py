@@ -1481,8 +1481,8 @@ def validate_market_hours():
     # Check if within regular market hours
     is_market_open = market_open <= current_time_only <= market_close
     
-    # If it's 4:16 PM (within a 30-second window), handle pending plays
-    cleanup_time = datetime.strptime('16:16', '%H:%M').time()
+    # If it's 4:17 PM (within a 30-second window), handle pending plays
+    cleanup_time = datetime.strptime('16:17', '%H:%M').time()
     cleanup_window_start = (datetime.combine(datetime.today(), cleanup_time) - timedelta(seconds=15)).time()
     cleanup_window_end = (datetime.combine(datetime.today(), cleanup_time) + timedelta(seconds=45)).time()
     
@@ -1629,7 +1629,12 @@ def monitor_plays_continuously():
                             option = options_data[options_data['strike'] == strike]
                             
                             if not option.empty:
-                                current_price = stock.info.get('regularMarketPrice', 0)
+                                current_price = get_current_stock_price(stock)
+                                if current_price is None or current_price <= 0:
+                                    logging.error(f"Could not get valid share price for {play['symbol']}")
+                                    display.error(f"Could not get valid share price for {play['symbol']}")
+                                    continue
+                                
                                 opt = option.iloc[0]
                                 
                                 # Log detailed data to file
