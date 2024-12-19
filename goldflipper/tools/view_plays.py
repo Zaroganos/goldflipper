@@ -56,6 +56,16 @@ def format_price_value(price_data):
         return f"{float(premium_pct):.0f}%"
     return "N/A"
 
+def format_date(date_str):
+    """Convert YYYY-MM-DD to MM/DD/YYYY format."""
+    if date_str and date_str != 'N/A':
+        try:
+            year, month, day = date_str.split('-')
+            return f"{month}/{day}/{year}"
+        except ValueError:
+            return date_str
+    return date_str
+
 class PlayCard(Widget):
     """
     A custom widget to display play details in a card format.
@@ -77,10 +87,16 @@ class PlayCard(Widget):
             sl_value = format_price_value(data.get('stop_loss', {}))
             
             symbol = data.get('symbol', 'N/A')
-            creation_date = data.get('creation_date', 'N/A')
-            play_expiration = data.get('play_expiration_date', 'N/A')
-            expiration_date = data.get('expiration_date', 'N/A')
+            creation_date = format_date(data.get('creation_date', 'N/A'))
+            play_expiration = format_date(data.get('play_expiration_date', 'N/A'))
+            expiration_date = format_date(data.get('expiration_date', 'N/A'))
             strategy = data.get('strategy', 'Option Swings')
+            entry_order = data.get('entry_point', {}).get('order_type', 'N/A')
+            tp_order = data.get('take_profit', {}).get('order_type', 'N/A')
+            sl_order = data.get('stop_loss', {}).get('order_type', 'N/A')
+            sl_contingency_order = data.get('stop_loss', {}).get('order_type', 'N/A')
+            if isinstance(sl_contingency_order, list) and len(sl_contingency_order) > 1:
+                sl_order = f"{sl_contingency_order[0]} [white]-> Contingency:[/white] {sl_contingency_order[1]}"
 
             details = (
                 f"📄  [bold green]{name}[/bold green]\n"
@@ -90,9 +106,13 @@ class PlayCard(Widget):
                 f"[color(33)]Entry:[/color(33)] ${entry_price:.2f} [white]->[/white] "
                 f"[green]TP:[/green] {tp_value} | "
                 f"[red]SL:[/red] {sl_value}\n"
-                f"[white]Created:[/white] {creation_date}  "
+                f"[white]Entry:[/white] {entry_order} [white]->[/white] "
+                f"[white]TP:[/white] {tp_order} [white]|[/white] "
+                f"[white]SL:[/white] {sl_order}\n"
+                f"[white]Created:[/white] {creation_date} [white]->[/white] "
                 f"[white]Play Exp.:[/white] {play_expiration}\n"
-                
+
+
             ).strip()  # Strip leading/trailing whitespace from the string
 
             # Create a Text object from the stripped string
