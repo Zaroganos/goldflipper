@@ -868,6 +868,10 @@ def get_field_value_display(play_data, field):
                 displays.append("Backup(" + " + ".join(backup_conditions) + ")")
         
         return " | ".join(displays) if displays else "Not set"
+    elif field == 'OCO_trigger':
+        return play_data.get('conditional_plays', {}).get('OCO_trigger') or 'Not set'
+    elif field == 'OTO_trigger':
+        return play_data.get('conditional_plays', {}).get('OTO_trigger') or 'Not set'
     else:
         return str(play_data.get(field, "Not set"))
 
