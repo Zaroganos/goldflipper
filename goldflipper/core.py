@@ -333,6 +333,10 @@ def get_current_option_premium(play):
 def get_current_stock_price(symbol):
     """Get current stock price using both yfinance methods with fallback."""
     try:
+        # Ensure we're working with the symbol string, not a Ticker object
+        if isinstance(symbol, yf.Ticker):
+            symbol = symbol.ticker
+
         # Method 1: Try download method first (usually more reliable)
         data = yf.download(symbol, period='1d', interval='1m')
         if not data.empty:
