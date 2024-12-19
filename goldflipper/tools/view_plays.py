@@ -40,21 +40,70 @@ def format_play_files(folder_path):
                     print(f"Error reading {file}")
     return plays
 
-def format_price_value(price_data):
-    """Format price data to display either stock price or premium percentage."""
+def format_price_value(price_data, is_tp=True, play_status=None):
+    """
+    Format price data based on play status:
+    - For NEW/TEMP/PENDING-OPENING: Show target conditions
+    - For OPEN/PENDING-CLOSING/CLOSED: Show calculated target values
+    Always show stock_price if present
+    """
+    if not price_data or not play_status:  # Changed this check
+        return "N/A"
+        
+    displays = []
+    
+    # Always show stock price target if present
     if price_data.get('stock_price') is not None:
-        stock_price = price_data['stock_price']
-        if isinstance(stock_price, list):
-            # For contingency orders, show both values
-            return f"${float(stock_price[0]):.2f} | ${float(stock_price[1]):.2f}"
-        return f"${float(stock_price):.2f}"
-    elif price_data.get('premium_pct') is not None:
-        premium_pct = price_data['premium_pct']
-        if isinstance(premium_pct, list):
-            # For contingency orders, show both values
-            return f"{float(premium_pct[0]):.0f}% | {float(premium_pct[1]):.0f}%"
-        return f"{float(premium_pct):.0f}%"
-    return "N/A"
+        displays.append(f"${float(price_data['stock_price']):.2f}")
+    
+    # For open/pending-closing/closed plays, show calculated target values
+    if play_status in ['OPEN', 'PENDING-CLOSING', 'CLOSED']:
+        if is_tp:
+            if price_data.get('TP_option_prem') is not None:
+                displays.append(f"${float(price_data['TP_option_prem']):.2f}")
+            if price_data.get('TP_stock_price_target') is not None:
+                displays.append(f"${float(price_data['TP_stock_price_target']):.2f}")
+        else:
+            if price_data.get('SL_option_prem') is not None:
+                displays.append(f"${float(price_data['SL_option_prem']):.2f}")
+            if price_data.get('SL_stock_price_target') is not None:
+                displays.append(f"${float(price_data['SL_stock_price_target']):.2f}")
+            
+            # Handle contingency SL if present
+            if price_data.get('SL_type') == 'CONTINGENCY':
+                contingency_displays = []
+                if price_data.get('contingency_stock_price') is not None:
+                    contingency_displays.append(f"${float(price_data['contingency_stock_price']):.2f}")
+                if price_data.get('contingency_SL_option_prem') is not None:
+                    contingency_displays.append(f"${float(price_data['contingency_SL_option_prem']):.2f}")
+                if price_data.get('contingency_SL_stock_price_target') is not None:
+                    contingency_displays.append(f"${float(price_data['contingency_SL_stock_price_target']):.2f}")
+                
+                if contingency_displays:
+                    displays.append("[white]→[/white] [red3]SL(C):[/red3] " + " | ".join(contingency_displays))
+    
+    # For new/temp/pending-opening plays, show target conditions
+    else:
+        # Stock price percentage
+        if price_data.get('stock_price_pct') is not None:
+            displays.append(f"{float(price_data['stock_price_pct']):.1f}%")
+        
+        # Premium percentage
+        if price_data.get('premium_pct') is not None:
+            displays.append(f"{float(price_data['premium_pct']):.0f}%")
+        
+        # Handle contingency SL conditions if present
+        if not is_tp and price_data.get('SL_type') == 'CONTINGENCY':
+            contingency_displays = []
+            if price_data.get('contingency_stock_price_pct') is not None:
+                contingency_displays.append(f"{float(price_data['contingency_stock_price_pct']):.1f}%")
+            if price_data.get('contingency_premium_pct') is not None:
+                contingency_displays.append(f"{float(price_data['contingency_premium_pct']):.0f}%")
+            
+            if contingency_displays:
+                displays.append("[white]→[/white] [red3]SL(C):[/red3] " + " | ".join(contingency_displays))
+    
+    return " | ".join(displays) if displays else "N/A"
 
 def format_date(date_str):
     """Convert YYYY-MM-DD to MM/DD/YYYY format."""
@@ -82,11 +131,15 @@ class PlayCard(Widget):
             entry_price = float(entry_point.get('stock_price', 0.00))
             strike_price = data.get('strike_price', 'N/A')
             
-            # Handle both price formats
-            tp_value = format_price_value(data.get('take_profit', {}))
-            sl_value = format_price_value(data.get('stop_loss', {}))
+            # Get play_status correctly from the status object
+            play_status = data.get('status', {}).get('play_status')
+            
+            # Handle all price formats with the correct status
+            tp_value = format_price_value(data.get('take_profit', {}), is_tp=True, play_status=play_status)
+            sl_value = format_price_value(data.get('stop_loss', {}), is_tp=False, play_status=play_status)
             
             symbol = data.get('symbol', 'N/A')
+            trade_type = data.get('trade_type', 'N/A')
             creation_date = format_date(data.get('creation_date', 'N/A'))
             play_expiration = format_date(data.get('play_expiration_date', 'N/A'))
             expiration_date = format_date(data.get('expiration_date', 'N/A'))
@@ -98,10 +151,12 @@ class PlayCard(Widget):
             if isinstance(sl_contingency_order, list) and len(sl_contingency_order) > 1:
                 sl_order = f"{sl_contingency_order[0]} [white]-> SL(C):[/white] {sl_contingency_order[1]}"
 
+            # See Rich's 8-bit color palette for more colors
             details = (
                 f"📄  [bold green]{name}[/bold green]\n"
                 f"[bold yellow]${symbol}[/bold yellow] - [cyan]{strategy}[/cyan]\n"
                 f"[white]Contract Exp.:[/white] {expiration_date}  "
+                f"◦  [bright_yellow]{trade_type}[/bright_yellow]  ◦  "
                 f"[purple]Strike:[/purple] {strike_price}\n"
                 f"[color(33)]Entry:[/color(33)] ${entry_price:.2f} [white]->[/white] "
                 f"[green]TP:[/green] {tp_value} | "
