@@ -96,7 +96,7 @@ class PlayCard(Widget):
             sl_order = data.get('stop_loss', {}).get('order_type', 'N/A')
             sl_contingency_order = data.get('stop_loss', {}).get('order_type', 'N/A')
             if isinstance(sl_contingency_order, list) and len(sl_contingency_order) > 1:
-                sl_order = f"{sl_contingency_order[0]} [white]-> Contingency:[/white] {sl_contingency_order[1]}"
+                sl_order = f"{sl_contingency_order[0]} [white]-> SL(C):[/white] {sl_contingency_order[1]}"
 
             details = (
                 f"📄  [bold green]{name}[/bold green]\n"
