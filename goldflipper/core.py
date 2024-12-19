@@ -446,7 +446,7 @@ def evaluate_opening_strategy(symbol, market_data, play):
     trade_type = play.get("trade_type", "").upper()
 
     # Define a buffer of ±n cents
-    buffer = 0.20
+    buffer = 0.05   
     lower_bound = entry_point - buffer
     upper_bound = entry_point + buffer
 
@@ -1162,6 +1162,7 @@ def move_play_to_open(play_file):
             logging.info(f"Moved play to OPEN folder: {new_path}")
             display.info(f"Moved play to OPEN folder: {new_path}")
             
+        return new_path
     except Exception as e:
         logging.error(f"Error moving play to OPEN: {str(e)}")
         display.error(f"Error moving play to OPEN: {str(e)}")
@@ -1315,15 +1316,17 @@ def execute_trade(play_file, play_type):
         if play_type == "new":
             try:
                 if evaluate_opening_strategy(symbol, market_data, play):
-                    if open_position(play, play_file):
-                        # Handle conditional plays only after position is confirmed open
-                        if play.get('status', {}).get('position_exists') and play.get("play_class") == "PRIMARY":
-                            try:
-                                handle_conditional_plays(play, play_file)
-                            except Exception as e:
-                                logging.error(f"Error handling conditional plays: {str(e)}. Will retry next cycle.")
-                                display.error(f"Error handling conditional plays: {str(e)}. Will retry next cycle.")
-                        return True
+                    try:
+                        if open_position(play, play_file):
+                            # Handle conditional plays only after position is confirmed open
+                            handle_conditional_plays(play, play_file)
+                            logging.info(f"Conditional OCO / OTO plays handled for {play_file}")
+                            display.info(f"Conditional OCO / OTO plays handled for {play_file}")  
+                            return True
+                    except Exception as e:
+                        logging.error(f"Error handling conditional plays: {str(e)}. Will retry next cycle.")
+                        display.error(f"Error handling conditional plays: {str(e)}. Will retry next cycle.")
+                    return True
             except Exception as e:
                 logging.error(f"Error during opening strategy: {str(e)}. Continuing to next play.")
                 display.error(f"Error during opening strategy: {str(e)}. Continuing to next play.")
@@ -1770,53 +1773,99 @@ def capture_greeks(play, current_premium):
         display.error(f"Error capturing Greeks: {str(e)}")
         return None, None
 
+def get_trigger_data(play, trigger_type):
+    """Get trigger data from either root or conditional_plays structure"""
+    # Check direct attribute first
+    if trigger_type in play:
+        return play[trigger_type]
+    # Check in conditional_plays if exists
+    if 'conditional_plays' in play and trigger_type in play['conditional_plays']:
+        return play['conditional_plays'][trigger_type]
+    return None
 
+def verify_position_exists(play):
+    """Verify position exists with retries"""
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            client = get_alpaca_client()
+            position = client.get_open_position(play.get('option_contract_symbol'))
+            if position:
+                return True
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+        except Exception as e:
+            logging.error(f"Position verification attempt {attempt + 1} failed: {e}")
+            display.error(f"Position verification attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+    return False
 
 def handle_conditional_plays(play, play_file):
     """Handle OCO and OTO triggers after position is confirmed open."""
     if play.get('status', {}).get('conditionals_handled'):
         return
         
-    plays_base_dir = os.path.dirname(os.path.dirname(play_file))
-    
-    # Verify this is a PRIMARY play
-    if play.get('play_class') != 'PRIMARY':
-        logging.error("Attempting to handle conditionals for non-PRIMARY play")
-        display.error("Attempting to handle conditionals for non-PRIMARY play")
+    # Verify position exists
+    if not verify_position_exists(play):
+        logging.error("Position not verified. Delaying conditional handling.")
+        display.error("Position not verified. Delaying conditional handling.")
         return False
     
-    # Verify all conditional plays exist before processing any
-    all_conditionals_exist = True
-    if "OCO_trigger" in play:
-        oco_path = os.path.join(plays_base_dir, 'new', play["OCO_trigger"])
-        if not os.path.exists(oco_path):
-            logging.error(f"OCO trigger file not found: {oco_path}")
-            display.error(f"OCO trigger file not found: {oco_path}")
-            all_conditionals_exist = False
-            
-    if "OTO_trigger" in play:
-        oto_path = os.path.join(plays_base_dir, 'new', play["OTO_trigger"])
-        if not os.path.exists(oto_path):
-            logging.error(f"OTO trigger file not found: {oto_path}")
-            display.error(f"OTO trigger file not found: {oto_path}")
-            all_conditionals_exist = False
+    # Get trigger data
+    oco_trigger = get_trigger_data(play, 'OCO_trigger')
+    oto_trigger = get_trigger_data(play, 'OTO_trigger')
     
-    # Only proceed if all conditional plays exist
-    if not all_conditionals_exist:
-        logging.error("Not all conditional plays exist. Skipping conditional handling.")
-        display.error("Not all conditional plays exist. Skipping conditional handling.")
-        return False
+    # If no triggers exist, mark as handled and return
+    if not oco_trigger and not oto_trigger:
+        play['status']['conditionals_handled'] = True
+        save_play(play, play_file)
+        return True
+    
+    success = True
+    plays_base_dir = os.path.abspath(os.path.dirname(os.path.dirname(play_file)))
+    
+    # Handle OCO trigger (move to expired)
+    if oco_trigger:
+        oco_path = os.path.join(plays_base_dir, 'new', oco_trigger)
+        if os.path.exists(oco_path):
+            try:
+                if not move_play_to_expired(oco_path):
+                    success = False
+            except Exception as e:
+                logging.error(f"Failed to process OCO trigger: {e}")
+                display.error(f"Failed to process OCO trigger: {e}")
+                success = False
+    
+    # Handle OTO trigger (move from temp to new)
+    if oto_trigger:
+        temp_path = os.path.join(plays_base_dir, 'temp', oto_trigger)
+        new_path = os.path.join(plays_base_dir, 'new', oto_trigger)
         
-    # Process conditionals
-    if "OCO_trigger" in play:
-        move_play_to_expired(oco_path)
-    if "OTO_trigger" in play:
-        move_play_to_new(oto_path)
-            
-    # Mark conditionals as handled
-    play['status']['conditionals_handled'] = True
+        try:
+            if os.path.exists(temp_path):
+                # Move the file from temp to new
+                move_play_to_new(temp_path)
+                logging.info(f"Moved OTO trigger from temp to new: {new_path}")
+                display.info(f"Moved OTO trigger from temp to new: {new_path}")
+            else:
+                logging.error(f"OTO trigger file not found in temp folder: {temp_path}")
+                display.error(f"OTO trigger file not found in temp folder: {temp_path}")
+                success = False
+        except Exception as e:
+            logging.error(f"Failed to move OTO trigger: {e}")
+            display.error(f"Failed to move OTO trigger: {e}")
+            success = False
+    
+    play['status']['conditionals_handled'] = success
     save_play(play, play_file)
-    return True
+    
+    logging.info(f"Conditional OCO / OTO plays handled for {play_file}")
+    display.info(f"Conditional OCO / OTO plays handled for {play_file}")
+    
+    return success
 
 def validate_bid_price(bid_price, symbol, fallback_price):
     """
@@ -1962,11 +2011,16 @@ def manage_pending_plays(plays_dir, single_play=None):
                                 
                                 play['status']['position_exists'] = True
                                 save_play(play, play_file)
-                                move_play_to_open(play_file)
-                                logging.info(f"Order filled and position verified, moved to open: {play_file}")
-                                display.success(f"Order filled and position verified, moved to open: {play_file}")
-                                if single_play:
-                                    return True
+                                new_filepath = move_play_to_open(play_file)
+                                if new_filepath:
+                                    logging.info(f"Order filled and position verified, moved to open: {play_file}")
+                                    display.success(f"Order filled and position verified, moved to open: {play_file}")
+                                    
+                                    # Handle conditional plays after successful move to open
+                                    handle_conditional_plays(play, new_filepath)
+                                    
+                                    if single_play:
+                                        return True
                                 
                             except Exception as e:
                                 logging.error(f"Error verifying position: {str(e)}")
