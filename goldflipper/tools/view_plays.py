@@ -149,7 +149,7 @@ class PlayCard(Widget):
             sl_order = data.get('stop_loss', {}).get('order_type', 'N/A')
             sl_contingency_order = data.get('stop_loss', {}).get('order_type', 'N/A')
             if isinstance(sl_contingency_order, list) and len(sl_contingency_order) > 1:
-                sl_order = f"{sl_contingency_order[0]} [white]-> SL(C):[/white] {sl_contingency_order[1]}"
+                sl_order = f"{sl_contingency_order[0]} [white]• SL(C):[/white] {sl_contingency_order[1]}"
 
             # See Rich's 8-bit color palette for more colors
             details = (
@@ -161,8 +161,8 @@ class PlayCard(Widget):
                 f"[color(33)]Entry:[/color(33)] ${entry_price:.2f} [white]->[/white] "
                 f"[green]TP:[/green] {tp_value} | "
                 f"[red]SL:[/red] {sl_value}\n"
-                f"[white]Entry:[/white] {entry_order} [white]->[/white] "
-                f"[white]TP:[/white] {tp_order} [white]|[/white] "
+                f"[white]Entry:[/white] {entry_order} [white]•[/white] "
+                f"[white]TP:[/white] {tp_order} [white]•[/white] "
                 f"[white]SL:[/white] {sl_order}\n"
                 f"[white]Created:[/white] {creation_date} [white]->[/white] "
                 f"[white]Play Exp.:[/white] {play_expiration}\n"
