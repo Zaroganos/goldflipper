@@ -210,6 +210,29 @@ file_paths:
   expired_dir: "expired"                  # Expired plays
   temp_dir: "temp"                        # Temporary play storage
 
+
+####################################################################################################  
+# Play Viewer Settings
+####################################################################################################
+# Choose which folders to display in the play viewer, and in what order.
+viewer:
+  enabled_folders:                      # Folders to display in the play viewer
+    - new
+    - pending-opening
+    - open
+    - pending-closing
+    - closed
+    - temp
+    - expired
+  folder_order:                         # Order to display the folders (top to bottom)
+    - new
+    - pending-opening
+    - open
+    - pending-closing
+    - closed
+    - temp
+    - expired
+
 ####################################################################################################
 # Logging Configuration
 ####################################################################################################

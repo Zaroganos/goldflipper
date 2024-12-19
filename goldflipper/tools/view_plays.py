@@ -2,6 +2,7 @@ import os
 import json
 import subprocess
 import platform
+import yaml
 from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Static, Button
@@ -193,7 +194,18 @@ class ViewPlaysApp(App):
         await self.load_plays()
 
     async def load_plays(self):
-        folders = ['New', 'Open', 'Closed', 'Temp', 'Expired']
+        # Load settings
+        config_path = os.path.join(os.path.dirname(__file__), "../config/settings.yaml")
+        with open(config_path, 'r') as f:
+            settings = yaml.safe_load(f)
+        
+        # Get enabled folders from config
+        enabled_folders = settings['viewer']['enabled_folders']
+        folder_order = settings['viewer']['folder_order']
+        
+        # Use folder_order for display, but only show enabled folders
+        folders = [folder for folder in folder_order if folder in enabled_folders]
+        
         plays_container = self.query_one("#plays_container")
 
         while plays_container.children:
@@ -204,7 +216,7 @@ class ViewPlaysApp(App):
             folder_path = os.path.join(os.path.dirname(__file__), "../plays", folder.lower())
             plays = format_play_files(folder_path)
 
-            title_text = f"{folder} Plays"
+            title_text = f"{folder.title()} Plays"  # Capitalize folder name
             plays_container.mount(Static(f"\n{title_text}\n", classes="folder-title"))
 
             if not plays:
