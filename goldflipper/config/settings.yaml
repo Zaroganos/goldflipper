@@ -77,6 +77,9 @@ options_swings:
     - LIMIT
     - CONTINGENCY
 
+  conditional_plays:
+    enabled: true
+
   play_types:                       # Types of plays to create
     - SIMPLE
 #    - PRIMARY
@@ -260,7 +263,7 @@ market_hours:
 auto_play_creator:
   enabled: true                     # Enable/disable auto play creation
   order_types:                      # Types of orders to use
-    - market
+#    - market
     - limit
   TP-SL_types:                # Types of take profit and stop loss to use
     - STOCK_PRICE
@@ -283,18 +286,20 @@ auto_play_creator:
     - PUT
     - MIX
   expiration_days: 7                # Default expiration in days for test plays
-  entry_buffer: 0.05                # Entry price buffer for test plays (e.g., ±$0.01)
+  entry_buffer: 0.20                # Entry price buffer for test plays (e.g., ±$0.01)
   take_profit_pct: 2.0              # Default take profit percentage
   stop_loss_pct: 1.0                # Default stop loss percentage
   test_symbols:                     # Symbols to use for test plays
 #    - SPY
 #    - QQQ
     - AAPL
-    - TSLA
-    - NVDA
-    - MSFT
-    - GOOGL
-    - AMZN
+#    - TSLA
+#    - NVDA
+#    - MSFT
+#    - GOOGL
+#    - AMZN
+#    - BABA
+#    - GME
 
 ####################################################################################################
 # Chart Viewer Settings

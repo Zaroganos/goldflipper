@@ -581,29 +581,28 @@ class PlayBuilder:
         return self.play
     
     def _add_play_class(self):
-        """Add play class and handle conditional plays."""
-        self.play['play_class'] = (get_input(
-            "Enter the conditional play class (PRIMARY, or --> OCO or OTO), or press Enter for Simple: ",
+        """Add play class by determining if it should go to NEW or TEMP folder."""
+        TerminalDisplay.info("\nPlay Storage Options:", show_timestamp=False)
+        TerminalDisplay.info("- NEW: For standalone plays or plays that will be primary plays (default)", show_timestamp=False)
+        TerminalDisplay.info("- TEMP: For plays that will be triggered by other plays (OTO plays)", show_timestamp=False)
+        TerminalDisplay.info("\nNote: To set up OCO/OTO relationships between plays, use the play edit tool after creation.", show_timestamp=False)
+
+        storage_choice = get_input(
+            "\nWhere should this play be stored? (NEW/TEMP) or press Enter for NEW: ",
             str,
-            validation=lambda x: validate_choice(x, [True, "PRIMARY", "OCO", "OTO"]),
-            error_message="Invalid play class. Please press Enter or enter 'PRIMARY', 'OCO', or 'OTO'.",
+            validation=lambda x: x.upper() in ["NEW", "TEMP", ""],
+            error_message="Please enter either 'NEW', 'TEMP', or press Enter.",
             optional=True
-        ) or "Simple").upper()
+        ).upper()
 
-        if self.play['play_class'] == 'PRIMARY':
-            existing_play = get_input(
-                "Link a conditional play to this primary play. Choose an existing play from ['new' if OCO], or ['temp' if OTO], folders (provide the full play name, including the .json extension. Hint: view current plays): ",
-                str,
-                validation=lambda x: os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'new', x)) or 
-                                   os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp', x)),
-                error_message="Play not found in 'new' or 'OTO' folders."
-            )
+        # If no input (Enter pressed) or explicitly "NEW", set to NEW
+        if not storage_choice or storage_choice == "NEW":
+            self.play['play_class'] = "SIMPLE"  # Can be changed to PRIMARY later in edit tool
+        else:  # TEMP
+            self.play['play_class'] = "OTO"     # Will be linked to a primary play later
 
-            # Check which folder the play is in and set the appropriate field
-            if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'new', existing_play)):
-                self.play['conditional_plays'] = {'OCO_trigger': existing_play}
-            elif os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp', existing_play)):
-                self.play['conditional_plays'] = {'OTO_trigger': existing_play}
+        # Initialize empty conditional_plays dict (relationships will be set in edit tool)
+        self.play['conditional_plays'] = {}
 
     def _add_play_metadata(self):
         """Add strategy, creation date, and status information."""

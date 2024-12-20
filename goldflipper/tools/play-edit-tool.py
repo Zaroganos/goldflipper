@@ -408,14 +408,6 @@ def edit_play_field(play_data, field, filepath):
         if new_value is not None:
             play_data['contracts'] = new_value
 
-    elif field == 'play_class':
-        # Only allow editing for plays in 'new' folder
-        if '/new/' not in filepath:
-            print("\nERROR: Play class can only be modified for plays in the 'new' folder")
-            return
-            
-        edit_play_class(play_data)
-        return
     elif field == 'conditional_plays':
         edit_conditional_plays(play_data, filepath)
         return
@@ -578,36 +570,6 @@ def select_plays_from_list(plays):
     
     return selected
 
-def edit_play_class(play_data):
-    """Edit play class type (SIMPLE/PRIMARY/OTO)"""
-    print("\n=== Play Class Editor ===")
-    print("\nValid play classes:")
-    print("1. SIMPLE  - Standard play")
-    print("2. PRIMARY - Primary play in OCO relationship")
-    print("3. OTO     - One-Triggers-Other play")
-    
-    current = play_data.get('play_class', 'SIMPLE')
-    print(f"\nCurrent play class: {current}")
-    
-    choice = get_input(
-        "\nSelect play class (1-3 or Enter to keep current): ",
-        type_cast=str,
-        optional=True
-    )
-    
-    if choice:
-        try:
-            choice = int(choice)
-            if choice == 1:
-                play_data['play_class'] = 'SIMPLE'
-            elif choice == 2:
-                play_data['play_class'] = 'PRIMARY'
-            elif choice == 3:
-                play_data['play_class'] = 'OTO'
-            else:
-                print("Invalid choice")
-        except ValueError:
-            print("Please enter a valid number")
 
 def edit_conditional_plays(play_data, filepath):
     """Edit OCO/OTO triggers in conditional_plays field"""
