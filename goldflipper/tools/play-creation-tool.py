@@ -590,13 +590,13 @@ class PlayBuilder:
         storage_choice = get_input(
             "\nWhere should this play be stored? (NEW/TEMP) or press Enter for NEW: ",
             str,
-            validation=lambda x: x.upper() in ["NEW", "TEMP", ""],
+            validation=lambda x: x.upper() in ["NEW", "TEMP", ""] if x else True,  # Allow empty string
             error_message="Please enter either 'NEW', 'TEMP', or press Enter.",
             optional=True
-        ).upper()
+        )
 
         # If no input (Enter pressed) or explicitly "NEW", set to NEW
-        if not storage_choice or storage_choice == "NEW":
+        if not storage_choice or storage_choice.upper() == "NEW":  # Handle None case
             self.play['play_class'] = "SIMPLE"  # Can be changed to PRIMARY later in edit tool
         else:  # TEMP
             self.play['play_class'] = "OTO"     # Will be linked to a primary play later
