@@ -40,7 +40,8 @@
 alpaca:
   api_key: 'PKXATZMQYM3AIMOS9JAE'     # Your Alpaca API key
   secret_key: 'lfujbWBWJQNMoHzioZNEyD0jRXKIXUoxqGQjXxmR'  # Your Alpaca secret key
-  base_url: 'https://paper-api.alpaca.markets/v2'  # Alpaca API endpoint (paper/live)
+  base_url: 'https://paper-api.alpaca.markets/v2'  # Alpaca API endpoint (paper/live trading)
+  
 
 # Data Paths
 # --------------------------------------------------
@@ -338,3 +339,59 @@ chart_viewer:
     grid: true
     grid_alpha: 0.2
     figure_size: [12, 8]  # [width, height] in inches
+
+####################################################################################################
+# Market Data Provider Settings (NOT CURRENTLY IN USE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!)
+####################################################################################################
+market_data_providers:
+  # Primary provider will be used as the main source for data
+  primary_provider: "alpaca"  # Options: "alpaca", "yfinance"
+  
+  # Enable/disable specific providers
+  providers:
+    alpaca:
+      enabled: true
+      use_websocket: true  # Enable real-time data streaming
+      websocket_symbols:  # Symbols to stream real-time data for
+        - "SPY"
+        - "QQQ"
+        - "AAPL"
+      rate_limiting:
+        enabled: true
+        quotes_per_minute: 200  # Free tier limit
+        buffer_percent: 10      # Stay 10% under limit to be safe
+        retry_after: 5         # Seconds to wait when limit hit
+      cache:
+        enabled: true
+        strategy: "lru"        # Options: lru, fifo, none
+        max_size: 1000        # Maximum items in cache
+        ttl:                  # Time-to-live in seconds
+          quotes: 2           # Quote data expires quickly
+          bars: 60           # Bar data can live longer
+          trades: 5          # Trade data medium expiry
+    
+    yfinance:
+      enabled: true
+      cache:
+        enabled: true
+        max_age: 300
+  
+  # Data comparison settings
+  comparison:
+    enabled: true
+    log_differences: true  # Log when providers give different values
+    difference_threshold: 0.001  # Log if difference is greater than 0.1%
+    metrics_to_compare:  # Which data points to compare between providers
+      - "stock_price"
+      - "option_chain"
+      - "historical_data"
+    
+  # Historical data settings
+  historical:
+    default_interval: "1m"
+    max_lookback_days: 7  # Maximum days of historical data to fetch
+    
+  # Real-time data settings
+  realtime:
+    update_interval: 1.0  # Seconds between real-time data updates
+    max_symbols: 100  # Maximum number of symbols to track simultaneously

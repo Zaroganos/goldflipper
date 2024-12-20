@@ -21,6 +21,7 @@ class WelcomeScreen(Screen):
                     Button("Launch Trading System", variant="success", id="start_monitor"),
                     Button("Auto Play Creator", variant="primary", id="auto_play_creator"),
                     Button("Get Alpaca Info", variant="primary", id="get_alpaca_info"),
+                    Button("Market Data Compare", variant="primary", id="market_data_compare"),
                     classes="button-column",
                 ),
                 Container(
@@ -60,6 +61,8 @@ class WelcomeScreen(Screen):
             self.run_trade_logger()
         elif event.button.id == "exit":
             self.app.exit()
+        elif event.button.id == "market_data_compare":
+            self.run_market_data_compare()
 
     def run_option_data_fetcher(self):
         tools_dir = os.path.join(os.path.dirname(__file__), "tools")
@@ -191,6 +194,20 @@ class WelcomeScreen(Screen):
             else:  # Unix-like systems
                 subprocess.Popen(['gnome-terminal', '--', 'python', 'trade_logger_ui.py'], 
                                cwd=logging_dir)
+        except Exception as e:
+            self.notify(f"Error: {str(e)}", severity="error")
+
+    def run_market_data_compare(self):
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            tools_dir = os.path.join(current_dir, "tools")
+            
+            if os.name == 'nt':  # Windows
+                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'multi_market_data.py']
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:  # Unix-like systems
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'multi_market_data.py'], 
+                               cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 

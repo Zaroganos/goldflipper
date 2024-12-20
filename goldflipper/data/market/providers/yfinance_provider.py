@@ -3,6 +3,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 import pandas as pd
 from .base import MarketDataProvider
+import asyncio
+import logging
 
 class YFinanceProvider(MarketDataProvider):
     """YFinance implementation of market data provider"""
@@ -10,9 +12,50 @@ class YFinanceProvider(MarketDataProvider):
     def __init__(self):
         self._cache = {}  # Simple memory cache
         
-    def get_stock_price(self, symbol: str) -> float:
-        ticker = yf.Ticker(symbol)
-        return ticker.info.get('regularMarketPrice', 0.0)
+    async def get_stock_price(self, symbol: str) -> float:
+        """Get current stock price"""
+        try:
+            ticker = yf.Ticker(symbol)
+            
+            # Run the potentially blocking operations in a thread pool
+            loop = asyncio.get_event_loop()
+            
+            # Try multiple methods in order of reliability
+            try:
+                # Method 1: Fast info (most current)
+                price = await loop.run_in_executor(
+                    None,
+                    lambda: ticker.fast_info['lastPrice']
+                )
+                logging.info(f"YFinance: Using real-time price from fast_info for {symbol}")
+                return price
+                
+            except (KeyError, AttributeError):
+                try:
+                    # Method 2: Regular info
+                    price = await loop.run_in_executor(
+                        None,
+                        lambda: ticker.info['currentPrice']
+                    )
+                    logging.info(f"YFinance: Using currentPrice from stock.info for {symbol}")
+                    return price
+                    
+                except (KeyError, AttributeError):
+                    # Method 3: Latest minute data
+                    history = await loop.run_in_executor(
+                        None,
+                        lambda: ticker.history(period='1d', interval='1m')
+                    )
+                    if not history.empty:
+                        price = history['Close'].iloc[-1]
+                        logging.info(f"YFinance: Using most recent minute data for {symbol}")
+                        return price
+                    else:
+                        raise ValueError(f"No price data available for {symbol}")
+                        
+        except Exception as e:
+            logging.error(f"YFinance error getting price for {symbol}: {str(e)}")
+            raise
         
     def get_historical_data(
         self,
@@ -59,6 +102,12 @@ class YFinanceProvider(MarketDataProvider):
         }
         
     def get_option_greeks(self, option_symbol: str) -> Dict[str, float]:
-        # Implementation will depend on how we want to calculate Greeks
-        # Could use existing Greek calculators from goldflipper/data/greeks/
-        pass 
+        """Get option Greeks from yfinance"""
+        # YFinance doesn't provide Greeks directly
+        return {
+            'delta': 0.0,
+            'gamma': 0.0,
+            'theta': 0.0,
+            'vega': 0.0,
+            'rho': 0.0
+        }
