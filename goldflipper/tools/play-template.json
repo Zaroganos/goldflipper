@@ -57,9 +57,14 @@
     "conditionals_handled": false
   },
   "logging": {
-    "delta_atOpen": null,
-    "theta_atOpen": null,
-    "time_atOpen": null,
-    "time_atClose": null
+    "delta_atOpen": 0.0,
+    "theta_atOpen": 0.0,
+    "datetime_atOpen": "YYYY-MM-DDTHH:MM:SS",
+    "price_atOpen": 0.0,
+    "datetime_atClose": "YYYY-MM-DDTHH:MM:SS",
+    "price_atClose": 0.0,
+    "premium_atClose": 0.0,
+    "close_type": "TP / SL / SL(C)",
+    "close_condition": "stock / premium_pct / stock_pct"
   }
 }

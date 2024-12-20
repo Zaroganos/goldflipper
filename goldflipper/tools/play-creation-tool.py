@@ -582,10 +582,10 @@ class PlayBuilder:
     
     def _add_play_class(self):
         """Add play class by determining if it should go to NEW or TEMP folder."""
-        TerminalDisplay.info("\nPlay Storage Options:", show_timestamp=False)
-        TerminalDisplay.info("- NEW: For standalone plays or plays that will be primary plays (default)", show_timestamp=False)
-        TerminalDisplay.info("- TEMP: For plays that will be triggered by other plays (OTO plays)", show_timestamp=False)
-        TerminalDisplay.info("\nNote: To set up OCO/OTO relationships between plays, use the play edit tool after creation.", show_timestamp=False)
+        TerminalDisplay.info("\nConditional Plays:", show_timestamp=False)
+        TerminalDisplay.info("- NEW: For standalone play, or play that will become primary class (default)", show_timestamp=False)
+        TerminalDisplay.info("- TEMP: For play activated by position opening trigger of other play(s) (OTO plays)", show_timestamp=False)
+        TerminalDisplay.info("\nNote: To set up OCO/OTO relationships between plays, use the Play Edit Tool after creation.", show_timestamp=False)
 
         storage_choice = get_input(
             "\nWhere should this play be stored? (NEW/TEMP) or press Enter for NEW: ",

@@ -28,7 +28,7 @@ class WelcomeScreen(Screen):
                     Button("Upkeep and Status", variant="primary", id="system_status"),
                     Button("Configuration", variant="primary", id="configuration"),
                     Button("Open Chart", variant="primary", id="open_chart"),
-                    Button("Reserved", variant="primary", id="reserved"),
+                    Button("Trade Logger", variant="primary", id="trade_logger"),
                     classes="button-column",
                 ),
                 id="button_container"
@@ -56,6 +56,8 @@ class WelcomeScreen(Screen):
             self.run_chart_viewer()
         elif event.button.id == "get_alpaca_info":
             self.run_get_alpaca_info()
+        elif event.button.id == "trade_logger":
+            self.run_trade_logger()
         elif event.button.id == "exit":
             self.app.exit()
 
@@ -175,6 +177,20 @@ class WelcomeScreen(Screen):
             else:  # Unix-like systems
                 subprocess.Popen(['gnome-terminal', '--', 'python', 'get_alpaca_info.py'], 
                                cwd=tools_dir)
+        except Exception as e:
+            self.notify(f"Error: {str(e)}", severity="error")
+
+    def run_trade_logger(self):
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            logging_dir = os.path.join(current_dir, "logging")
+            
+            if os.name == 'nt':  # Windows
+                cmd = ['cmd', '/k', 'cd', '/d', logging_dir, '&', 'python', 'trade_logger_ui.py']
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:  # Unix-like systems
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'trade_logger_ui.py'], 
+                               cwd=logging_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 

@@ -4,6 +4,9 @@ venv/
 env/
 .env/
 
+# Trade Logging System
+goldflipper/logging/logs/*
+
 # Plays folder (change if need to keep some set of plays shared)
 goldflipper/plays/new/*
 goldflipper/plays/pending-opening/*
