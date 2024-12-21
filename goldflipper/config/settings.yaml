@@ -294,13 +294,13 @@ auto_play_creator:
 #    - SPY
 #    - QQQ
     - AAPL
-#    - TSLA
-#    - NVDA
-#    - MSFT
-#    - GOOGL
-#    - AMZN
-#    - BABA
-#    - GME
+    - TSLA
+    - NVDA
+    - MSFT
+    - GOOGL
+    - AMZN
+    - BABA
+    - GME
 
 ####################################################################################################
 # Chart Viewer Settings

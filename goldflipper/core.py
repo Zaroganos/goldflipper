@@ -664,7 +664,8 @@ def open_position(play, play_file):
             'delta_atOpen': delta if delta is not None else 0.0,
             'theta_atOpen': theta if theta is not None else 0.0,
             'datetime_atOpen': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
-            'price_atOpen': entry_stock_price
+            'price_atOpen': entry_stock_price,
+            'premium_atOpen': current_premium
         })
         
         if delta is not None and theta is not None:

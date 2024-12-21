@@ -61,6 +61,7 @@
     "theta_atOpen": 0.0,
     "datetime_atOpen": "YYYY-MM-DDTHH:MM:SS",
     "price_atOpen": 0.0,
+    "premium_atOpen": 0.0,
     "datetime_atClose": "YYYY-MM-DDTHH:MM:SS",
     "price_atClose": 0.0,
     "premium_atClose": 0.0,

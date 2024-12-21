@@ -31,7 +31,7 @@ class PlayLogger:
             'play_name', 'symbol', 'trade_type', 'strike_price',
             'expiration_date', 'contracts', 'entry_stock_price',
             'datetime_atOpen', 'datetime_atClose', 'price_atOpen', 'price_atClose',
-            'premium_atClose', 'delta_atOpen', 'theta_atOpen',
+            'premium_atOpen', 'premium_atClose', 'delta_atOpen', 'theta_atOpen',
             'close_type', 'close_condition', 'profit_loss', 'status'
         ]
         df = pd.DataFrame(columns=columns)
@@ -90,6 +90,7 @@ class PlayLogger:
             'datetime_atClose': logging_data.get('datetime_atClose'),
             'price_atOpen': logging_data.get('price_atOpen'),
             'price_atClose': logging_data.get('price_atClose'),
+            'premium_atOpen': logging_data.get('premium_atOpen'),
             'premium_atClose': logging_data.get('premium_atClose'),
             'delta_atOpen': logging_data.get('delta_atOpen'),
             'theta_atOpen': logging_data.get('theta_atOpen'),
@@ -107,8 +108,8 @@ class PlayLogger:
     def _calculate_pl(self, play_data: Dict[str, Any]) -> float:
         """Calculate profit/loss for the play"""
         logging_data = play_data.get('logging', {})
-        if logging_data.get('premium_atClose') and logging_data.get('price_atOpen'):
-            return (logging_data['premium_atClose'] - logging_data['price_atOpen']) * play_data['contracts'] * 100
+        if logging_data.get('premium_atClose') and logging_data.get('premium_atOpen'):
+            return (logging_data['premium_atClose'] - logging_data['premium_atOpen']) * play_data['contracts'] * 100
         return 0.0
 
     def export_to_spreadsheet(self, format='csv'):
