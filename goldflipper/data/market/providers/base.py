@@ -20,7 +20,6 @@ class MarketDataProvider(ABC):
         'volume': 'volume',
         'open_interest': 'open_interest',
         'implied_volatility': 'implied_volatility',
-        # Add missing columns for Greeks
         'delta': 'delta',
         'gamma': 'gamma',
         'theta': 'theta',
