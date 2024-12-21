@@ -10,6 +10,7 @@ from rich import print as rprint
 import time
 import asyncio
 import logging
+import re
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -80,7 +81,7 @@ class MarketDataComparator:
         
         return pd.DataFrame(data)
     
-    def compare_option_chain(self, symbol: str, expiration_date: Optional[str] = None) -> Dict[str, pd.DataFrame]:
+    def compare_option_chain(self, symbol: str, expiration_date: str) -> Dict[str, pd.DataFrame]:
         """Compare option chains across providers"""
         calls_data = []
         puts_data = []
@@ -89,9 +90,11 @@ class MarketDataComparator:
             try:
                 chains = provider.get_option_chain(symbol, expiration_date)
                 
-                # Add provider column to each DataFrame
                 for type_name, chain in chains.items():
+                    # Add provider and our known expiration date
                     chain['Provider'] = name
+                    chain['expiration'] = expiration_date  # Add the correct expiration we know
+                    
                     if type_name == 'calls':
                         calls_data.append(chain)
                     else:
@@ -100,16 +103,9 @@ class MarketDataComparator:
             except Exception as e:
                 logging.error(f"Error getting option chain from {name}: {str(e)}")
         
-        # Combine all providers' data
-        calls = pd.concat(calls_data, axis=0) if calls_data else pd.DataFrame()
-        puts = pd.concat(puts_data, axis=0) if puts_data else pd.DataFrame()
-        
-        if self.settings['comparison']['log_differences']:
-            self._log_option_differences(calls, puts, symbol)
-        
         return {
-            'calls': calls,
-            'puts': puts
+            'calls': pd.concat(calls_data, axis=0) if calls_data else pd.DataFrame(),
+            'puts': pd.concat(puts_data, axis=0) if puts_data else pd.DataFrame()
         }
     
     def compare_historical_data(
@@ -209,6 +205,50 @@ def display_menu():
 def get_symbol():
     return Console().input("\nEnter symbol (e.g., AAPL): ").upper()
 
+def get_option_input() -> tuple:
+    """Get option input either by contract symbol or individual components"""
+    console = Console()
+    contract = None  # Initialize contract variable
+    
+    # Ask user for input method
+    choice = console.input("\nEnter option data by:\n1. Contract Symbol (e.g., AAPL240119C00180000)\n2. Symbol and Expiration\nChoice (1/2): ")
+    
+    if choice == "1":
+        while True:
+            contract = console.input("\nEnter option contract symbol: ").upper()
+            # Validate contract symbol format
+            if len(contract) >= 15:  # Basic length check
+                try:
+                    # Parse contract symbol using regex for more reliable parsing
+                    pattern = r'^([A-Z]+)(\d{2})(\d{2})(\d{2})([CP])(\d+)$'
+                    match = re.match(pattern, contract)
+                    
+                    if match:
+                        symbol, year, month, day, option_type, strike_str = match.groups()
+                        strike = float(strike_str) / 1000  # Convert strike to decimal
+                        
+                        # Convert date components to full date
+                        expiry = datetime.strptime(f"20{year}{month}{day}", '%Y%m%d').strftime('%Y-%m-%d')
+                        
+                        logging.info(f"Parsed contract: Symbol={symbol}, Expiry={expiry}, Type={'call' if option_type == 'C' else 'put'}, Strike={strike}")
+                        return symbol, expiry, 'call' if option_type == 'C' else 'put', strike, contract
+                    else:
+                        console.print("[red]Invalid contract symbol format. Expected format: SYMBOL[YY][MM][DD][C/P][STRIKE][000][/red]")
+                except Exception as e:
+                    console.print(f"[red]Error parsing contract symbol: {str(e)}[/red]")
+            else:
+                console.print("[red]Contract symbol too short. Expected format: SYMBOL[YY][MM][DD][C/P][STRIKE][000][/red]")
+    
+    elif choice == "2":
+        # Original method
+        symbol = console.input("\nEnter symbol (e.g., AAPL): ").upper()
+        expiry = console.input("Enter expiration date (YYYY-MM-DD) or press Enter for nearest: ")
+        return symbol, expiry, None, None, None
+    
+    else:
+        console.print("[red]Invalid choice. Defaulting to symbol and expiration method.[/red]")
+        return get_option_input()
+
 def display_stock_comparison(df: pd.DataFrame):
     console = Console()
     if df.empty:
@@ -247,21 +287,66 @@ def display_stock_comparison(df: pd.DataFrame):
     
     console.print(table)
 
-def display_option_comparison(chains: Dict[str, pd.DataFrame], symbol: str):
-    console = Console()
+def display_option_comparison(chains: Dict[str, pd.DataFrame], symbol: str, specific_strike: float = None):
+    """Display option chain comparison with auto-sized columns"""
+    console = Console(force_terminal=True, width=2000)
+    
+    # Load display settings
+    config_path = os.path.join(project_root, 'goldflipper', 'config', 'settings.yaml')
+    with open(config_path, 'r') as f:
+        settings = yaml.safe_load(f)
+    display_settings = settings['market_data_display']['option_chain']
+    
+    # Get enabled columns from settings
+    enabled_columns = (
+        display_settings.get('enabled_columns', {}).get('basic', []) +
+        display_settings.get('enabled_columns', {}).get('greeks', [])
+    )
     
     for chain_type, df in chains.items():
-        if not df.empty:
-            table = Table(title=f"{chain_type.upper()} Options for {symbol}")
+        if df.empty:
+            console.print(f"\n[yellow]No {chain_type} data available[/yellow]")
+            continue
             
-            for col in df.columns:
-                table.add_column(col)
-            
-            for _, row in df.iterrows():
-                table.add_row(*[str(val) for val in row])
-            
-            console.print(table)
-            console.print("\n")
+        # Filter for specific strike if provided
+        if specific_strike is not None:
+            df = df[df['strike'] == specific_strike]
+            if df.empty:
+                console.print(f"\n[yellow]No data found for strike price {specific_strike} in {chain_type}[/yellow]")
+                continue
+        
+        table = Table(
+            title=f"{chain_type.upper()} Options for {symbol}",
+            show_header=True,
+            header_style="bold cyan",
+            show_lines=True,
+            padding=(0, 2)
+        )
+        
+        # Only add columns that are both enabled in settings and present in the DataFrame
+        columns_to_display = [col for col in enabled_columns if col in df.columns]
+        
+        # Add columns with proper formatting
+        for col in columns_to_display:
+            justify = 'right' if col in display_settings['formatting']['right_aligned'] else 'left'
+            table.add_column(col, justify=justify)
+        
+        # Add rows with proper formatting
+        for _, row in df.iterrows():
+            row_data = []
+            for col in columns_to_display:
+                value = row[col]
+                # Apply formatting based on settings
+                if isinstance(value, (int, float)):
+                    if col in display_settings['formatting']['price_format']:
+                        value = f"${value:,.{display_settings['formatting']['decimal_places']['price']}f}"
+                    elif col in display_settings['formatting']['percentage_format']:
+                        value = f"{value:.{display_settings['formatting']['decimal_places']['percentage']}%}"
+                row_data.append(str(value))
+            table.add_row(*row_data)
+        
+        console.print(table)
+        console.print("\n")
 
 def main():
     # Set up logging
@@ -281,13 +366,18 @@ def main():
                 display_stock_comparison(df)
                 
             elif choice == "2":
-                symbol = get_symbol()
-                expiry = console.input("Enter expiration date (YYYY-MM-DD) or press Enter for nearest: ")
-                expiry = expiry if expiry else None
-                
+                symbol, expiry, option_type, strike, contract = get_option_input()
                 with console.status(f"Fetching option chains for {symbol}..."):
                     chains = comparator.compare_option_chain(symbol, expiry)
-                display_option_comparison(chains, symbol)
+                    
+                    # If option_type is specified (from contract symbol), filter the chains
+                    if option_type:
+                        if option_type == 'call':
+                            chains = {'calls': chains['calls']}
+                        else:
+                            chains = {'puts': chains['puts']}
+                            
+                display_option_comparison(chains, symbol, strike)
                 
             elif choice == "3":
                 symbol = get_symbol()

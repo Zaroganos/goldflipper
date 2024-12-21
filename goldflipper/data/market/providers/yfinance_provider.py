@@ -9,6 +9,19 @@ import logging
 class YFinanceProvider(MarketDataProvider):
     """YFinance implementation of market data provider"""
     
+    COLUMN_MAPPING = {
+        'contractSymbol': 'symbol',
+        'strike': 'strike',
+        'lastTradeDate': 'expiration',
+        'lastPrice': 'last',
+        'bid': 'bid',
+        'ask': 'ask',
+        'volume': 'volume',
+        'openInterest': 'open_interest',
+        'impliedVolatility': 'implied_volatility',
+        'inTheMoney': 'in_the_money'
+    }
+    
     def __init__(self):
         self._cache = {}  # Simple memory cache
         
@@ -95,10 +108,20 @@ class YFinanceProvider(MarketDataProvider):
             if not dates:
                 return {'calls': pd.DataFrame(), 'puts': pd.DataFrame()}
             chain = ticker.option_chain(dates[0])
-            
+        
+        # Log the raw columns we get from YFinance
+        logging.info(f"Raw columns from YFinance: {chain.calls.columns.tolist()}")
+        
+        # Standardize columns before returning
+        calls = self.standardize_columns(chain.calls)
+        puts = self.standardize_columns(chain.puts)
+        
+        # Log the standardized columns
+        logging.info(f"Standardized columns: {calls.columns.tolist()}")
+        
         return {
-            'calls': chain.calls,
-            'puts': chain.puts
+            'calls': calls,
+            'puts': puts
         }
         
     def get_option_greeks(self, option_symbol: str) -> Dict[str, float]:

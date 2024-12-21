@@ -395,3 +395,81 @@ market_data_providers:
   realtime:
     update_interval: 1.0  # Seconds between real-time data updates
     max_symbols: 100  # Maximum number of symbols to track simultaneously
+
+####################################################################################################
+# MULTI-MARKET DATA DISPLAY SETTINGS
+####################################################################################################
+market_data_display:
+  option_chain:
+    available_columns:      # All possible columns
+      basic:
+        - Provider
+        - symbol
+        - strike
+        - expiration
+        - type
+        - bid
+        - ask
+        - last
+        - volume
+        - open_interest
+        - implied_volatility
+      greeks:
+        - delta
+        - gamma
+        - theta
+        - vega
+        - rho
+        - elasticity
+        - epsilon
+        - vanna
+        - charm
+        - vomma
+        - veta
+        - vera
+        - speed
+        - zomma
+        - color
+        - ultima
+      
+    enabled_columns:      # Currently displayed columns
+      basic:             # Must match available_columns structure
+        - Provider
+        - symbol
+#        - strike
+#        - expiration
+#        - type
+        - bid
+        - ask
+        - last
+        - volume
+        - open_interest
+        - implied_volatility
+      greeks: []         # Empty list means no greek columns shown
+
+    # Column formatting
+    formatting:
+      right_aligned:
+        - strike
+        - bid
+        - ask
+        - last
+        - volume
+        - open_interest
+        - implied_volatility
+        - delta
+        - gamma
+        - theta
+        - vega
+        - rho
+      percentage_format:
+        - implied_volatility
+      price_format:
+        - strike
+        - bid
+        - ask
+        - last
+      decimal_places:
+        price: 2
+        greeks: 4
+        percentage: 2
