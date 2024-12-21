@@ -650,7 +650,7 @@ def open_position(play, play_file):
     # Calculate and store TP/SL levels if using premium percentages
     calculate_and_store_premium_levels(play, current_premium)
     
-    # Capture Greeks
+    # Capture Greeks and update logging
     try:
         logging.debug("Attempting to capture Greeks...")
         delta, theta = capture_greeks(play, current_premium)
@@ -659,10 +659,15 @@ def open_position(play, play_file):
         if 'logging' not in play:
             play['logging'] = {}
         
-        # Store Greeks
+        # Update all logging fields at once
+        play['logging'].update({
+            'delta_atOpen': delta if delta is not None else 0.0,
+            'theta_atOpen': theta if theta is not None else 0.0,
+            'datetime_atOpen': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+            'price_atOpen': entry_stock_price
+        })
+        
         if delta is not None and theta is not None:
-            play['logging']['delta_atOpen'] = delta
-            play['logging']['theta_atOpen'] = theta
             logging.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
             display.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
         else:
@@ -768,6 +773,43 @@ def close_position(play, close_conditions, play_file):
         play['status']['closing_order_status'] = None
         play['status']['contingency_order_id'] = None
         play['status']['contingency_order_status'] = None
+        
+        # Get current market data for logging
+        current_stock_price = get_current_stock_price(play['symbol'])
+        current_premium = get_current_option_premium(play)
+        
+        # Determine close type and condition
+        close_type = (
+            'TP' if close_conditions['is_profit'] 
+            else 'SL(C)' if close_conditions['is_contingency_loss']
+            else 'SL'
+        )
+        
+        # Determine close condition based on what triggered the close
+        close_condition = None
+        if close_conditions['is_profit']:
+            if play['take_profit'].get('stock_price') or play['take_profit'].get('stock_price_pct'):
+                close_condition = 'stock_pct' if play['take_profit'].get('stock_price_pct') else 'stock'
+            else:
+                close_condition = 'premium_pct'
+        else:
+            if play['stop_loss'].get('stock_price') or play['stop_loss'].get('stock_price_pct'):
+                close_condition = 'stock_pct' if play['stop_loss'].get('stock_price_pct') else 'stock'
+            else:
+                close_condition = 'premium_pct'
+        
+        # Initialize logging section if it doesn't exist
+        if 'logging' not in play:
+            play['logging'] = {}
+            
+        # Update logging data
+        play['logging'].update({
+            'datetime_atClose': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+            'price_atClose': current_stock_price if current_stock_price is not None else 0.0,
+            'premium_atClose': current_premium if current_premium is not None else 0.0,
+            'close_type': close_type,
+            'close_condition': close_condition
+        })
         
         # Save initial closing status
         save_play(play, play_file)
