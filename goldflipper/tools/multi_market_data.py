@@ -291,6 +291,18 @@ def display_option_comparison(chains: Dict[str, pd.DataFrame], symbol: str, spec
     """Display option chain comparison with auto-sized columns"""
     console = Console(force_terminal=True, width=2000)
     
+    # Load display settings
+    config_path = os.path.join(project_root, 'goldflipper', 'config', 'settings.yaml')
+    with open(config_path, 'r') as f:
+        settings = yaml.safe_load(f)
+    display_settings = settings['market_data_display']['option_chain']
+    
+    # Get enabled columns from settings
+    enabled_columns = (
+        display_settings.get('enabled_columns', {}).get('basic', []) +
+        display_settings.get('enabled_columns', {}).get('greeks', [])
+    )
+    
     for chain_type, df in chains.items():
         if df.empty:
             console.print(f"\n[yellow]No {chain_type} data available[/yellow]")
@@ -303,7 +315,6 @@ def display_option_comparison(chains: Dict[str, pd.DataFrame], symbol: str, spec
                 console.print(f"\n[yellow]No data found for strike price {specific_strike} in {chain_type}[/yellow]")
                 continue
         
-        # Create table with all columns from the provider
         table = Table(
             title=f"{chain_type.upper()} Options for {symbol}",
             show_header=True,
@@ -312,13 +323,27 @@ def display_option_comparison(chains: Dict[str, pd.DataFrame], symbol: str, spec
             padding=(0, 2)
         )
         
-        # Add all columns from the DataFrame
-        for col in df.columns:
-            table.add_column(col)
+        # Only add columns that are both enabled in settings and present in the DataFrame
+        columns_to_display = [col for col in enabled_columns if col in df.columns]
         
-        # Add rows with raw values
+        # Add columns with proper formatting
+        for col in columns_to_display:
+            justify = 'right' if col in display_settings['formatting']['right_aligned'] else 'left'
+            table.add_column(col, justify=justify)
+        
+        # Add rows with proper formatting
         for _, row in df.iterrows():
-            table.add_row(*[str(val) for val in row])
+            row_data = []
+            for col in columns_to_display:
+                value = row[col]
+                # Apply formatting based on settings
+                if isinstance(value, (int, float)):
+                    if col in display_settings['formatting']['price_format']:
+                        value = f"${value:,.{display_settings['formatting']['decimal_places']['price']}f}"
+                    elif col in display_settings['formatting']['percentage_format']:
+                        value = f"{value:.{display_settings['formatting']['decimal_places']['percentage']}%}"
+                row_data.append(str(value))
+            table.add_row(*row_data)
         
         console.print(table)
         console.print("\n")
