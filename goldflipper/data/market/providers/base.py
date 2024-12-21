@@ -19,7 +19,13 @@ class MarketDataProvider(ABC):
         'last': 'last',
         'volume': 'volume',
         'open_interest': 'open_interest',
-        'implied_volatility': 'implied_volatility'
+        'implied_volatility': 'implied_volatility',
+        # Add missing columns for Greeks
+        'delta': 'delta',
+        'gamma': 'gamma',
+        'theta': 'theta',
+        'vega': 'vega',
+        'rho': 'rho'
     }
     
     def standardize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
