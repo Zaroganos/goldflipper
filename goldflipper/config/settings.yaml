@@ -375,6 +375,13 @@ market_data_providers:
       cache:
         enabled: true
         max_age: 300
+
+    marketdataapp:
+      enabled: true
+      cache:
+        enabled: true
+        max_age: 300
+      api_key: "SzJPUHVfVVhzQVFtZ2RVSm93b2xrcUdrYnZlM3BBaFExN1VScDZPbTI2RT0"
   
   # Data comparison settings
   comparison:
