@@ -1,28 +1,37 @@
-import asyncio
+import sys
+import os
+from datetime import datetime
+
+# Add the project root to the PYTHONPATH
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, project_root)
+
 from goldflipper.data.market.providers.marketdataapp_provider import MarketDataAppProvider
 
-async def fetch_option_data(option_symbol: str):
-    """Fetch and display option data for a given symbol."""
-    provider = MarketDataAppProvider()
+def main(config_path: str):
+    # Initialize the provider
+    provider = MarketDataAppProvider(config_path)
+    
+    # Prompt the user for input
+    symbol = input("Enter the stock symbol (e.g., AAPL): ").strip().upper()
+    expiration_date = input("Enter the expiration date (YYYY-MM-DD) or leave blank for nearest: ").strip()
     
     try:
-        # Fetch option data
-        option_data = provider.get_option_greeks(option_symbol)
+        # Fetch the option chain
+        option_chain = provider.get_option_chain(symbol, expiration_date if expiration_date else None)
         
-        # Display the data in a human-readable format
-        print(f"Option Data for {option_symbol}:")
-        for key, value in option_data.items():
-            print(f"{key.capitalize()}: {value}")
-    
+        # Display the option chain in a human-readable format
+        print("\nOption Chain for:", symbol)
+        print("Calls:")
+        print(option_chain['calls'].to_string(index=False))
+        print("\nPuts:")
+        print(option_chain['puts'].to_string(index=False))
+        
     except Exception as e:
-        print(f"Error fetching data for {option_symbol}: {str(e)}")
-
-def main():
-    # Prompt user for option symbol
-    option_symbol = input("Enter the option symbol: ").strip()
-    
-    # Run the async function
-    asyncio.run(fetch_option_data(option_symbol))
+        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) != 2:
+        print("Usage: python test_marketdataapp_provider.py <path_to_settings.yaml>")
+    else:
+        main(sys.argv[1])

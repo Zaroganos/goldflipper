@@ -1,56 +1,38 @@
-from market_data_api.MarketDataAPI import MarketDataAPI, Stock, Index
+import requests
 from datetime import datetime
 from typing import Optional, Dict, Any
 import pandas as pd
 from .base import MarketDataProvider
 import logging
 import yaml
-import os
 
 class MarketDataAppProvider(MarketDataProvider):
     """MarketDataApp implementation of market data provider"""
 
-    COLUMN_MAPPING = {
-        'symbol': 'symbol',
-        'strike': 'strike',
-        'expiration': 'expiration',
-        'last': 'last',
-        'bid': 'bid',
-        'ask': 'ask',
-        'volume': 'volume',
-        'open_interest': 'open_interest',
-        'implied_volatility': 'implied_volatility',
-        'in_the_money': 'in_the_money'
-    }
-
-    def __init__(self):
-        # Load settings from YAML
-        self.settings = self._load_settings()
+    def __init__(self, config_path: str):
+        # Load the configuration file
+        with open(config_path, 'r') as file:
+            config = yaml.safe_load(file)
         
-        # Get API key from settings
-        api_key = self.settings['market_data_providers']['providers']['marketdataapp']['api_key']
-        
-        # Initialize the MarketDataAPI client with the API key
-        self.client = MarketDataAPI(api_key=api_key)
-        self._cache = {}  # Simple memory cache
+        # Extract the API key from the configuration
+        self.api_key = config['market_data_providers']['providers']['marketdataapp']['api_key']
+        self.base_url = "https://api.marketdata.app/v1"
+        self.headers = {
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {self.api_key}'
+        }
 
-    def _load_settings(self) -> dict:
-        """Load settings from YAML file"""
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-        config_path = os.path.join(project_root, 'config', 'settings.yaml')
-        with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
-
-    async def get_stock_price(self, symbol: str) -> float:
+    def get_stock_price(self, symbol: str) -> float:
         """Get current stock price"""
-        try:
-            # Fetch stock price using MarketDataAPI client
-            price = self.client.get_stock_price(symbol)
-            logging.info(f"MarketDataApp: Retrieved stock price for {symbol}")
-            return price
-        except Exception as e:
-            logging.error(f"MarketDataApp error getting price for {symbol}: {str(e)}")
-            raise
+        url = f"{self.base_url}/stocks/quotes/{symbol}/"
+        response = requests.get(url, headers=self.headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data['price']  # Adjust based on actual response structure
+        else:
+            logging.error(f"Failed to get stock price for {symbol}: {response.status_code}")
+            raise ValueError(f"Error fetching stock price for {symbol}")
 
     def get_historical_data(
         self,
@@ -60,14 +42,20 @@ class MarketDataAppProvider(MarketDataProvider):
         interval: str = "1m"
     ) -> pd.DataFrame:
         """Get historical price data"""
-        try:
-            # Fetch historical data using MarketDataAPI client
-            data = self.client.get_historical_data(symbol, start_date, end_date, interval)
-            logging.info(f"MarketDataApp: Retrieved historical data for {symbol}")
-            return data
-        except Exception as e:
-            logging.error(f"MarketDataApp error getting historical data for {symbol}: {str(e)}")
-            return pd.DataFrame()
+        url = f"{self.base_url}/stocks/historical/{symbol}/"
+        params = {
+            'start': start_date.strftime('%Y-%m-%d'),
+            'end': end_date.strftime('%Y-%m-%d'),
+            'interval': interval
+        }
+        response = requests.get(url, headers=self.headers, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return pd.DataFrame(data)  # Adjust based on actual response structure
+        else:
+            logging.error(f"Failed to get historical data for {symbol}: {response.status_code}")
+            raise ValueError(f"Error fetching historical data for {symbol}")
 
     def get_option_chain(
         self,
@@ -75,31 +63,36 @@ class MarketDataAppProvider(MarketDataProvider):
         expiration_date: Optional[str] = None
     ) -> Dict[str, pd.DataFrame]:
         """Get option chain data"""
-        try:
-            # Fetch option chain using MarketDataAPI client
-            chain = self.client.get_option_chain(symbol, expiration_date)
-            logging.info(f"MarketDataApp: Retrieved option chain for {symbol}")
+        url = f"{self.base_url}/options/chain/{symbol}/"
+        params = {'expiration': expiration_date} if expiration_date else {}
+        response = requests.get(url, headers=self.headers, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            calls = pd.DataFrame(data['calls'])  # Adjust based on actual response structure
+            puts = pd.DataFrame(data['puts'])    # Adjust based on actual response structure
             return {
-                'calls': self.standardize_columns(chain['calls']),
-                'puts': self.standardize_columns(chain['puts'])
+                'calls': self.standardize_columns(calls),
+                'puts': self.standardize_columns(puts)
             }
-        except Exception as e:
-            logging.error(f"MarketDataApp error getting option chain for {symbol}: {str(e)}")
-            return {'calls': pd.DataFrame(), 'puts': pd.DataFrame()}
+        else:
+            logging.error(f"Failed to get option chain for {symbol}: {response.status_code}")
+            raise ValueError(f"Error fetching option chain for {symbol}")
 
     def get_option_greeks(self, option_symbol: str) -> Dict[str, float]:
         """Get option Greeks"""
-        try:
-            # Fetch option Greeks using MarketDataAPI client
-            greeks = self.client.get_option_greeks(option_symbol)
-            logging.info(f"MarketDataApp: Retrieved option Greeks for {option_symbol}")
-            return greeks
-        except Exception as e:
-            logging.error(f"MarketDataApp error getting Greeks for {option_symbol}: {str(e)}")
+        url = f"{self.base_url}/options/quotes/{option_symbol}/"
+        response = requests.get(url, headers=self.headers)
+        
+        if response.status_code == 200:
+            data = response.json()
             return {
-                'delta': 0.0,
-                'gamma': 0.0,
-                'theta': 0.0,
-                'vega': 0.0,
-                'rho': 0.0
+                'delta': data.get('delta', 0.0),
+                'gamma': data.get('gamma', 0.0),
+                'theta': data.get('theta', 0.0),
+                'vega': data.get('vega', 0.0),
+                'rho': data.get('rho', 0.0)
             }
+        else:
+            logging.error(f"Failed to get option Greeks for {option_symbol}: {response.status_code}")
+            raise ValueError(f"Error fetching option Greeks for {option_symbol}")
