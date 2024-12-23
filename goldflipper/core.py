@@ -743,11 +743,16 @@ def open_position(play, play_file):
             logging.info("Play moved to PENDING-OPENING state upon limit order placement")
             display.info("Play moved to PENDING-OPENING state upon limit order placement")
         else:
-            # For market orders, move directly to OPEN
+            # For market orders, save and move to OPEN
             save_play(play, play_file)
-            move_play_to_open(play_file)
+            new_filepath = move_play_to_open(play_file)
             logging.info("Play moved to OPEN state upon market order placement")
             display.info("Play moved to OPEN state upon market order placement")
+            
+            # Handle conditional plays here for market orders
+            handle_conditional_plays(play, new_filepath)
+            logging.info(f"Conditional OCO / OTO plays handled for {new_filepath}")
+            display.info(f"Conditional OCO / OTO plays handled for {new_filepath}")
         
         return True
         
@@ -1205,7 +1210,7 @@ def move_play_to_open(play_file):
             logging.info(f"Moved play to OPEN folder: {new_path}")
             display.info(f"Moved play to OPEN folder: {new_path}")
             
-        return new_path
+        return new_path  # Always return the new path
     except Exception as e:
         logging.error(f"Error moving play to OPEN: {str(e)}")
         display.error(f"Error moving play to OPEN: {str(e)}")
