@@ -445,13 +445,13 @@ def evaluate_opening_strategy(symbol, market_data, play):
     last_price = market_data["Close"].iloc[-1]
     trade_type = play.get("trade_type", "").upper()
 
-    # Define a buffer of ±n cents
-    buffer = 0.05   
+    # Get buffer from config instead of hardcoding
+    buffer = config.get('entry_strategy', 'buffer', default=0.05)
     lower_bound = entry_point - buffer
     upper_bound = entry_point + buffer
 
     if trade_type == "CALL" or trade_type == "PUT":
-        # Check if the last price is within ±5 cents of the entry point
+        # Check if the last price is within ±buffer of the entry point
         condition_met = lower_bound <= last_price <= upper_bound
         comparison = f"between {lower_bound:.2f} and {upper_bound:.2f}" if condition_met else f"not within ±{buffer:.2f} of entry point {entry_point:.2f}"
     else:
