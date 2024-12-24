@@ -1365,15 +1365,11 @@ def execute_trade(play_file, play_type):
             try:
                 if evaluate_opening_strategy(symbol, market_data, play):
                     try:
-                        if open_position(play, play_file):
-                            # Handle conditional plays only after position is confirmed open
-                            handle_conditional_plays(play, play_file)
-                            logging.info(f"Conditional OCO / OTO plays handled for {play_file}")
-                            display.info(f"Conditional OCO / OTO plays handled for {play_file}")  
-                            return True
+                        success = open_position(play, play_file)
+                        return True
                     except Exception as e:
-                        logging.error(f"Error handling conditional plays: {str(e)}. Will retry next cycle.")
-                        display.error(f"Error handling conditional plays: {str(e)}. Will retry next cycle.")
+                        logging.error(f"Error opening position: {str(e)}. Will retry next cycle.")
+                        display.error(f"Error opening position: {str(e)}. Will retry next cycle.")
                     return True
             except Exception as e:
                 logging.error(f"Error during opening strategy: {str(e)}. Continuing to next play.")
@@ -1821,16 +1817,6 @@ def capture_greeks(play, current_premium):
         display.error(f"Error capturing Greeks: {str(e)}")
         return None, None
 
-def get_trigger_data(play, trigger_type):
-    """Get trigger data from either root or conditional_plays structure"""
-    # Check direct attribute first
-    if trigger_type in play:
-        return play[trigger_type]
-    # Check in conditional_plays if exists
-    if 'conditional_plays' in play and trigger_type in play['conditional_plays']:
-        return play['conditional_plays'][trigger_type]
-    return None
-
 def verify_position_exists(play):
     """Verify position exists with retries"""
     max_retries = 3
@@ -1862,9 +1848,9 @@ def handle_conditional_plays(play, play_file):
         display.error("Position not verified. Delaying conditional handling.")
         return False
     
-    # Get trigger data
-    oco_trigger = get_trigger_data(play, 'OCO_trigger')
-    oto_trigger = get_trigger_data(play, 'OTO_trigger')
+    # Get trigger data directly from conditional_plays
+    oco_trigger = play.get('conditional_plays', {}).get('OCO_trigger')
+    oto_trigger = play.get('conditional_plays', {}).get('OTO_trigger')
     
     # If no triggers exist, mark as handled and return
     if not oco_trigger and not oto_trigger:
