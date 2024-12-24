@@ -318,3 +318,48 @@ class MarketDataAppProvider(MarketDataProvider):
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
                 
         return df
+
+    def get_option_quote(self, option_symbol: str) -> pd.DataFrame:
+        """Get quote for a specific option contract"""
+        url = f"{self.base_url}/options/quotes/{option_symbol}/"
+        response = self._make_request(url)
+        
+        if response.status_code in (200, 203):
+            data = response.json()
+            if data.get('s') == 'ok':
+                # Create DataFrame with single row
+                df_data = {
+                    'optionSymbol': [data['optionSymbol'][0]],
+                    'strike': [data['strike'][0]],
+                    'bid': [data['bid'][0]],
+                    'ask': [data['ask'][0]],
+                    'last': [data['last'][0]],
+                    'volume': [data['volume'][0]],
+                    'openInterest': [data['openInterest'][0]],
+                    'iv': [data['iv'][0]],
+                    'inTheMoney': [data['inTheMoney'][0]],
+                    'delta': [data.get('delta', [0])[0]],
+                    'gamma': [data.get('gamma', [0])[0]],
+                    'theta': [data.get('theta', [0])[0]],
+                    'vega': [data.get('vega', [0])[0]],
+                    'rho': [data.get('rho', [0])[0]]
+                }
+                
+                df = pd.DataFrame(df_data)
+                return self.standardize_columns(df)
+            else:
+                logging.error(f"API returned error status for {option_symbol}: {data.get('errmsg', 'Unknown error')}")
+                raise ValueError(f"Error fetching option quote for {option_symbol}")
+        elif response.status_code == 204:
+            logging.warning(f"No cached data available for {option_symbol}")
+            raise ValueError(f"No cached data available for {option_symbol}")
+        elif response.status_code == 429:
+            if 'Concurrent request limit reached' in response.text:
+                logging.error("Concurrent request limit (50) reached")
+                raise ValueError("Too many concurrent requests")
+            else:
+                logging.error("Daily request limit exceeded")
+                raise ValueError("Daily request limit exceeded")
+        else:
+            logging.error(f"Failed to get option quote for {option_symbol}: {response.status_code}")
+            raise ValueError(f"Error fetching option quote for {option_symbol}")

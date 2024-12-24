@@ -92,33 +92,73 @@ class MarketDataComparator:
         
         return pd.DataFrame(data)
     
-    async def compare_option_chain(self, symbol: str, expiration_date: str) -> Dict[str, pd.DataFrame]:
-        """Compare option chains across providers"""
+    async def compare_option_chain(
+        self, 
+        symbol: str, 
+        expiration_date: str, 
+        specific_contract: Optional[str] = None
+    ) -> Dict[str, pd.DataFrame]:
+        """Compare option chains across providers
+        
+        Args:
+            symbol: The underlying symbol (e.g., 'AAPL')
+            expiration_date: Expiration date in YYYY-MM-DD format
+            specific_contract: Optional specific option contract (e.g., 'AAPL230616C00150000')
+        """
         calls_data = []
         puts_data = []
         
         for name, provider in self.providers.items():
             try:
-                # All providers are actually synchronous for option chains
-                chains = provider.get_option_chain(symbol, expiration_date)
-                
-                for type_name, chain in chains.items():
-                    # Add provider and our known expiration date
-                    chain['Provider'] = name
-                    chain['expiration'] = expiration_date
-                    
-                    if type_name == 'calls':
-                        calls_data.append(chain)
+                if specific_contract:
+                    # If we have a specific contract and provider supports single quotes, use that
+                    if hasattr(provider, 'get_option_quote'):
+                        logging.info(f"Using get_option_quote for {specific_contract} with {name}")
+                        df = provider.get_option_quote(specific_contract)
+                        if 'C' in specific_contract:
+                            calls_data.append(df.assign(Provider=name))
+                        else:
+                            puts_data.append(df.assign(Provider=name))
                     else:
-                        puts_data.append(chain)
+                        # Fall back to chain + filter for providers that don't support single quotes
+                        logging.info(f"Falling back to get_option_chain for {specific_contract} with {name}")
+                        chain = provider.get_option_chain(symbol, expiration_date)
+                        contract_type = 'calls' if 'C' in specific_contract else 'puts'
+                        if contract_type in chain and not chain[contract_type].empty:
+                            filtered_df = chain[contract_type][
+                                chain[contract_type]['symbol'] == specific_contract
+                            ]
+                            if not filtered_df.empty:
+                                if contract_type == 'calls':
+                                    calls_data.append(filtered_df.assign(Provider=name))
+                                else:
+                                    puts_data.append(filtered_df.assign(Provider=name))
+                else:
+                    # No specific contract - get full chain
+                    logging.info(f"Getting full option chain for {symbol} with {name}")
+                    chain = provider.get_option_chain(symbol, expiration_date)
+                    if 'calls' in chain and not chain['calls'].empty:
+                        calls_data.append(chain['calls'].assign(Provider=name))
+                    if 'puts' in chain and not chain['puts'].empty:
+                        puts_data.append(chain['puts'].assign(Provider=name))
                         
             except Exception as e:
-                logging.error(f"Error getting option chain from {name}: {str(e)}")
+                logging.error(f"Error fetching option data from {name}: {str(e)}")
+                continue
         
-        return {
-            'calls': pd.concat(calls_data, axis=0) if calls_data else pd.DataFrame(),
-            'puts': pd.concat(puts_data, axis=0) if puts_data else pd.DataFrame()
-        }
+        # Combine results
+        result = {}
+        if calls_data:
+            result['calls'] = pd.concat(calls_data, axis=0, ignore_index=True)
+        else:
+            result['calls'] = pd.DataFrame()
+            
+        if puts_data:
+            result['puts'] = pd.concat(puts_data, axis=0, ignore_index=True)
+        else:
+            result['puts'] = pd.DataFrame()
+            
+        return result
     
     def compare_historical_data(
         self,
