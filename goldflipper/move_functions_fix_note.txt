@@ -1,0 +1,84 @@
+# Move Functions Status Management Issues and Fixes
+
+## Current Issues Identified
+1. Duplicate files appearing when plays are moved between folders
+2. Status inconsistencies, particularly with move_play_to_open
+3. Inconsistent behavior between different move functions
+
+## Root Cause
+The current implementation saves updated status to the original file location before moving the file. This creates a race condition where:
+1. File is updated in original location
+2. Move operation might fail
+3. Results in either duplicate files or status inconsistencies
+
+## Affected Functions
+- move_play_to_open
+- move_play_to_pending_opening
+- move_play_to_new
+- move_play_to_closed
+- Other similar move functions
+
+## Proposed Fix Pattern
+For all move functions, implement this sequence:
+1. Read play data from original location
+2. Update status in memory
+3. Move file first (using os.rename) (make sure this is best for Windows)
+4. Save updated data to new location only after successful move
+
+Example implementation:
+python
+def move_play_to_xxx(play_file):
+try:
+# 1. Read data
+with open(play_file, 'r') as f:
+play_data = json.load(f)
+# 2. Update status
+if 'status' not in play_data:
+play_data['status'] = {}
+play_data['status']['play_status'] = 'XXX'
+# 3. Calculate new path
+new_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'xxx')
+os.makedirs(new_dir, exist_ok=True)
+new_path = os.path.join(new_dir, os.path.basename(play_file))
+# 4. Move first
+if os.path.dirname(play_file) != new_dir:
+if os.path.exists(new_path):
+os.remove(new_path)
+os.rename(play_file, new_path)
+# 5. Save after successful move
+with open(new_path, 'w') as f:
+json.dump(play_data, f, indent=4, cls=UUIDEncoder)
+return new_path
+except Exception as e:
+logging.error(f"Error moving play to XXX: {str(e)}")
+display.error(f"Error moving play to XXX: {str(e)}")
+raise
+
+
+## Benefits of Fix
+1. Eliminates duplicate files
+2. Ensures status consistency
+3. Makes all move functions behave consistently
+4. Provides atomic operations - either everything succeeds or nothing changes
+
+## Implementation Notes
+- Implement changes across all move functions at the same time
+- Add additional logging during the transition
+- Consider adding validation checks after moves
+- Update tests to verify both successful moves and failure cases
+
+## Testing Recommendations
+1. Test moving plays between all possible states
+2. Verify no duplicate files remain
+3. Check status consistency after moves
+4. Test error conditions (disk full, permissions, etc.)
+5. Verify logging captures all state changes
+
+## Future Considerations
+1. Consider implementing a transaction-like system for moves
+2. Add cleanup routine for orphaned files
+3. Implement periodic status validation
+4. Add monitoring for move operations
+
+Created: [Current Date]
+Last Updated: [Current Date]

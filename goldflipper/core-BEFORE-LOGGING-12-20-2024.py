@@ -445,13 +445,13 @@ def evaluate_opening_strategy(symbol, market_data, play):
     last_price = market_data["Close"].iloc[-1]
     trade_type = play.get("trade_type", "").upper()
 
-    # Get buffer from config instead of hardcoding
-    buffer = config.get('entry_strategy', 'buffer', default=0.05)
+    # Define a buffer of ±n cents
+    buffer = 0.05   
     lower_bound = entry_point - buffer
     upper_bound = entry_point + buffer
 
     if trade_type == "CALL" or trade_type == "PUT":
-        # Check if the last price is within ±buffer of the entry point
+        # Check if the last price is within ±5 cents of the entry point
         condition_met = lower_bound <= last_price <= upper_bound
         comparison = f"between {lower_bound:.2f} and {upper_bound:.2f}" if condition_met else f"not within ±{buffer:.2f} of entry point {entry_point:.2f}"
     else:
@@ -650,7 +650,7 @@ def open_position(play, play_file):
     # Calculate and store TP/SL levels if using premium percentages
     calculate_and_store_premium_levels(play, current_premium)
     
-    # Capture Greeks and update logging
+    # Capture Greeks
     try:
         logging.debug("Attempting to capture Greeks...")
         delta, theta = capture_greeks(play, current_premium)
@@ -659,16 +659,10 @@ def open_position(play, play_file):
         if 'logging' not in play:
             play['logging'] = {}
         
-        # Update all logging fields at once
-        play['logging'].update({
-            'delta_atOpen': delta if delta is not None else 0.0,
-            'theta_atOpen': theta if theta is not None else 0.0,
-            'datetime_atOpen': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
-            'price_atOpen': entry_stock_price,
-            'premium_atOpen': current_premium
-        })
-        
+        # Store Greeks
         if delta is not None and theta is not None:
+            play['logging']['delta_atOpen'] = delta
+            play['logging']['theta_atOpen'] = theta
             logging.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
             display.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
         else:
@@ -734,7 +728,6 @@ def open_position(play, play_file):
         play['status'].update({
             'order_id': str(response.id),  # Convert UUID to string
             'order_status': response.status,
-            'play_status': 'PENDING-OPENING' if is_limit_order else 'OPEN'  # Add this line back
         })
         
         # Handle different order types appropriately
@@ -744,16 +737,11 @@ def open_position(play, play_file):
             logging.info("Play moved to PENDING-OPENING state upon limit order placement")
             display.info("Play moved to PENDING-OPENING state upon limit order placement")
         else:
-            # For market orders, save and move to OPEN
+            # For market orders, move directly to OPEN
             save_play(play, play_file)
-            new_filepath = move_play_to_open(play_file)
+            move_play_to_open(play_file)
             logging.info("Play moved to OPEN state upon market order placement")
             display.info("Play moved to OPEN state upon market order placement")
-            
-            # Handle conditional plays here for market orders
-            handle_conditional_plays(play, new_filepath)
-            logging.info(f"Conditional OCO / OTO plays handled for {new_filepath}")
-            display.info(f"Conditional OCO / OTO plays handled for {new_filepath}")
         
         return True
         
@@ -780,43 +768,6 @@ def close_position(play, close_conditions, play_file):
         play['status']['closing_order_status'] = None
         play['status']['contingency_order_id'] = None
         play['status']['contingency_order_status'] = None
-        
-        # Get current market data for logging
-        current_stock_price = get_current_stock_price(play['symbol'])
-        current_premium = get_current_option_premium(play)
-        
-        # Determine close type and condition
-        close_type = (
-            'TP' if close_conditions['is_profit'] 
-            else 'SL(C)' if close_conditions['is_contingency_loss']
-            else 'SL'
-        )
-        
-        # Determine close condition based on what triggered the close
-        close_condition = None
-        if close_conditions['is_profit']:
-            if play['take_profit'].get('stock_price') or play['take_profit'].get('stock_price_pct'):
-                close_condition = 'stock_pct' if play['take_profit'].get('stock_price_pct') else 'stock'
-            else:
-                close_condition = 'premium_pct'
-        else:
-            if play['stop_loss'].get('stock_price') or play['stop_loss'].get('stock_price_pct'):
-                close_condition = 'stock_pct' if play['stop_loss'].get('stock_price_pct') else 'stock'
-            else:
-                close_condition = 'premium_pct'
-        
-        # Initialize logging section if it doesn't exist
-        if 'logging' not in play:
-            play['logging'] = {}
-            
-        # Update logging data
-        play['logging'].update({
-            'datetime_atClose': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
-            'price_atClose': current_stock_price if current_stock_price is not None else 0.0,
-            'premium_atClose': current_premium if current_premium is not None else 0.0,
-            'close_type': close_type,
-            'close_condition': close_condition
-        })
         
         # Save initial closing status
         save_play(play, play_file)
@@ -1149,9 +1100,6 @@ def move_play_to_new(play_file):
         with open(play_file, 'r') as f:
             play_data = json.load(f)
         
-        # Ensure status object exists and set status
-        if 'status' not in play_data:
-            play_data['status'] = {}
         play_data['status']['play_status'] = 'NEW'
         
         # Calculate new path before saving
@@ -1159,7 +1107,7 @@ def move_play_to_new(play_file):
         os.makedirs(new_dir, exist_ok=True)
         new_path = os.path.join(new_dir, os.path.basename(play_file))
         
-        # Save updated status to original location first
+        # Save to original location first
         with open(play_file, 'w') as f:
             json.dump(play_data, f, indent=4, cls=UUIDEncoder)
             
@@ -1178,54 +1126,31 @@ def move_play_to_new(play_file):
 
 # Move to PENDING-OPENING (for plays whose BUY condition has hit but limit order has not yet been filled)
 def move_play_to_pending_opening(play_file):
-    """Move play to PENDING-OPENING folder and update status."""
-    try:
-        with open(play_file, 'r') as f:
-            play_data = json.load(f)
-        
-        # Ensure status object exists and set status
-        if 'status' not in play_data:
-            play_data['status'] = {}
-        play_data['status']['play_status'] = 'PENDING-OPENING'
-        
-        # Calculate new path
-        pending_opening_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'pending-opening')
-        os.makedirs(pending_opening_dir, exist_ok=True)
-        new_path = os.path.join(pending_opening_dir, os.path.basename(play_file))
-        
-        # Save updated status to original location first
-        with open(play_file, 'w') as f:
-            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
-            
-        # Move file
-        if os.path.exists(new_path):
-            os.remove(new_path)
-        os.rename(play_file, new_path)
-        logging.info(f"Moved play to PENDING-OPENING folder: {new_path}")
-        display.info(f"Moved play to PENDING-OPENING folder: {new_path}")
-        
-    except Exception as e:
-        logging.error(f"Error moving play to PENDING-OPENING: {str(e)}")
-        display.error(f"Error moving play to PENDING-OPENING: {str(e)}")
-        raise
+    with open(play_file, 'r') as f:
+        play_data = json.load(f)
+    play_data['status']['play_status'] = 'PENDING-OPENING'
+    pending_opening_dir = os.path.join(os.path.dirname(play_file), '..', 'pending-opening')
+    os.makedirs(pending_opening_dir, exist_ok=True)
+    new_path = os.path.join(pending_opening_dir, os.path.basename(play_file))
+    os.rename(play_file, new_path)
+    logging.info(f"Moved play to PENDING-OPENING folder: {new_path}")
+    display.info(f"Moved play to PENDING-OPENING folder: {new_path}")
 
+# Move to OPEN (for plays whose BUY condition has hit)
 def move_play_to_open(play_file):
     """Move play to OPEN folder and update status."""
     try:
         with open(play_file, 'r') as f:
             play_data = json.load(f)
         
-        # Ensure status object exists and set status
-        if 'status' not in play_data:
-            play_data['status'] = {}
         play_data['status']['play_status'] = 'OPEN'
         
-        # Calculate new path
+        # Calculate new path before saving
         open_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'open')
         os.makedirs(open_dir, exist_ok=True)
         new_path = os.path.join(open_dir, os.path.basename(play_file))
         
-        # Save updated status to original location first
+        # Save to original location first
         with open(play_file, 'w') as f:
             json.dump(play_data, f, indent=4, cls=UUIDEncoder)
             
@@ -1237,7 +1162,7 @@ def move_play_to_open(play_file):
             logging.info(f"Moved play to OPEN folder: {new_path}")
             display.info(f"Moved play to OPEN folder: {new_path}")
             
-        return new_path  # Always return the new path
+        return new_path
     except Exception as e:
         logging.error(f"Error moving play to OPEN: {str(e)}")
         display.error(f"Error moving play to OPEN: {str(e)}")
@@ -1392,11 +1317,15 @@ def execute_trade(play_file, play_type):
             try:
                 if evaluate_opening_strategy(symbol, market_data, play):
                     try:
-                        success = open_position(play, play_file)
-                        return True
+                        if open_position(play, play_file):
+                            # Handle conditional plays only after position is confirmed open
+                            handle_conditional_plays(play, play_file)
+                            logging.info(f"Conditional OCO / OTO plays handled for {play_file}")
+                            display.info(f"Conditional OCO / OTO plays handled for {play_file}")  
+                            return True
                     except Exception as e:
-                        logging.error(f"Error opening position: {str(e)}. Will retry next cycle.")
-                        display.error(f"Error opening position: {str(e)}. Will retry next cycle.")
+                        logging.error(f"Error handling conditional plays: {str(e)}. Will retry next cycle.")
+                        display.error(f"Error handling conditional plays: {str(e)}. Will retry next cycle.")
                     return True
             except Exception as e:
                 logging.error(f"Error during opening strategy: {str(e)}. Continuing to next play.")
@@ -1844,6 +1773,16 @@ def capture_greeks(play, current_premium):
         display.error(f"Error capturing Greeks: {str(e)}")
         return None, None
 
+def get_trigger_data(play, trigger_type):
+    """Get trigger data from either root or conditional_plays structure"""
+    # Check direct attribute first
+    if trigger_type in play:
+        return play[trigger_type]
+    # Check in conditional_plays if exists
+    if 'conditional_plays' in play and trigger_type in play['conditional_plays']:
+        return play['conditional_plays'][trigger_type]
+    return None
+
 def verify_position_exists(play):
     """Verify position exists with retries"""
     max_retries = 3
@@ -1875,9 +1814,9 @@ def handle_conditional_plays(play, play_file):
         display.error("Position not verified. Delaying conditional handling.")
         return False
     
-    # Get trigger data directly from conditional_plays
-    oco_trigger = play.get('conditional_plays', {}).get('OCO_trigger')
-    oto_trigger = play.get('conditional_plays', {}).get('OTO_trigger')
+    # Get trigger data
+    oco_trigger = get_trigger_data(play, 'OCO_trigger')
+    oto_trigger = get_trigger_data(play, 'OTO_trigger')
     
     # If no triggers exist, mark as handled and return
     if not oco_trigger and not oto_trigger:

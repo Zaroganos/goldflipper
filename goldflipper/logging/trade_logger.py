@@ -36,7 +36,8 @@ class PlayLogger:
             'premium_atOpen', 'premium_atClose',
             'delta_atOpen', 'theta_atOpen',
             'close_type', 'close_condition',
-            'profit_loss', 'status'
+            'profit_loss_pct', 'profit_loss',
+            'status'
         ]
         df = pd.DataFrame(columns=columns)
         df.to_csv(self.csv_path, index=False)
@@ -106,6 +107,13 @@ class PlayLogger:
             except:
                 pass
         
+        # Calculate profit/loss percentage
+        premium_open = logging_data.get('premium_atOpen')
+        premium_close = logging_data.get('premium_atClose')
+        pl_pct = 0.0
+        if premium_open and premium_close and premium_open != 0:
+            pl_pct = ((premium_close - premium_open) / abs(premium_open)) * 100
+
         play_entry = {
             'play_name': play_data['play_name'],
             'symbol': play_data['symbol'],
@@ -125,6 +133,7 @@ class PlayLogger:
             'theta_atOpen': logging_data.get('theta_atOpen'),
             'close_type': logging_data.get('close_type'),
             'close_condition': logging_data.get('close_condition'),
+            'profit_loss_pct': pl_pct,
             'profit_loss': self._calculate_pl(play_data),
             'status': status
         }
@@ -149,6 +158,7 @@ class PlayLogger:
             'theta_atOpen': float,
             'close_type': str,
             'close_condition': str,
+            'profit_loss_pct': float,
             'profit_loss': float,
             'status': str
         }
@@ -198,7 +208,8 @@ class PlayLogger:
                 'theta_atOpen': 'Open Θ',
                 'close_type': 'Close',
                 'close_condition': 'Condition',
-                'profit_loss': 'Profit/Loss',
+                'profit_loss_pct': 'P/L %',
+                'profit_loss': 'P/L $',
                 'status': 'Status'
             }
             
@@ -283,6 +294,39 @@ class PlayLogger:
                 
                 loss_format_odd = workbook.add_format({
                     'num_format': '+$#,##0.00;-$#,##0.00',
+                    'align': 'center',
+                    'bg_color': loss_color,
+                    'border_color': border_color,
+                    'border': 1
+                })
+                
+                # Add percentage formats with alternating shades
+                profit_pct_format_even = workbook.add_format({
+                    'num_format': '0.00%',
+                    'align': 'center',
+                    'bg_color': profit_color,
+                    'border_color': border_color,
+                    'border': 1
+                })
+                
+                profit_pct_format_odd = workbook.add_format({
+                    'num_format': '0.00%',
+                    'align': 'center',
+                    'bg_color': profit_color,
+                    'border_color': border_color,
+                    'border': 1
+                })
+                
+                loss_pct_format_even = workbook.add_format({
+                    'num_format': '0.00%',
+                    'align': 'center',
+                    'bg_color': loss_color,
+                    'border_color': border_color,
+                    'border': 1
+                })
+                
+                loss_pct_format_odd = workbook.add_format({
+                    'num_format': '0.00%',
                     'align': 'center',
                     'bg_color': loss_color,
                     'border_color': border_color,
@@ -456,6 +500,38 @@ class PlayLogger:
                                 worksheet.write_blank(row_num + 1, col_num, None, time_format)
                             else:
                                 worksheet.write(row_num + 1, col_num, value, time_format)
+                        elif 'P/L %' in col:
+                            try:
+                                value = float(value) if not pd.isna(value) else 0.0
+                                if value == 0:
+                                    # Write blank cell with even/odd background
+                                    pl_format = money_format_even if is_even_row else money_format_odd
+                                    worksheet.write_blank(row_num + 1, col_num, None, pl_format)
+                                else:
+                                    # Use profit/loss format based on value
+                                    if value > 0:
+                                        pl_format = profit_pct_format_even if is_even_row else profit_pct_format_odd
+                                    else:
+                                        pl_format = loss_pct_format_even if is_even_row else loss_pct_format_odd
+                                    worksheet.write_number(row_num + 1, col_num, value/100, pl_format)
+                            except (ValueError, TypeError):
+                                worksheet.write(row_num + 1, col_num, value, money_format_even if is_even_row else money_format_odd)
+                        elif 'P/L $' in col:
+                            try:
+                                value = float(value) if not pd.isna(value) else 0.0
+                                if value == 0:
+                                    # Write blank cell with even/odd background
+                                    pl_format = money_format_even if is_even_row else money_format_odd
+                                    worksheet.write_blank(row_num + 1, col_num, None, pl_format)
+                                else:
+                                    # Use profit/loss format based on value
+                                    if value > 0:
+                                        pl_format = profit_format_even if is_even_row else profit_format_odd
+                                    else:
+                                        pl_format = loss_format_even if is_even_row else loss_format_odd
+                                    worksheet.write_number(row_num + 1, col_num, value, pl_format)
+                            except (ValueError, TypeError):
+                                worksheet.write(row_num + 1, col_num, value, money_format_even if is_even_row else money_format_odd)
                         else:
                             row_format = even_row_format if is_even_row else odd_row_format
                             worksheet.write(row_num + 1, col_num, value, row_format)
@@ -480,7 +556,8 @@ class PlayLogger:
                     'Status': 10,
                     'Close': 7.5,
                     'Condition': 12,
-                    'Profit/Loss': 12,
+                    'P/L %': 10,
+                    'P/L $': 12,
                     'Status': 8
                 }
                 
