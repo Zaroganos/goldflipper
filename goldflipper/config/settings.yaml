@@ -38,8 +38,8 @@
 # Alpaca API Settings
 ####################################################################################################
 alpaca:
-  api_key: 'PKXATZMQYM3AIMOS9JAE'     # Your Alpaca API key
-  secret_key: 'lfujbWBWJQNMoHzioZNEyD0jRXKIXUoxqGQjXxmR'  # Your Alpaca secret key
+  api_key: 'PKRM7RNLH2PDV2B07Z0L'     # Your Alpaca API key
+  secret_key: 'G5WpJ8JY4qNdu7ToIVvrxlCmtvCY5ueSLvsMEax3'  # Your Alpaca secret key
   base_url: 'https://paper-api.alpaca.markets/v2'  # Alpaca API endpoint (paper/live trading)
   
 
@@ -264,7 +264,7 @@ market_hours:
 auto_play_creator:
   enabled: true                     # Enable/disable auto play creation
   order_types:                      # Types of orders to use
-#    - market
+    - market
     - limit
   TP-SL_types:                # Types of take profit and stop loss to use
     - STOCK_PRICE
@@ -291,8 +291,8 @@ auto_play_creator:
   take_profit_pct: 2.0              # Default take profit percentage
   stop_loss_pct: 1.0                # Default stop loss percentage
   test_symbols:                     # Symbols to use for test plays
-#    - SPY
-#    - QQQ
+    - SPY
+    - QQQ
     - AAPL
     - TSLA
     - NVDA
