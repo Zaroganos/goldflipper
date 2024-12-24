@@ -19,6 +19,7 @@ sys.path.insert(0, project_root)
 from goldflipper.data.market.providers.base import MarketDataProvider
 from goldflipper.data.market.providers.alpaca_provider import AlpacaProvider
 from goldflipper.data.market.providers.yfinance_provider import YFinanceProvider
+from goldflipper.data.market.providers.marketdataapp_provider import MarketDataAppProvider
 
 class MarketDataComparator:
     """Compares market data from multiple providers"""
@@ -39,13 +40,18 @@ class MarketDataComparator:
         """Initialize enabled providers from settings"""
         provider_map = {
             'alpaca': AlpacaProvider,
-            'yfinance': YFinanceProvider
+            'yfinance': YFinanceProvider,
+            'marketdataapp': MarketDataAppProvider
         }
         
         for provider_name, settings in self.settings['providers'].items():
             if settings['enabled'] and provider_name in provider_map:
                 try:
-                    provider = provider_map[provider_name]()
+                    if provider_name == 'marketdataapp':
+                        config_path = os.path.join(project_root, 'goldflipper', 'config', 'settings.yaml')
+                        provider = provider_map[provider_name](config_path)
+                    else:
+                        provider = provider_map[provider_name]()
                     
                     # Handle async initialization if needed
                     if hasattr(provider, '_init_websocket'):
@@ -62,7 +68,12 @@ class MarketDataComparator:
         
         for name, provider in self.providers.items():
             try:
-                price = await provider.get_stock_price(symbol)
+                # Handle async vs non-async providers
+                if name in ['alpaca', 'yfinance']:  # These are async
+                    price = await provider.get_stock_price(symbol)
+                else:  # MarketDataApp is synchronous
+                    price = provider.get_stock_price(symbol)
+                    
                 data.append({
                     'Provider': name,
                     'Symbol': symbol,
@@ -81,19 +92,20 @@ class MarketDataComparator:
         
         return pd.DataFrame(data)
     
-    def compare_option_chain(self, symbol: str, expiration_date: str) -> Dict[str, pd.DataFrame]:
+    async def compare_option_chain(self, symbol: str, expiration_date: str) -> Dict[str, pd.DataFrame]:
         """Compare option chains across providers"""
         calls_data = []
         puts_data = []
         
         for name, provider in self.providers.items():
             try:
+                # All providers are actually synchronous for option chains
                 chains = provider.get_option_chain(symbol, expiration_date)
                 
                 for type_name, chain in chains.items():
                     # Add provider and our known expiration date
                     chain['Provider'] = name
-                    chain['expiration'] = expiration_date  # Add the correct expiration we know
+                    chain['expiration'] = expiration_date
                     
                     if type_name == 'calls':
                         calls_data.append(chain)
@@ -368,7 +380,7 @@ def main():
             elif choice == "2":
                 symbol, expiry, option_type, strike, contract = get_option_input()
                 with console.status(f"Fetching option chains for {symbol}..."):
-                    chains = comparator.compare_option_chain(symbol, expiry)
+                    chains = asyncio.run(comparator.compare_option_chain(symbol, expiry))
                     
                     # If option_type is specified (from contract symbol), filter the chains
                     if option_type:
