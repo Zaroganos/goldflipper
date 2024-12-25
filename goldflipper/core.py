@@ -193,8 +193,10 @@ def get_option_data(option_contract_symbol: str) -> Optional[Dict[str, float]]:
     # START DEBUG - Remove after testing
     if cached:
         logging.debug(f"CACHE HIT: Option data for {option_contract_symbol}")
+        display.info(f"CACHE HIT: Option data for {option_contract_symbol}")    
     else:
         logging.debug(f"CACHE MISS: Fetching option data for {option_contract_symbol}")
+        display.info(f"CACHE MISS: Fetching option data for {option_contract_symbol}")
     # END DEBUG
     if cached:
         return cached
