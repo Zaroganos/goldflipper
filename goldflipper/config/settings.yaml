@@ -171,7 +171,7 @@ indicators:
     - macd_signals
 
 ####################################################################################################
-# Strategy Settings
+# Strategy Settings *USED*
 ####################################################################################################
 entry_strategy:
   buffer: 0.25                       # Price buffer for entry points (default is ±$0.05). ENABLED.
@@ -248,7 +248,7 @@ logging:
 # Market Hours Settings
 ####################################################################################################
 market_hours:
-  enabled: false                    # Enable/disable market hours validation
+  enabled: true                    # Enable/disable market hours validation
   timezone: "America/New_York"     # Market timezone
   regular_hours:
     start: "09:29"                # Regular market open (HH:MM) -- start one minute early to account for cycle time
