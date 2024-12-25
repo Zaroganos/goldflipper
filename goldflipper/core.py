@@ -24,6 +24,7 @@ from goldflipper.data.greeks.base import OptionData
 from goldflipper.data.greeks.delta import DeltaCalculator
 from goldflipper.data.greeks.theta import ThetaCalculator
 from typing import Optional, Dict, Any
+from goldflipper.data.market.manager import MarketDataManager  # Add this import
 
 # ==================================================
 # 1. BROKERAGE DATA RETRIEVAL
@@ -158,217 +159,62 @@ def get_all_positions() -> Optional[Dict[str, Dict[str, Any]]]:
 # ==================================================
 # 2. MARKET DATA RETRIEVAL
 # ==================================================
-# Function to fetch the latest market data using yfinance.
+# Functions to fetch market data using the abstracted market data system.
 
-def get_market_data(symbol):
-    """
-    Fetch market data for a given symbol using configuration settings.
-    
-    Args:
-        symbol (str): The stock symbol to fetch data for
+def get_stock_price(symbol: str) -> Optional[float]:
+    """Get current stock price."""
+    market_data = MarketDataManager()  # Initialize the manager
+    cache_key = f"stock_price_{symbol}"
+    cached = market_data.cache.get(cache_key)
+    # START DEBUG - Remove after testing
+    if cached:
+        logging.debug(f"CACHE HIT: Stock price for {symbol}")
+    else:
+        logging.debug(f"CACHE MISS: Fetching stock price for {symbol}")
+    # END DEBUG
+    if cached:
+        return cached
         
-    Returns:
-        pandas.DataFrame: Market data with timestamp index and OHLCV columns
-    """
-    display.info(f"Fetching market data for {symbol}...")
-    logging.info(f"Fetching market data for {symbol}")
-    
     try:
-        data = yf.download(
-            symbol,
-            period=config.get('market_data', 'period', default='1d'),
-            interval=config.get('market_data', 'interval', default='1m'),
-            timeout=None  # Remove timeout limit
-        )
-        display.success(f"Market data for {symbol} fetched successfully.")
-        logging.info(f"Market data for {symbol} fetched successfully.")
-        
-        if data.empty:
-            display.error(f"No data returned for {symbol}")
-            logging.error(f"No data returned for {symbol}")
-            return None
+        price = market_data.get_stock_price(symbol)
+        if price is not None:
+            logging.info(f"Stock price for {symbol}: ${price:.2f}")
+            return price
             
-        return data
-        
-    except Exception as e:
-        display.error(f"Error fetching market data for {symbol}: {str(e)}")
-        logging.error(f"Error fetching market data for {symbol}: {str(e)}")
-        return None
-
-"""Function to fetch the latest option premium data using yfinance."""
-
-def get_option_premium_data(ticker, expiration_date=None, strike_price=None, option_type='call'):
-    """
-    Fetch the last price of the option premium for a specific contract.
-    
-    Parameters:
-    - ticker (str): Stock symbol
-    - expiration_date (str, optional): Option expiration date in 'YYYY-MM-DD' format
-    - strike_price (float, optional): Strike price of the option
-    - option_type (str): 'call' or 'put', defaults to 'call'
-    
-    Returns:
-    - float: Last price of the option premium
-             Returns None if data unavailable
-    """
-    display.info(f"Fetching option premium data for {ticker}...")
-    logging.info(f"Fetching option premium data for {ticker}")
-    
-    try:
-        stock = yf.Ticker(ticker)
-        
-        # Get available expiration dates
-        available_dates = stock.options
-        if not available_dates:
-            display.error(f"No option data available for {ticker}")
-            logging.error(f"No option data available for {ticker}")
-            return None
-            
-        # Use provided expiration date or default to nearest
-        target_date = expiration_date if expiration_date in available_dates else available_dates[0]
-        
-        # Get option chain
-        chain = stock.option_chain(target_date)
-        
-        # Select calls or puts
-        options_data = chain.calls if option_type.lower() == 'call' else chain.puts
-        
-        # Filter by strike price if provided
-        if strike_price:
-            options_data = options_data[options_data['strike'] == float(strike_price)]
-            
-        if options_data.empty:
-            display.warning(f"No matching options found for {ticker} with given parameters")
-            logging.warning(f"No matching options found for {ticker} with given parameters")
-            return None
-            
-        # Get the last price
-        last_price = options_data.iloc[0]['lastPrice']
-        
-        display.success(f"Option premium data fetched successfully for {ticker}")
-        logging.info(f"Option premium data fetched successfully for {ticker}")
-        display.price(f"Last Price: ${last_price:.2f}")
-        logging.info(f"Last Price: ${last_price:.2f}")
-        return last_price
-        
-    except Exception as e:
-        display.error(f"Error fetching option premium data for {ticker}: {str(e)}")
-        logging.error(f"Error fetching option premium data for {ticker}: {str(e)}")
-        return None
-
-def get_option_bid_price(ticker, expiration_date=None, strike_price=None, option_type='call'):
-    """
-    Fetch the bid price for a specific option contract.
-    
-    Parameters:
-    - ticker (str): Stock symbol
-    - expiration_date (str, optional): Option expiration date in 'YYYY-MM-DD' format
-    - strike_price (float, optional): Strike price of the option
-    - option_type (str): 'call' or 'put', defaults to 'call'
-    
-    Returns:
-    - float: Bid price of the option
-             Returns None if data unavailable
-    """
-    display.info(f"Fetching option bid price for {ticker}...")
-    logging.info(f"Fetching option bid price for {ticker}")
-    
-    try:
-        stock = yf.Ticker(ticker)
-        
-        # Get available expiration dates
-        available_dates = stock.options
-        if not available_dates:
-            display.error(f"No option data available for {ticker}")
-            logging.error(f"No option data available for {ticker}")
-            return None
-            
-        # Use provided expiration date or default to nearest
-        target_date = expiration_date if expiration_date in available_dates else available_dates[0]
-        
-        # Get option chain
-        chain = stock.option_chain(target_date)
-        
-        # Select calls or puts
-        options_data = chain.calls if option_type.lower() == 'call' else chain.puts
-        
-        # Filter by strike price if provided
-        if strike_price:
-            options_data = options_data[options_data['strike'] == float(strike_price)]
-            
-        if options_data.empty:
-            display.warning(f"No matching options found for {ticker} with given parameters")
-            logging.warning(f"No matching options found for {ticker} with given parameters")
-            return None
-            
-        # Get the bid price
-        bid_price = options_data.iloc[0]['bid']
-        
-        display.success(f"Option bid price fetched successfully for {ticker}")
-        logging.info(f"Option bid price fetched successfully for {ticker}")
-        display.price(f"Bid Price: ${bid_price:.2f}")
-        logging.info(f"Bid Price: ${bid_price:.2f}")
-        return bid_price
-        
-    except Exception as e:
-        display.error(f"Error fetching option bid price for {ticker}: {str(e)}")
-        logging.error(f"Error fetching option bid price for {ticker}: {str(e)}")
-        return None
-
-def get_current_option_premium(play):
-    """Get the current option premium for a play."""
-    try:
-        last_price = get_option_premium_data(
-            ticker=play['symbol'],
-            expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
-            strike_price=float(play['strike_price']),
-            option_type=play['trade_type']
-        )
-        return last_price
-    except Exception as e:
-        display.error(f"Error getting option premium: {e}")
-        logging.error(f"Error getting option premium: {e}")
-        return None
-
-def get_current_stock_price(symbol):
-    """Get current stock price using both yfinance methods with fallback."""
-    try:
-        # Ensure we're working with the symbol string, not a Ticker object
-        if isinstance(symbol, yf.Ticker):
-            symbol = symbol.ticker
-
-        # Method 1: Try download method first (usually more reliable)
-        data = yf.download(symbol, period='1d', interval='1m')
-        if not data.empty:
-            price_from_download = data['Close'].iloc[-1]
-            logging.info(f"Got price from download method: ${price_from_download:.2f}")
-            display.info(f"Got price from download method: ${price_from_download:.2f}")
-            return price_from_download
-            
-        # Method 2: Fallback to Ticker method
-        logging.info("Falling back to Ticker method...")
-        display.info("Falling back to Ticker method...")
-        stock = yf.Ticker(symbol)
-        info = stock.info
-        price_from_ticker = (
-            info.get('regularMarketPrice') or 
-            info.get('currentPrice') or 
-            info.get('lastPrice')
-        )
-        
-        if price_from_ticker:
-            logging.info(f"Got price from Ticker method: ${price_from_ticker:.2f}")
-            display.info(f"Got price from Ticker method: ${price_from_ticker:.2f}")
-            return price_from_ticker
-            
-        logging.error(f"Could not get valid price for {symbol} using either method")
-        display.error(f"Could not get valid price for {symbol} using either method")
+        logging.error(f"No price data available for {symbol}")
         return None
         
     except Exception as e:
-        logging.error(f"Error getting stock price for {symbol}: {e}")
-        display.error(f"Error getting stock price for {symbol}: {e}")
+        logging.error(f"Error getting stock price for {symbol}: {str(e)}")
         return None
+
+def get_option_data(option_contract_symbol: str) -> Optional[Dict[str, float]]:
+    """Get current option data."""
+    market_data = MarketDataManager()  # Initialize the manager
+    cache_key = f"option_data_{option_contract_symbol}"
+    cached = market_data.cache.get(cache_key)
+    # START DEBUG - Remove after testing
+    if cached:
+        logging.debug(f"CACHE HIT: Option data for {option_contract_symbol}")
+    else:
+        logging.debug(f"CACHE MISS: Fetching option data for {option_contract_symbol}")
+    # END DEBUG
+    if cached:
+        return cached
+        
+    try:
+        option_data = market_data.get_option_quote(option_contract_symbol)
+        if option_data:
+            logging.info(f"Option data fetched for {option_contract_symbol}")
+            return option_data
+            
+        logging.error(f"No option data available for {option_contract_symbol}")
+        return None
+        
+    except Exception as e:
+        logging.error(f"Error getting option data for {option_contract_symbol}: {str(e)}")
+        return None
+
 
 # ==================================================
 # 3. STRATEGY EVALUATION
@@ -437,12 +283,22 @@ def save_play(play, play_file):
         logging.error(f"Error saving play data to {play_file}: {e}")
         display.error(f"Error saving play data to {play_file}: {e}")
 
-def evaluate_opening_strategy(symbol, market_data, play):
+def evaluate_opening_strategy(symbol, play):
+    """
+    Evaluate if opening conditions are met based on stock price and entry point.
+    """
     logging.info(f"Evaluating opening strategy for {symbol} using play data...")
     display.info(f"Evaluating opening strategy for {symbol} using play data...")
 
     entry_point = play.get("entry_point", {}).get("stock_price", 0)
-    last_price = market_data["Close"].iloc[-1]
+    # OLD: last_price = market_data["Close"].iloc[-1]
+    # NEW: Get price using our new system
+    last_price = get_stock_price(symbol)
+    if last_price is None:
+        logging.error(f"Could not get current price for {symbol}")
+        display.error(f"Could not get current price for {symbol}")
+        return False
+        
     trade_type = play.get("trade_type", "").upper()
 
     # Get buffer from config instead of hardcoding
@@ -466,7 +322,7 @@ def evaluate_opening_strategy(symbol, market_data, play):
 
     return condition_met
 
-def evaluate_closing_strategy(symbol, market_data, play):
+def evaluate_closing_strategy(symbol, play):
     """
     Evaluate if closing conditions are met. Supports:
     - Mixed conditions (e.g., TP by stock price, SL by premium %)
@@ -478,7 +334,14 @@ def evaluate_closing_strategy(symbol, market_data, play):
     """
     logging.info(f"Evaluating closing strategy for {symbol} using play data...")
     display.info(f"Evaluating closing strategy for {symbol} using play data...")
-    last_price = market_data["Close"].iloc[-1]
+    
+    # NEW: Get current stock price using our new system
+    last_price = get_stock_price(symbol)
+    if last_price is None:
+        logging.error(f"Could not get current price for {symbol}")
+        display.error(f"Could not get current price for {symbol}")
+        return False
+    
     trade_type = play.get("trade_type", "").upper()
     
     # Initialize condition flags
@@ -533,9 +396,11 @@ def evaluate_closing_strategy(symbol, market_data, play):
                 contingency_loss_condition = last_price >= play['stop_loss']['contingency_SL_stock_price_target']
     
     # Check premium-based conditions if available
-    current_premium = get_current_option_premium(play)
-    if current_premium is not None:
-        # Check premium-based take profit - combines with stock price condition using OR
+    option_data = get_option_data(play['option_contract_symbol'])
+    if option_data:
+        current_premium = option_data['premium']
+        
+        # Check premium-based take profit
         if play['take_profit'].get('premium_pct') is not None:
             tp_target = play['take_profit']['TP_option_prem']
             profit_condition = profit_condition or (current_premium >= tp_target)
@@ -622,23 +487,27 @@ def open_position(play, play_file):
     })
     
     # Get current stock price before opening position
-    market_data = get_market_data(play['symbol'])
-    if market_data is None or market_data.empty:
+    # OLD: market_data = get_market_data(play['symbol'])
+    # NEW: Use our new function
+    entry_stock_price = get_stock_price(play['symbol'])
+    if entry_stock_price is None:
         logging.error("Failed to get current stock price. Aborting order placement.")
         display.error("Failed to get current stock price. Aborting order placement.")
         return False
-    
-    entry_stock_price = market_data['Close'].iloc[-1]
     
     # Calculate and store price movement levels
     calculate_and_store_price_levels(play, entry_stock_price)
     
     # Get current premium before opening position
-    current_premium = get_current_option_premium(play)
-    if current_premium is None:
+    # OLD: current_premium = get_current_option_premium(play)
+    # NEW: Use our new function
+    option_data = get_option_data(play['option_contract_symbol'])
+    if option_data is None:
         logging.error("Failed to get current option premium. Aborting order placement.")
         display.error("Failed to get current option premium. Aborting order placement.")
         return False
+        
+    current_premium = option_data['premium']
         
     # Store the entry premium in the play data's entry_point object
     if 'entry_point' not in play:
@@ -653,7 +522,10 @@ def open_position(play, play_file):
     # Capture Greeks and update logging
     try:
         logging.debug("Attempting to capture Greeks...")
-        delta, theta = capture_greeks(play, current_premium)
+        # OLD: delta, theta = capture_greeks(play, current_premium)
+        # NEW: Get Greeks directly from option data
+        delta = option_data['delta']
+        theta = option_data['theta']
         
         # Initialize logging section if it doesn't exist
         if 'logging' not in play:
@@ -689,13 +561,9 @@ def open_position(play, play_file):
         if is_limit_order:
             # Get bid price if enabled in settings
             if config.get('orders', 'bid_price_settings', 'entry', default=True):
-                limit_price = get_option_bid_price(
-                    ticker=play['symbol'],
-                    expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
-                    strike_price=float(play['strike_price']),
-                    option_type=play['trade_type']
-                )
-                limit_price = validate_bid_price(limit_price, play['symbol'], current_premium)
+                # OLD: limit_price = get_option_bid_price(...)
+                # NEW: Get bid directly from option_data
+                limit_price = option_data['bid']
                 if limit_price is None:
                     logging.error("Failed to get bid price. Falling back to current premium.")
                     display.error("Failed to get bid price. Falling back to current premium.")
@@ -734,7 +602,7 @@ def open_position(play, play_file):
         play['status'].update({
             'order_id': str(response.id),  # Convert UUID to string
             'order_status': response.status,
-            'play_status': 'PENDING-OPENING' if is_limit_order else 'OPEN'  # Add this line back
+            'play_status': 'PENDING-OPENING' if is_limit_order else 'OPEN'
         })
         
         # Handle different order types appropriately
@@ -782,8 +650,14 @@ def close_position(play, close_conditions, play_file):
         play['status']['contingency_order_status'] = None
         
         # Get current market data for logging
-        current_stock_price = get_current_stock_price(play['symbol'])
-        current_premium = get_current_option_premium(play)
+        # OLD: current_stock_price = get_current_stock_price(play['symbol'])
+        # NEW: Use our new function
+        current_stock_price = get_stock_price(play['symbol'])
+        
+        # OLD: current_premium = get_current_option_premium(play)
+        # NEW: Use our new function
+        option_data = get_option_data(play['option_contract_symbol'])
+        current_premium = option_data['premium'] if option_data else None
         
         # Determine close type and condition
         close_type = (
@@ -826,14 +700,13 @@ def close_position(play, close_conditions, play_file):
             if play['take_profit'].get('order_type') == 'limit':
                 # Get bid price if enabled in settings
                 if config.get('orders', 'bid_price_settings', 'take_profit', default=True):
-                    limit_price = get_option_bid_price(
-                        ticker=play['symbol'],
-                        expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
-                        strike_price=float(play['strike_price']),
-                        option_type=play['trade_type']
-                    )
-                    limit_price = validate_bid_price(limit_price, play['symbol'], play['take_profit']['TP_option_prem'])
-                    if limit_price is None:
+                    # Get fresh option data to ensure latest bid
+                    option_data = get_option_data(play['option_contract_symbol'])
+                    if option_data and option_data.get('bid') is not None:
+                        limit_price = option_data['bid']
+                        logging.info(f"Using current bid price: ${limit_price:.2f}")
+                        display.info(f"Using current bid price: ${limit_price:.2f}")
+                    else:
                         logging.error("Failed to get bid price. Falling back to TP target price.")
                         display.error("Failed to get bid price. Falling back to TP target price.")
                         limit_price = play['take_profit']['TP_option_prem']
@@ -912,14 +785,13 @@ def close_position(play, close_conditions, play_file):
                 elif close_conditions['is_primary_loss']:
                     # Get bid price if enabled in settings
                     if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
-                        limit_price = get_option_bid_price(
-                            ticker=play['symbol'],
-                            expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
-                            strike_price=float(play['strike_price']),
-                            option_type=play['trade_type']
-                        )
-                        limit_price = validate_bid_price(limit_price, play['symbol'], play['stop_loss']['SL_option_prem'])
-                        if limit_price is None:
+                        # Get fresh option data to ensure latest bid
+                        option_data = get_option_data(play['option_contract_symbol'])
+                        if option_data and option_data.get('bid') is not None:
+                            limit_price = option_data['bid']
+                            logging.info(f"Using current bid price: ${limit_price:.2f}")
+                            display.info(f"Using current bid price: ${limit_price:.2f}")
+                        else:
                             logging.error("Failed to get bid price. Falling back to SL target price.")
                             display.error("Failed to get bid price. Falling back to SL target price.")
                             limit_price = play['stop_loss']['SL_option_prem']
@@ -954,13 +826,11 @@ def close_position(play, close_conditions, play_file):
             elif play['stop_loss'].get('order_type') == 'limit':
                 # Get bid price if enabled in settings
                 if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
-                    limit_price = get_option_bid_price(
-                        ticker=play['symbol'],
-                        expiration_date=datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d'),
-                        strike_price=float(play['strike_price']),
-                        option_type=play['trade_type']
-                    )
-                    limit_price = validate_bid_price(limit_price, play['symbol'], play['stop_loss']['SL_option_prem'])
+                    option_data = get_option_data(play['option_contract_symbol'])
+                    if option_data and option_data.get('bid') is not None:
+                        limit_price = option_data['bid']
+                        logging.info(f"Using current bid price: ${limit_price:.2f}")
+                        display.info(f"Using current bid price: ${limit_price:.2f}")
                     if limit_price is None:
                         logging.error("Failed to get bid price. Falling back to SL target price.")
                         display.error("Failed to get bid price. Falling back to SL target price.")
@@ -1058,13 +928,12 @@ def monitor_and_manage_position(play, play_file):
         if play['take_profit'].get('stock_price') is not None or play['stop_loss'].get('stock_price') is not None or \
            play['take_profit'].get('stock_price_pct') is not None or play['stop_loss'].get('stock_price_pct') is not None:
             try:
-                current_price = get_current_stock_price(underlying_symbol)
+                current_price = get_stock_price(underlying_symbol)
                 if current_price is None:
                     logging.error(f"Failed to get valid stock price for {underlying_symbol}")
                     display.error(f"Failed to get valid stock price for {underlying_symbol}")
                     return False
                     
-                market_data = pd.DataFrame({'Close': [current_price]})
                 logging.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
                 display.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
             except Exception as e:
@@ -1074,13 +943,13 @@ def monitor_and_manage_position(play, play_file):
 
         # Check if we need premium monitoring
         if play['take_profit'].get('premium_pct') is not None or play['stop_loss'].get('premium_pct') is not None:
-            current_premium = get_current_option_premium(play)
-            if current_premium is None:
+            option_data = get_option_data(play['option_contract_symbol'])
+            if option_data is None:
                 logging.error("Failed to get current option premium.")
                 display.error("Failed to get current option premium.")
                 return False
-            if market_data is None:
-                market_data = pd.DataFrame({'Close': [current_premium]})
+                
+            current_premium = option_data['premium']
             logging.info(f"Current option premium for {contract_symbol}: ${current_premium:.4f}")
             display.info(f"Current option premium for {contract_symbol}: ${current_premium:.4f}")
         
@@ -1110,7 +979,7 @@ def monitor_and_manage_position(play, play_file):
             return True
 
         # Evaluate closing conditions
-        close_conditions = evaluate_closing_strategy(underlying_symbol, market_data, play)
+        close_conditions = evaluate_closing_strategy(underlying_symbol, play)
         if close_conditions['should_close']:
             close_attempts = 0
             max_attempts = 3
@@ -1375,22 +1244,10 @@ def execute_trade(play_file, play_type):
             display.error(f"Error validating order types: {str(e)}. Continuing to next play.")
             return True
         
-        # Get market data with error handling
-        try:
-            market_data = get_market_data(symbol)
-            if market_data is None or market_data.empty:
-                logging.error(f"Failed to get market data for {symbol}. Will retry next cycle.")
-                display.error(f"Failed to get market data for {symbol}. Will retry next cycle.")
-                return True
-        except Exception as e:
-            logging.error(f"Error getting market data: {str(e)}. Continuing to next play.")
-            display.error(f"Error getting market data: {str(e)}. Continuing to next play.")
-            return True
-        
         # OPENING a Play
         if play_type == "new":
             try:
-                if evaluate_opening_strategy(symbol, market_data, play):
+                if evaluate_opening_strategy(symbol, play):
                     try:
                         success = open_position(play, play_file)
                         return True
@@ -1652,13 +1509,18 @@ def is_market_holiday(date):
 # ****************-={ MAIN LOOP }=-********************
 ########################################################    
 def monitor_plays_continuously():
+    """Main monitoring loop for all plays"""
     plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plays'))
+    market_data = MarketDataManager()  # Initialize market data manager
     
     display.info(f"Monitoring plays directory: {plays_dir}")
     logging.info(f"Monitoring plays directory: {plays_dir}")
 
     while True:
         try:
+            # Start new cache cycle at beginning of loop
+            market_data.cache.new_cycle()
+            
             # Check market hours before processing
             is_open, minutes_to_open = validate_market_hours()
             if not is_open:
@@ -1699,45 +1561,40 @@ def monitor_plays_continuously():
                     play = load_play(play_file)
                     if play:
                         try:
-                            exp_date = datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d')
-                            stock = yf.Ticker(play['symbol'])
-                            chain = stock.option_chain(exp_date)
-                            options_data = chain.calls if play['trade_type'].lower() == 'call' else chain.puts
-                            strike = float(play['strike_price'])
-                            option = options_data[options_data['strike'] == strike]
+                            # Get current stock price
+                            current_price = get_stock_price(play['symbol'])
+                            if current_price is None or current_price <= 0:
+                                logging.error(f"Could not get valid share price for {play['symbol']}")
+                                display.error(f"Could not get valid share price for {play['symbol']}")
+                                continue
+
+                            # Get current option data
+                            option_data = get_option_data(play['option_contract_symbol'])
+                            if option_data is None:
+                                logging.error(f"Could not get option data for {play['option_contract_symbol']}")
+                                display.error(f"Could not get option data for {play['option_contract_symbol']}")
+                                continue
                             
-                            if not option.empty:
-                                current_price = get_current_stock_price(stock)
-                                if current_price is None or current_price <= 0:
-                                    logging.error(f"Could not get valid share price for {play['symbol']}")
-                                    display.error(f"Could not get valid share price for {play['symbol']}")
-                                    continue
-                                
-                                opt = option.iloc[0]
-                                
-                                # Log detailed data to file
-                                logging.info(f"Play data for {play['symbol']}: "
-                                           f"Type={play_type}, "
-                                           f"Strike=${strike}, "
-                                           f"Exp={exp_date}, "
-                                           f"Stock=${current_price:.2f}, "
-                                           f"Bid=${opt['bid']:.2f}, "
-                                           f"Ask=${opt['ask']:.2f}")
-                                
-                                # Display formatted data to terminal
-                                display.header(f"Play: {play['symbol']} {play['trade_type']} ${strike} exp:{exp_date}")
-                                display.status(f"Status: [{play_type}]")
-                                display.price(f"Stock Price: ${current_price:.2f}")
-                                display.info("Option Data:")
-                                display.info(f"  Bid: ${opt['bid']:.2f}")
-                                display.info(f"  Ask: ${opt['ask']:.2f}")
-                                display.info(f"  Last: ${opt['lastPrice']:.2f}")
-                                display.info(f"  Volume: {int(opt['volume'])}")
-                                display.info(f"  Open Interest: {int(opt['openInterest'])}")
-                                display.info(f"  Implied Vol: {opt['impliedVolatility']:.2%}")
+                            # Log detailed data to file
+                            logging.info(f"Play data for {play['symbol']}: "
+                                       f"Type={play_type}, "
+                                       f"Strike=${play['strike_price']}, "
+                                       f"Exp={play['expiration_date']}, "
+                                       f"Stock=${current_price:.2f}, "
+                                       f"Bid=${option_data['bid']:.2f}, "
+                                       f"Ask=${option_data['ask']:.2f}")
+
+                            # Display formatted data to terminal
+                            display.header(f"Play: {play['symbol']} {play['trade_type']} ${play['strike_price']} exp:{play['expiration_date']}")
+                            display.status(f"Status: [{play_type}]")
+                            display.price(f"Stock Price: ${current_price:.2f}")
+                            display.info("Option Data:")
+                            display.info(f"  Bid: ${option_data['bid']:.2f}")
+                            display.info(f"  Ask: ${option_data['ask']:.2f}")
+                            display.info(f"  Last: ${option_data['premium']:.2f}")
                             
                         except Exception as e:
-                            error_msg = f"Error fetching option data for {play['symbol']}: {str(e)}"
+                            error_msg = f"Error fetching market data for {play['symbol']}: {str(e)}"
                             display.error(error_msg)
                             logging.error(error_msg)
 
@@ -1770,79 +1627,6 @@ def monitor_plays_continuously():
 # 8. ANCILLARY FUNCTIONS
 # ==================================================
 # Functions to support the main trade execution flow.
-
-# Greeks have been paused for now.
-def capture_greeks(play, current_premium):
-    """Capture Delta and Theta values for the option play at position opening"""
-    try:
-        # Get market data using yfinance
-        stock = yf.Ticker(play['symbol'])
-        logging.debug(f"Retrieved ticker for {play['symbol']}")
-        
-        # Get option chain for implied volatility
-        expiration_date = datetime.strptime(play['expiration_date'], '%m/%d/%Y').strftime('%Y-%m-%d')
-        chain = stock.option_chain(expiration_date)
-        
-        # Get appropriate chain and filter for our strike
-        options_data = chain.calls if play['trade_type'].lower() == 'call' else chain.puts
-        strike = float(play['strike_price'])
-        filtered_data = options_data[options_data['strike'] == strike]
-        
-        if filtered_data.empty:
-            logging.error(f"No matching option found for strike {strike}")
-            display.error(f"No matching option found for strike {strike}")
-            return None, None
-            
-        # Get implied volatility from filtered data
-        implied_volatility = filtered_data.iloc[0]['impliedVolatility']
-        
-        # Get underlying price from stock info with fallbacks
-        try:
-            underlying_price = stock.info.get('regularMarketPrice')
-            if underlying_price is None:
-                underlying_price = stock.fast_info.get('lastPrice')
-            if underlying_price is None:
-                hist = stock.history(period='1d', interval='1m')
-                if not hist.empty:
-                    underlying_price = hist['Close'].iloc[-1]
-                    
-            if underlying_price is None:
-                raise ValueError("Unable to get underlying price")
-                
-            logging.debug(f"Retrieved IV: {implied_volatility:.4f}, Underlying Price: ${underlying_price:.2f}")
-            
-        except Exception as e:
-            logging.error(f"Error getting underlying price: {e}")
-            display.error(f"Error getting underlying price: {e}")
-            return None, None
-        
-        # Create option data object
-        time_to_expiry = (datetime.strptime(expiration_date, '%Y-%m-%d') - datetime.now()).days / 365.0
-        
-        option_data = OptionData(
-            underlying_price=underlying_price,
-            strike_price=strike,
-            time_to_expiry=time_to_expiry,
-            risk_free_rate=0.05,  # Could be made configurable
-            volatility=implied_volatility,
-            dividend_yield=0.0,  # Could be made configurable
-            option_price=current_premium
-        )
-        
-        # Calculate Delta and Theta directly
-        delta_calculator = DeltaCalculator(option_data)
-        theta_calculator = ThetaCalculator(option_data)
-        
-        delta = delta_calculator.calculate(play['trade_type'].lower())
-        theta = theta_calculator.calculate(play['trade_type'].lower())
-        
-        logging.debug(f"Calculated Greeks - Delta: {delta:.4f}, Theta: {theta:.4f}")
-        return delta, theta
-        
-    except Exception as e:
-        logging.error(f"Error capturing Greeks: {str(e)}")
-        display.error(f"Error capturing Greeks: {str(e)}")
-        return None, None
 
 def verify_position_exists(play):
     """Verify position exists with retries"""

@@ -174,7 +174,7 @@ indicators:
 # Strategy Settings
 ####################################################################################################
 entry_strategy:
-  buffer: 0.05                       # Price buffer for entry points (default is ±$0.05). ENABLED.
+  buffer: 0.50                       # Price buffer for entry points (default is ±$0.05). ENABLED.
 
 ####################################################################################################
 # Position Management
@@ -264,7 +264,7 @@ market_hours:
 auto_play_creator:
   enabled: true                     # Enable/disable auto play creation
   order_types:                      # Types of orders to use
-    - market
+#    - market
     - limit
   TP-SL_types:                # Types of take profit and stop loss to use
     - STOCK_PRICE
@@ -272,7 +272,7 @@ auto_play_creator:
     - STOCK_PRICE_PCT
   
   stop_loss_types:                  # Types of stop loss to use
-    - STOP
+#    - STOP
     - LIMIT
 #    - CONTINGENCY
 
@@ -287,9 +287,9 @@ auto_play_creator:
     - PUT
     - MIX
   expiration_days: 7                # Default expiration in days for test plays
-  entry_buffer: 0.20                # Entry price buffer for test plays (e.g., ±$0.01)
-  take_profit_pct: 2.0              # Default take profit percentage
-  stop_loss_pct: 1.0                # Default stop loss percentage
+  entry_buffer: 0.50                # Entry price buffer for test plays (e.g., ±$0.01)
+  take_profit_pct: 1.5              # Default take profit percentage
+  stop_loss_pct: 0.75                # Default stop loss percentage
   test_symbols:                     # Symbols to use for test plays
     - SPY
     - QQQ
@@ -341,14 +341,31 @@ chart_viewer:
     figure_size: [12, 8]  # [width, height] in inches
 
 ####################################################################################################
-# Market Data Provider Settings (NOT CURRENTLY IN USE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!)
+# Market Data Provider Settings
 ####################################################################################################
 market_data_providers:
   # Primary provider will be used as the main source for data
-  primary_provider: "alpaca"  # Options: "alpaca", "yfinance"
+  primary_provider: "marketdataapp"  # Options: "alpaca", "yfinance", "marketdataapp"
   
   # Enable/disable specific providers
   providers:
+    marketdataapp:
+      enabled: true
+      cache:
+        enabled: true
+        max_age: 300  # 5 minutes
+      api_key: "SzJPUHVfVVhzQVFtZ2RVSm93b2xrcUdrYnZlM3BBaFExN1VScDZPbTI2RT0"
+      rate_limiting:
+        enabled: true
+        max_requests: 45  # Keep below 50 for safety
+        window_seconds: 60
+        
+    yfinance:
+      enabled: true  # Disabled by default, use as fallback
+      cache:
+        enabled: true
+        max_age: 300
+        
     alpaca:
       enabled: true
       use_websocket: true  # Enable real-time data streaming
@@ -370,18 +387,6 @@ market_data_providers:
           bars: 60           # Bar data can live longer
           trades: 5          # Trade data medium expiry
     
-    yfinance:
-      enabled: true
-      cache:
-        enabled: true
-        max_age: 300
-
-    marketdataapp:
-      enabled: true
-      cache:
-        enabled: true
-        max_age: 300
-      api_key: "SzJPUHVfVVhzQVFtZ2RVSm93b2xrcUdrYnZlM3BBaFExN1VScDZPbTI2RT0"
   
   # Data comparison settings
   comparison:
@@ -402,6 +407,22 @@ market_data_providers:
   realtime:
     update_interval: 1.0  # Seconds between real-time data updates
     max_symbols: 100  # Maximum number of symbols to track simultaneously
+
+  # NEW ADDITIONS - Add these while keeping all existing code:
+  fallback:
+    enabled: true
+    order: ["marketdataapp", "yfinance"]  # Provider priority order
+    max_attempts: 2  # Maximum number of providers to try
+    
+  cache:
+    enabled: true
+    strategy: "cycle"    # Changed from "memory" to "cycle"
+    cycle_based: true    # Explicitly state we're using cycle-based caching
+    max_items: 1000      # Maximum items to store per cycle (prevent memory bloat)
+    ttl:
+      stock_price: 5    # Seconds
+      option_quote: 5   # Seconds
+      
 
 ####################################################################################################
 # MULTI-MARKET DATA DISPLAY SETTINGS

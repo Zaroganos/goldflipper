@@ -6,24 +6,37 @@ The Market Data System is designed to provide a flexible, maintainable, and prov
 ## Architecture Diagram 
 mermaid
 graph TD
-A[Trading Strategy] --> B[MarketDataManager]
-B --> C[MarketDataProvider]
-C --> D[YFinanceProvider]
-C --> E[Future Provider 1]
-C --> F[Future Provider 2]
-D --> G[YFinance API]
-E --> H[Other Data Source]
-F --> I[Another Data Source]
+A[Trading Strategy] --> B[MarketDataOperations]
+B --> C[MarketDataManager]
+C --> D[MarketDataProvider]
+D --> E[YFinanceProvider]
+D --> F[MarketDataAppProvider]
+D --> G[AlpacaProvider]
+E --> H[YFinance API]
+F --> I[MarketData.app API]
+G --> J[Alpaca API]
 style B fill:#f9f,stroke:#333
 style C fill:#bbf,stroke:#333
-style D,E,F fill:#dfd,stroke:#333
-
+style D fill:#dfd,stroke:#333
+style E,F,G fill:#efe,stroke:#333
 
 ## Components
 
-### 1. MarketDataManager
-The central coordinator for all market data operations. It:
-- Provides a high-level interface for the rest of the system
+### 1. MarketDataOperations
+The business logic layer that implements specific trading operations. It:
+- Provides high-level, business-focused methods for trading strategies
+- Handles complex data transformations and validations
+- Manages fallback logic between providers
+- Implements specific trading requirements
+
+Key Methods:
+- `get_option_premium_data(ticker, expiration_date, strike_price, option_type)`: Get validated option premium
+- `validate_premium(premium, symbol)`: Ensure premium data meets business rules
+- `filter_option_chain(chain, criteria)`: Apply business filters to option chains
+
+### 2. MarketDataManager
+The central infrastructure coordinator. It:
+- Provides a provider-agnostic interface
 - Manages data provider instances
 - Handles data aggregation and formatting
 - Coordinates caching strategies
@@ -32,27 +45,18 @@ Key Methods:
 - `get_current_market_data(symbol)`: Get comprehensive current market data
 - `get_option_data(symbol, expiration_date)`: Get option chain and related data
 
-### 2. MarketDataProvider (Abstract Base Class)
-Defines the interface that all data providers must implement. This ensures consistency across different providers and makes them interchangeable.
-
-Required Methods:
-- `get_stock_price(symbol)`
-- `get_historical_data(symbol, start_date, end_date, interval)`
-- `get_option_chain(symbol, expiration_date)`
-- `get_option_greeks(option_symbol)`
-
-### 3. YFinanceProvider
-The concrete implementation of MarketDataProvider using the YFinance library. Features:
-- Built-in caching for performance optimization
-- Error handling for API-specific issues
-- Data format standardization
+### 3. MarketDataProvider (Abstract Base Class)
+[previous provider content remains the same...]
 
 ## Data Flow
 
-1. Application requests market data through MarketDataManager
-2. MarketDataManager delegates to the configured provider
-3. Provider fetches data from its source
-4. Data is standardized and returned through the chain
+1. Trading Strategy requests data through MarketDataOperations
+2. MarketDataOperations applies business logic and validation
+3. MarketDataOperations uses MarketDataManager for raw data access
+4. MarketDataManager delegates to the configured provider
+5. Provider fetches data from its source
+6. Data flows back up through the chain with transformations at each level
+
 
 ## Usage Example
 python
