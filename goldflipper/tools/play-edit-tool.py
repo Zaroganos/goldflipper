@@ -663,18 +663,33 @@ def select_single_play(plays):
             print("Please enter a valid number")
 
 def edit_oco_trigger(play_data, filepath):
-    """Edit OCO trigger play"""
+    """Edit OCO trigger plays"""
     # Initialize conditional_plays if it doesn't exist
     if 'conditional_plays' not in play_data:
-        play_data['conditional_plays'] = {'OCO_trigger': None, 'OTO_trigger': None}
+        play_data['conditional_plays'] = {'OCO_triggers': [], 'OTO_triggers': []}
+    elif 'OCO_trigger' in play_data['conditional_plays']:
+        # Convert old format to new format
+        old_trigger = play_data['conditional_plays'].pop('OCO_trigger', None)
+        if old_trigger:
+            play_data['conditional_plays']['OCO_triggers'] = [old_trigger]
+        else:
+            play_data['conditional_plays']['OCO_triggers'] = []
+    elif 'OCO_triggers' not in play_data['conditional_plays']:
+        play_data['conditional_plays']['OCO_triggers'] = []
         
     current_filename = os.path.basename(filepath)
-    current_trigger = play_data['conditional_plays'].get('OCO_trigger')
+    current_triggers = play_data['conditional_plays'].get('OCO_triggers', [])
     
-    print("\n=== Edit OCO Trigger ===")
-    print(f"Current OCO trigger: {current_trigger or 'None'}")
+    print("\n=== Edit OCO Triggers ===")
+    print("Current OCO triggers:")
+    if current_triggers:
+        for i, trigger in enumerate(current_triggers, 1):
+            print(f"{i}. {trigger}")
+    else:
+        print("None")
+        
     print("\nOptions:")
-    print("1. Add/Change OCO trigger")
+    print("1. Add OCO trigger")
     print("2. Remove OCO trigger")
     print("3. Cancel")
     
@@ -689,29 +704,55 @@ def edit_oco_trigger(play_data, filepath):
         print("\nSelect new OCO trigger play:")
         new_plays = [p for p in get_all_plays() if p['folder'] == 'new']
         available = display_plays_list(new_plays, 'new', current_filename)
-        selected = select_single_play(available)
+        selected = select_plays_from_list(available)
+        
         if selected:
-            play_data['conditional_plays']['OCO_trigger'] = selected
-            print("\nOCO trigger updated successfully")
+            for play in selected:
+                if play not in current_triggers:
+                    play_data['conditional_plays']['OCO_triggers'].append(play)
+            print("\nOCO triggers updated successfully")
             
     elif choice == 2:
-        if current_trigger:
-            play_data['conditional_plays']['OCO_trigger'] = None
-            print("\nOCO trigger removed")
+        if current_triggers:
+            print("\nSelect triggers to remove:")
+            for i, trigger in enumerate(current_triggers, 1):
+                print(f"{i}. {trigger}")
+                
+            to_remove = select_plays_from_list(current_triggers)
+            if to_remove:
+                play_data['conditional_plays']['OCO_triggers'] = [
+                    t for t in current_triggers if t not in to_remove
+                ]
+                print("\nSelected triggers removed")
         else:
-            print("\nNo OCO trigger to remove")
+            print("\nNo OCO triggers to remove")
 
 def edit_oto_trigger(play_data, filepath):
-    """Edit OTO trigger play"""
+    """Edit OTO trigger plays"""
     # Initialize conditional_plays if it doesn't exist
     if 'conditional_plays' not in play_data:
-        play_data['conditional_plays'] = {'OCO_trigger': None, 'OTO_trigger': None}
+        play_data['conditional_plays'] = {'OCO_triggers': [], 'OTO_triggers': []}
+    elif 'OTO_trigger' in play_data['conditional_plays']:
+        # Convert old format to new format
+        old_trigger = play_data['conditional_plays'].pop('OTO_trigger', None)
+        if old_trigger:
+            play_data['conditional_plays']['OTO_triggers'] = [old_trigger]
+        else:
+            play_data['conditional_plays']['OTO_triggers'] = []
+    elif 'OTO_triggers' not in play_data['conditional_plays']:
+        play_data['conditional_plays']['OTO_triggers'] = []
         
     current_filename = os.path.basename(filepath)
-    current_trigger = play_data['conditional_plays'].get('OTO_trigger')
+    current_triggers = play_data['conditional_plays'].get('OTO_triggers', [])
     
-    print("\n=== Edit OTO Trigger ===")
-    print(f"Current OTO trigger: {current_trigger or 'None'}")
+    print("\n=== Edit OTO Triggers ===")
+    print("Current OTO triggers:")
+    if current_triggers:
+        for i, trigger in enumerate(current_triggers, 1):
+            print(f"{i}. {trigger}")
+    else:
+        print("None")
+        
     print("\nOptions:")
     print("1. Add/Change OTO trigger")
     print("2. Remove OTO trigger")
@@ -787,6 +828,16 @@ def get_field_value_display(play_data, field):
             stock_price = entry_point.get('stock_price')
             return f"${float(stock_price):.2f}" if stock_price is not None else "Not set"
         return "Not set"
+    elif field == "OCO_trigger":
+        triggers = play_data.get('conditional_plays', {}).get('OCO_triggers', [])
+        if not triggers:
+            return "Not set"
+        return ", ".join(triggers)
+    elif field == "OTO_trigger":
+        triggers = play_data.get('conditional_plays', {}).get('OTO_triggers', [])
+        if not triggers:
+            return "Not set"
+        return ", ".join(triggers)
     elif field == "take_profit":
         tp_data = play_data.get('take_profit', {})
         displays = []

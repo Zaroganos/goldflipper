@@ -1672,11 +1672,22 @@ def handle_conditional_plays(play, play_file):
         return False
     
     # Get trigger data directly from conditional_plays
-    oco_trigger = play.get('conditional_plays', {}).get('OCO_trigger')
-    oto_trigger = play.get('conditional_plays', {}).get('OTO_trigger')
+    oco_triggers = play.get('conditional_plays', {}).get('OCO_triggers', [])
+    oto_triggers = play.get('conditional_plays', {}).get('OTO_triggers', [])
+    
+    # Handle legacy format conversion
+    if play.get('conditional_plays', {}).get('OCO_trigger'):
+        old_trigger = play['conditional_plays'].pop('OCO_trigger')
+        oco_triggers.append(old_trigger)
+        play['conditional_plays']['OCO_triggers'] = oco_triggers
+        
+    if play.get('conditional_plays', {}).get('OTO_trigger'):
+        old_trigger = play['conditional_plays'].pop('OTO_trigger')
+        oto_triggers.append(old_trigger)
+        play['conditional_plays']['OTO_triggers'] = oto_triggers
     
     # If no triggers exist, mark as handled and return
-    if not oco_trigger and not oto_trigger:
+    if not oco_triggers and not oto_triggers:
         play['status']['conditionals_handled'] = True
         save_play(play, play_file)
         return True
@@ -1684,20 +1695,22 @@ def handle_conditional_plays(play, play_file):
     success = True
     plays_base_dir = os.path.abspath(os.path.dirname(os.path.dirname(play_file)))
     
-    # Handle OCO trigger (move to expired)
-    if oco_trigger:
+    # Handle OCO triggers (move to expired)
+    for oco_trigger in oco_triggers:
         oco_path = os.path.join(plays_base_dir, 'new', oco_trigger)
         if os.path.exists(oco_path):
             try:
                 if not move_play_to_expired(oco_path):
                     success = False
+                    logging.error(f"Failed to move OCO trigger to expired: {oco_trigger}")
+                    display.error(f"Failed to move OCO trigger to expired: {oco_trigger}")
             except Exception as e:
-                logging.error(f"Failed to process OCO trigger: {e}")
-                display.error(f"Failed to process OCO trigger: {e}")
+                logging.error(f"Failed to process OCO trigger {oco_trigger}: {e}")
+                display.error(f"Failed to process OCO trigger {oco_trigger}: {e}")
                 success = False
     
-    # Handle OTO trigger (move from temp to new)
-    if oto_trigger:
+    # Handle OTO triggers (move from temp to new)
+    for oto_trigger in oto_triggers:
         temp_path = os.path.join(plays_base_dir, 'temp', oto_trigger)
         new_path = os.path.join(plays_base_dir, 'new', oto_trigger)
         
@@ -1705,15 +1718,15 @@ def handle_conditional_plays(play, play_file):
             if os.path.exists(temp_path):
                 # Move the file from temp to new
                 move_play_to_new(temp_path)
-                logging.info(f"Moved OTO trigger from temp to new: {new_path}")
-                display.info(f"Moved OTO trigger from temp to new: {new_path}")
+                logging.info(f"Moved OTO trigger from temp to new: {oto_trigger}")
+                display.info(f"Moved OTO trigger from temp to new: {oto_trigger}")
             else:
-                logging.error(f"OTO trigger file not found in temp folder: {temp_path}")
-                display.error(f"OTO trigger file not found in temp folder: {temp_path}")
+                logging.error(f"OTO trigger file not found in temp folder: {oto_trigger}")
+                display.error(f"OTO trigger file not found in temp folder: {oto_trigger}")
                 success = False
         except Exception as e:
-            logging.error(f"Failed to move OTO trigger: {e}")
-            display.error(f"Failed to move OTO trigger: {e}")
+            logging.error(f"Failed to move OTO trigger {oto_trigger}: {e}")
+            display.error(f"Failed to move OTO trigger {oto_trigger}: {e}")
             success = False
     
     play['status']['conditionals_handled'] = success
