@@ -174,7 +174,7 @@ indicators:
 # Strategy Settings
 ####################################################################################################
 entry_strategy:
-  buffer: 0.50                       # Price buffer for entry points (default is ±$0.05). ENABLED.
+  buffer: 0.25                       # Price buffer for entry points (default is ±$0.05). ENABLED.
 
 ####################################################################################################
 # Position Management
