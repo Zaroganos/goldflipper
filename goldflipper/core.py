@@ -1,10 +1,8 @@
 import os
 import logging
 import time
-import pandas as pd
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-import yfinance as yf
 from goldflipper.json_parser import load_play
 from goldflipper.alpaca_client import get_alpaca_client
 from goldflipper.config.config import config
@@ -20,9 +18,6 @@ from alpaca.common.exceptions import APIError
 import json
 from goldflipper.tools.option_data_fetcher import calculate_greeks
 from uuid import UUID
-from goldflipper.data.greeks.base import OptionData
-from goldflipper.data.greeks.delta import DeltaCalculator
-from goldflipper.data.greeks.theta import ThetaCalculator
 from typing import Optional, Dict, Any
 from goldflipper.data.market.manager import MarketDataManager  # Add this import
 
