@@ -164,8 +164,10 @@ def get_stock_price(symbol: str) -> Optional[float]:
     # START DEBUG - Remove after testing
     if cached:
         logging.debug(f"CACHE HIT: Stock price for {symbol}")
+        display.info(f"CACHE HIT: Stock price for {symbol}")
     else:
         logging.debug(f"CACHE MISS: Fetching stock price for {symbol}")
+        display.info(f"CACHE MISS: Fetching stock price for {symbol}")
     # END DEBUG
     if cached:
         return cached
