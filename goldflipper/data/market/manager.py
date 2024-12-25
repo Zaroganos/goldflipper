@@ -145,3 +145,8 @@ class MarketDataManager:
             self.logger.error(f"Error getting option quote for {contract_symbol}: {str(e)}")
             display.error(f"Error getting option quote for {contract_symbol}: {str(e)}")
             return None 
+        
+    def start_new_cycle(self):
+        """Start a new market data cycle, clearing the cache"""
+        self.logger.info("Starting new market data cycle")
+        self.cache.new_cycle() 

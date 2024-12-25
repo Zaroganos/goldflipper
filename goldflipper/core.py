@@ -156,10 +156,20 @@ def get_all_positions() -> Optional[Dict[str, Dict[str, Any]]]:
 # ==================================================
 # Functions to fetch market data using the abstracted market data system.
 
+# Add at the top of the file
+_market_data_manager = None  # Global singleton instance
+
+def get_market_data_manager() -> MarketDataManager:
+    """Get or create the singleton MarketDataManager instance"""
+    global _market_data_manager
+    if _market_data_manager is None:
+        _market_data_manager = MarketDataManager()
+    return _market_data_manager
+
 def get_stock_price(symbol: str) -> Optional[float]:
     """Get current stock price."""
-    market_data = MarketDataManager()  # Initialize the manager
-    cache_key = f"stock_price_{symbol}"
+    market_data = get_market_data_manager()  # Use singleton instance
+    cache_key = f"stock_price:{symbol}"
     cached = market_data.cache.get(cache_key)
     # START DEBUG - Remove after testing
     if cached:
@@ -175,7 +185,7 @@ def get_stock_price(symbol: str) -> Optional[float]:
     try:
         price = market_data.get_stock_price(symbol)
         if price is not None:
-            logging.info(f"Stock price for {symbol}: ${price:.2f}")
+            logging.info(f"Got fresh stock price for {symbol}: ${price:.2f}")
             return price
             
         logging.error(f"No price data available for {symbol}")
@@ -187,8 +197,8 @@ def get_stock_price(symbol: str) -> Optional[float]:
 
 def get_option_data(option_contract_symbol: str) -> Optional[Dict[str, float]]:
     """Get current option data."""
-    market_data = MarketDataManager()  # Initialize the manager
-    cache_key = f"option_data_{option_contract_symbol}"
+    market_data = get_market_data_manager()  # Use singleton instance
+    cache_key = f"option_quote:{option_contract_symbol}"
     cached = market_data.cache.get(cache_key)
     # START DEBUG - Remove after testing
     if cached:
@@ -200,11 +210,12 @@ def get_option_data(option_contract_symbol: str) -> Optional[Dict[str, float]]:
     # END DEBUG
     if cached:
         return cached
-        
+    
+    logging.info(f"CACHE MISS: Fetching fresh option data for {option_contract_symbol}")
     try:
         option_data = market_data.get_option_quote(option_contract_symbol)
         if option_data:
-            logging.info(f"Option data fetched for {option_contract_symbol}")
+            logging.info(f"Got fresh option data for {option_contract_symbol}")
             return option_data
             
         logging.error(f"No option data available for {option_contract_symbol}")
@@ -1510,15 +1521,17 @@ def is_market_holiday(date):
 def monitor_plays_continuously():
     """Main monitoring loop for all plays"""
     plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plays'))
-    market_data = MarketDataManager()  # Initialize market data manager
+    market_data = get_market_data_manager()  # Initialize market data manager
     
     display.info(f"Monitoring plays directory: {plays_dir}")
     logging.info(f"Monitoring plays directory: {plays_dir}")
 
     while True:
         try:
-            # Start new cache cycle at beginning of loop
-            market_data.cache.new_cycle()
+            # Start new market data cycle
+            market_data.start_new_cycle()
+            logging.info("Starting new monitoring cycle")
+            display.info("Starting new monitoring cycle")
             
             # Check market hours before processing
             is_open, minutes_to_open = validate_market_hours()
