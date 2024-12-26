@@ -1,11 +1,13 @@
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
-from textual.widgets import Header, Footer, Button, Static
+from textual.widgets import Header, Footer, Button, Static, Select
 from textual.screen import Screen
 import subprocess
 import sys
 import os
 from pathlib import Path
+from goldflipper.config.config import config
+import yaml
 
 class WelcomeScreen(Screen):
     BINDINGS = [("q", "quit", "Quit")]
@@ -13,7 +15,17 @@ class WelcomeScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Container(
-            Static(" Welcome to Goldflipper Trading System ", id="welcome"),
+            Horizontal(
+                Static(" Welcome to Goldflipper ", id="welcome"),
+                Select(
+                    [(acc.get('nickname', name.replace('_', ' ').title()), name) 
+                     for name, acc in config.get('alpaca', 'accounts').items() 
+                     if acc.get('enabled', False)],
+                    prompt="Select Trading Account",
+                    id="account_selector"
+                ),
+                id="header_container"
+            ),
             Horizontal(
                 Container(
                     Button("Create New Play", variant="primary", id="create_play"),
@@ -37,6 +49,39 @@ class WelcomeScreen(Screen):
             classes="container",
         )
         yield Footer()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle account selection changes"""
+        import yaml
+        import os
+        from pathlib import Path
+
+        selected_account = event.value
+        accounts = config.get('alpaca', 'accounts')
+        nickname = accounts[selected_account].get('nickname', selected_account.replace('_', ' ').title())
+        
+        # Get the path to settings.yaml
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        settings_path = os.path.join(current_dir, 'config', 'settings.yaml')
+        
+        # Read the file content as lines
+        with open(settings_path, 'r') as file:
+            lines = file.readlines()
+        
+        # Find and replace the active_account line
+        for i, line in enumerate(lines):
+            if "active_account:" in line:
+                # Preserve the indentation of the original line
+                indent = len(line) - len(line.lstrip())
+                lines[i] = " " * indent + f"active_account: '{selected_account}'  # Specify which account is currently active\n"
+                break
+        
+        # Write the modified content back
+        with open(settings_path, 'w') as file:
+            file.writelines(lines)
+        
+        # Notify using the nickname
+        self.notify(f"Switched to {nickname}")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "create_play":
@@ -218,14 +263,51 @@ class GoldflipperTUI(App):
         background: $surface;
     }
 
-    #welcome {
-        margin: 1;
-        padding: 2;
-        text-align: center;
+    #header_container {
         width: 100%;
+        height: auto;
+        align: center middle;
+        margin: 1 1 2 1;
+    }
+
+    #welcome {
+        width: 65%;
+        height: auto;
+        margin: 1;
+        padding: 1;
+        text-align: center;
         color: gold;
         background: $surface;
         text-style: bold;
+        border: heavy $accent;
+    }
+    
+    #account_selector {
+        width: 35%;
+        height: 5;
+        margin: 1;
+        padding: 0;
+        background: $surface;
+        border: heavy $accent;
+        color: gold;
+    }
+
+    #account_selector > .select--option {
+        padding: 0;
+        height: auto;
+    }
+
+    #account_selector > .select--container {
+        padding: 0;
+        height: auto;
+    }
+
+    #account_selector > .select--placeholder {
+        padding: 0;
+        height: auto;
+    }
+
+    #account_selector:focus {
         border: heavy $accent;
     }
     
@@ -236,6 +318,7 @@ class GoldflipperTUI(App):
         background: $surface-darken-2;
         border: panel $primary;
         padding: 2;
+        margin-top: 1;
     }
 
     #button_container {

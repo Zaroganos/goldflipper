@@ -38,14 +38,39 @@
 # Alpaca API Settings
 ####################################################################################################
 alpaca:
-  api_key: 'PKRM7RNLH2PDV2B07Z0L'     # Your Alpaca API key
-  secret_key: 'G5WpJ8JY4qNdu7ToIVvrxlCmtvCY5ueSLvsMEax3'  # Your Alpaca secret key
-  base_url: 'https://paper-api.alpaca.markets/v2'  # Alpaca API endpoint (paper/live trading)
-  
+  accounts:
+    live:
+      enabled: false
+      nickname: "Live Trading"
+      api_key: 'YOUR_LIVE_API_KEY'
+      secret_key: 'YOUR_LIVE_SECRET_KEY'
+      base_url: 'https://api.alpaca.markets'
+    paper_1:
+      enabled: true
+      nickname: "Paper Trading"
+      api_key: 'PKXATZMQYM3AIMOS9JAE'
+      secret_key: 'lfujbWBWJQNMoHzioZNEyD0jRXKIXUoxqGQjXxmR'
+      base_url: 'https://paper-api.alpaca.markets'
+    paper_2:
+      enabled: true
+      nickname: "Testing"
+      api_key: 'PKRM7RNLH2PDV2B07Z0L'
+      secret_key: 'G5WpJ8JY4qNdu7ToIVvrxlCmtvCY5ueSLvsMEax3'
+      base_url: 'https://paper-api.alpaca.markets'
+    paper_3:
+      enabled: false
+      nickname: "Experimental"
+      api_key: 'YOUR_PAPER_3_API_KEY'
+      secret_key: 'YOUR_PAPER_3_SECRET_KEY'
+      base_url: 'https://paper-api.alpaca.markets'
+  default_account: 'paper_1'  # Specify which account to use by default
+  active_account: 'paper_2'  # Specify which account is currently active
 
-# Data Paths
-# --------------------------------------------------
-# All paths are relative to project root
+
+  
+####################################################################################################
+# Data Paths (UNUSED)
+####################################################################################################
 paths:
   data_dir: 'data'                    # Main data directory
   raw_data_dir: 'data/raw'           # Raw market data storage

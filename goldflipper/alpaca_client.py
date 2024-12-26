@@ -17,15 +17,25 @@ print(f"Current working directory: {os.getcwd()}")
 
 def get_alpaca_client():
     """
-    Initialize and return the Alpaca Trading Client.
+    Initialize and return the Alpaca Trading Client using the active account.
 
     Returns:
     - TradingClient: The Alpaca client for trading.
     """
-    # Get credentials using the same method as the direct API test
-    api_key = config.get('alpaca', 'api_key')
-    secret_key = config.get('alpaca', 'secret_key')
-    base_url = config.get('alpaca', 'base_url')
+    # Get the active account name
+    active_account = config.get('alpaca', 'active_account')
+    
+    # Get the account details
+    accounts = config.get('alpaca', 'accounts')
+    if active_account not in accounts:
+        raise ValueError(f"Active account '{active_account}' not found in configuration")
+    
+    account = accounts[active_account]
+    
+    # Get credentials for the active account
+    api_key = account['api_key']
+    secret_key = account['secret_key']
+    base_url = account['base_url']
 
     # Remove '/v2' from base_url if present, as SDK adds it automatically
     base_url = base_url.replace('/v2', '')
@@ -34,7 +44,7 @@ def get_alpaca_client():
     client = TradingClient(
         api_key=api_key,
         secret_key=secret_key,
-        paper=True,  # Set to True for paper trading environment
+        paper=True if 'paper' in active_account else False,  # Set paper trading based on account name
         url_override=base_url
     )
     return client
