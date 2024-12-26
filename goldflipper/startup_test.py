@@ -123,6 +123,36 @@ def test_alpaca_api_direct():
     except Exception as e:
         return False, f"Direct API test failed: {str(e)}"
 
+def test_marketdata_api():
+    """Test MarketData.app API connectivity and service status."""
+    try:
+        # Use the status endpoint which doesn't require authentication
+        response = requests.get("https://api.marketdata.app/status/")
+        
+        if response.status_code != 200:
+            return False, f"MarketData.app API returned status code: {response.status_code}"
+            
+        data = response.json()
+        
+        # First check if we got a valid response
+        if data.get('s') != 'ok':
+            return False, "MarketData.app API returned non-ok status"
+            
+        # Look for the two specific API services we care about
+        services = data.get('service', [])
+        online_statuses = data.get('online', [])
+        
+        # Success if we got a valid response with services
+        if not services or not online_statuses:
+            return False, "Could not retrieve service information"
+            
+        return True, {
+            'services': list(zip(services, online_statuses))
+        }
+        
+    except Exception as e:
+        return False, f"MarketData.app API test failed: {str(e)}"
+
 def run_startup_tests():
     """Run all startup tests and return comprehensive results."""
     logging.info("Running startup self-tests...")
@@ -158,6 +188,13 @@ def run_startup_tests():
     test_results["tests"]["yfinance_download"] = {
         "success": success,
         "result": yfinance_download_result
+    }
+    
+    # Test MarketData.app API
+    success, marketdata_result = test_marketdata_api()
+    test_results["tests"]["marketdata.app"] = {
+        "success": success,
+        "result": marketdata_result
     }
     
     # Overall status
