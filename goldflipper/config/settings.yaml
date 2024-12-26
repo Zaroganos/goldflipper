@@ -64,7 +64,7 @@ alpaca:
       secret_key: 'YOUR_PAPER_3_SECRET_KEY'
       base_url: 'https://paper-api.alpaca.markets/v2'
   default_account: 'paper_1'  # Specify which account to use by default
-  active_account: 'paper_1'  # Specify which account is currently active
+  active_account: 'paper_2'  # Specify which account is currently active
 
 
   
@@ -289,7 +289,7 @@ market_hours:
 auto_play_creator:
   enabled: true                     # Enable/disable auto play creation
   order_types:                      # Types of orders to use
-#    - market
+    - market
     - limit
   TP-SL_types:                # Types of take profit and stop loss to use
     - STOCK_PRICE
@@ -297,7 +297,7 @@ auto_play_creator:
     - STOCK_PRICE_PCT
   
   stop_loss_types:                  # Types of stop loss to use
-#    - STOP
+    - STOP
     - LIMIT
 #    - CONTINGENCY
 

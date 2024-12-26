@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from typing import Optional, Tuple, Dict, Any
 import json
+from goldflipper.config.config import config
 
 def get_order_info(order_id: str) -> Optional[Dict[str, Any]]:
     """
@@ -22,8 +23,14 @@ def get_order_info(order_id: str) -> Optional[Dict[str, Any]]:
     """
     client = get_alpaca_client()
     try:
+        # Get active account nickname for display
+        active_account = config.get('alpaca', 'active_account')
+        account_nickname = config.get('alpaca', 'accounts')[active_account].get('nickname', 
+                                   active_account.replace('_', ' ').title())
+        
         order = client.get_order_by_id(order_id)
         return {
+            'account': account_nickname,  # Add account nickname to response
             'id': str(order.id),
             'status': order.status,
             'filled_qty': order.filled_qty,
@@ -138,8 +145,13 @@ def test_alpaca_connection():
     """Test the connection to Alpaca API"""
     client = get_alpaca_client()
     try:
+        # Get active account nickname for display
+        active_account = config.get('alpaca', 'active_account')
+        account_nickname = config.get('alpaca', 'accounts')[active_account].get('nickname', 
+                                   active_account.replace('_', ' ').title())
+        
         account = client.get_account()
-        display.success("Successfully connected to Alpaca API")
+        display.success(f"Successfully connected to Alpaca API using {account_nickname}")
         display.info(f"Account Status: {account.status}")
         display.info(f"Buying Power: ${float(account.buying_power):.2f}")
         return True

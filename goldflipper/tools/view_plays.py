@@ -139,6 +139,7 @@ class PlayCard(Widget):
             sl_value = format_price_value(data.get('stop_loss', {}), is_tp=False, play_status=play_status)
             
             symbol = data.get('symbol', 'N/A')
+            contracts = data.get('contracts', 'N/A')
             trade_type = data.get('trade_type', 'N/A')
             creation_date = format_date(data.get('creation_date', 'N/A'))
             play_expiration = format_date(data.get('play_expiration_date', 'N/A'))
@@ -154,7 +155,7 @@ class PlayCard(Widget):
             # See Rich's 8-bit color palette for more colors
             details = (
                 f"📄  [bold green]{name}[/bold green]\n"
-                f"[bold yellow]${symbol}[/bold yellow] - [cyan]{strategy}[/cyan]\n"
+                f"[bold yellow]${symbol}[/bold yellow] - [cyan]{strategy}[/cyan] - [orange_red1]Contracts:[/orange_red1] {contracts}\n"
                 f"[white]Contract Exp.:[/white] {expiration_date}  "
                 f"◦  [bright_yellow]{trade_type}[/bright_yellow]  ◦  "
                 f"[purple]Strike:[/purple] {strike_price}\n"
