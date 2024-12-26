@@ -1391,6 +1391,31 @@ def validate_market_hours():
     current_time = datetime.now(market_tz)
     current_time_only = current_time.time()
     
+    # Check for holidays first
+    if is_market_holiday(current_time.date()):
+        next_market_day = current_time + timedelta(days=1)
+        while is_market_holiday(next_market_day.date()) or next_market_day.weekday() >= 5:
+            next_market_day += timedelta(days=1)
+            
+        try:
+            start_time = config.get('market_hours', 'regular_hours', 'start', default='09:30')
+            next_market_day = next_market_day.replace(
+                hour=int(start_time.split(':')[0]),
+                minute=int(start_time.split(':')[1]),
+                second=0
+            )
+        except (ValueError, AttributeError) as e:
+            error_msg = f"Invalid market start time format: {e}. Using default 09:30"
+            display.error(error_msg)
+            logging.error(error_msg)
+            next_market_day = next_market_day.replace(hour=9, minute=30, second=0)
+            
+        wait_hours = (next_market_day - current_time).total_seconds() / 3600
+        display.info(f"Market is closed for holiday. Current time in {market_tz}: {current_time_only}")
+        display.info(f"Next market open in approximately {int(wait_hours)} hours")
+        logging.info(f"Market closed (holiday). Next open: {next_market_day}")
+        return False, int(wait_hours * 60)
+    
     # Check for weekends first
     if current_time.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
         next_market_day = current_time + timedelta(days=(7 - current_time.weekday()))
@@ -1504,14 +1529,21 @@ def handle_execution_error(e, operation, retry_count=0):
         return False
 
 def is_market_holiday(date):
-    """Check if given date is a US market holiday."""
+    """Check if given date is a US market holiday.
+    - This is simplified.
+    - Early closing days are not listed.
+    - Holidays fall on different days each year. This is not reflected here.
+    - This should really be separated out into a separate file. """
     holidays = [
         (1, 1),    # New Year's Day
-        (1, 16),   # Martin Luther King Jr. Day (3rd Monday in January)
-        (2, 20),   # Presidents Day (3rd Monday in February)
-        (5, 29),   # Memorial Day (Last Monday in May)
+        (1, 20),   # Martin Luther King Jr. Day (3rd Monday in January)
+        (2, 17),   # Presidents Day (3rd Monday in February)
+        (4, 18),   # Good Friday
+        (5, 26),   # Memorial Day (Last Monday in May)
         (7, 4),    # Independence Day
-        (12, 25),  # Christmas
+        (9, 1),    # Labor Day (1st Monday in September)
+        (11, 27),  # Thanksgiving Day (4th Thursday in November)
+        (12, 25),  # Christmas Day
     ]
     return (date.month, date.day) in holidays
 
