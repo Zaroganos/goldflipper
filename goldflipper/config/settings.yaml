@@ -50,21 +50,21 @@ alpaca:
       nickname: "Paper Trading"
       api_key: 'PKXATZMQYM3AIMOS9JAE'
       secret_key: 'lfujbWBWJQNMoHzioZNEyD0jRXKIXUoxqGQjXxmR'
-      base_url: 'https://paper-api.alpaca.markets'
+      base_url: 'https://paper-api.alpaca.markets/v2'
     paper_2:
       enabled: true
       nickname: "Testing"
       api_key: 'PKRM7RNLH2PDV2B07Z0L'
       secret_key: 'G5WpJ8JY4qNdu7ToIVvrxlCmtvCY5ueSLvsMEax3'
-      base_url: 'https://paper-api.alpaca.markets'
+      base_url: 'https://paper-api.alpaca.markets/v2'
     paper_3:
       enabled: false
       nickname: "Experimental"
       api_key: 'YOUR_PAPER_3_API_KEY'
       secret_key: 'YOUR_PAPER_3_SECRET_KEY'
-      base_url: 'https://paper-api.alpaca.markets'
+      base_url: 'https://paper-api.alpaca.markets/v2'
   default_account: 'paper_1'  # Specify which account to use by default
-  active_account: 'paper_2'  # Specify which account is currently active
+  active_account: 'paper_1'  # Specify which account is currently active
 
 
   

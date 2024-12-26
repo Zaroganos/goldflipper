@@ -84,10 +84,18 @@ def test_yfinance_download():
 def test_alpaca_api_direct():
     """Test Alpaca API connectivity directly using HTTP request."""
     try:
-        # Get credentials from config
-        api_key = config.get('alpaca', 'api_key')
-        secret_key = config.get('alpaca', 'secret_key')
-        base_url = config.get('alpaca', 'base_url')
+        # Get the active account details
+        active_account = config.get('alpaca', 'active_account')
+        accounts = config.get('alpaca', 'accounts')
+        if active_account not in accounts:
+            return False, f"Active account '{active_account}' not found in configuration"
+        
+        account = accounts[active_account]
+        
+        # Get credentials for the active account
+        api_key = account['api_key']
+        secret_key = account['secret_key']
+        base_url = account['base_url']
         
         # Set up headers
         headers = {
@@ -100,7 +108,9 @@ def test_alpaca_api_direct():
         
         if response.status_code == 200:
             account_data = response.json()
+            nickname = account.get('nickname', active_account.replace('_', ' ').title())
             return True, {
+                "account": nickname,
                 "status_code": response.status_code,
                 "account_status": account_data.get('status'),
                 "currency": account_data.get('currency'),
