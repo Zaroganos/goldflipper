@@ -225,54 +225,6 @@ def get_number_of_tps():
         error_message="Please enter a number between 2 and 5."
     )
 
-def get_tp_parameters(tp_number=None, total_tps=None):
-    """Get take profit parameters from user.
-    
-    Args:
-        tp_number (int, optional): The current TP number (for multiple TPs)
-        total_tps (int, optional): Total number of TPs being created
-    
-    Returns:
-        dict: Take profit parameters
-    """
-    tp_data = {}  # Initialize empty dict instead of one with null values
-
-    if tp_number is not None:
-        print(f"\nSetting Take Profit #{tp_number} of {total_tps}")
-        tp_data['TP_number'] = tp_number
-        tp_data['total_TPs'] = total_tps
-
-    tp_price_types = get_price_condition_type()
-
-    if 1 in tp_price_types:  # Absolute stock price
-        tp_stock_price = get_input(
-            f"Enter take profit stock price{f' #{tp_number}' if tp_number else ''}: ",
-            float,
-            validation=lambda x: x > 0,
-            error_message="Please enter a valid positive number for the take profit stock price."
-        )
-        tp_data['stock_price'] = tp_stock_price
-
-    if 3 in tp_price_types:  # Stock price % movement
-        tp_stock_price_pct = get_input(
-            f"Enter take profit stock price percentage movement{f' #{tp_number}' if tp_number else ''}: ",
-            float,
-            validation=lambda x: x > 0,
-            error_message="Please enter a valid positive percentage"
-        )
-        tp_data['stock_price_pct'] = tp_stock_price_pct
-
-    if 2 in tp_price_types:  # Option premium %
-        tp_premium_pct = get_premium_percentage()
-        tp_data['premium_pct'] = tp_premium_pct
-
-    # Always set order type
-    tp_data['order_type'] = get_order_type_choice(
-        transaction_type=f"Take Profit{f' #{tp_number}' if tp_number else ''}"
-    )
-
-    return tp_data
-
 class FileHandler:
     """Handles file operations for play configurations."""
     
@@ -445,6 +397,77 @@ class PlayBuilder:
         
         TerminalDisplay.success(f"Generated play name: {self.play['play_name']}", show_timestamp=False)
     
+    def get_tp_parameters(self, tp_number=None, total_tps=None, total_contracts=None):
+        """Get take profit parameters from user.
+        
+        Args:
+            tp_number (int, optional): The current TP number (for multiple TPs)
+            total_tps (int, optional): Total number of TPs being created
+            total_contracts (int, optional): Total number of contracts available
+        
+        Returns:
+            dict: Take profit parameters
+        """
+        tp_data = {}  # Initialize empty dict instead of one with null values
+
+        if tp_number is not None:
+            print(f"\nSetting Take Profit #{tp_number} of {total_tps}")
+            tp_data['TP_number'] = tp_number
+            tp_data['total_TPs'] = total_tps
+
+            # Handle contracts allocation for this TP level
+            remaining_tps = total_tps - tp_number + 1
+            remaining_contracts = total_contracts - sum(tp['contracts'] for tp in self.tp_cache)
+            
+            while True:
+                if tp_number == total_tps:  # Last TP level
+                    tp_contracts = remaining_contracts
+                    print(f"Automatically allocating remaining {tp_contracts} contract(s) to final TP level")
+                else:
+                    tp_contracts = get_input(
+                        f"Enter number of contracts for TP #{tp_number} ({remaining_contracts} remaining, {remaining_tps} TP levels left): ",
+                        int,
+                        validation=lambda x: 0 < x <= remaining_contracts,
+                        error_message=f"Please enter a number between 1 and {remaining_contracts}"
+                    )
+                
+                if tp_contracts <= remaining_contracts:
+                    tp_data['contracts'] = tp_contracts
+                    break
+                
+                print(f"Error: Cannot allocate more contracts than remaining ({remaining_contracts})")
+
+        tp_price_types = get_price_condition_type()
+
+        if 1 in tp_price_types:  # Absolute stock price
+            tp_stock_price = get_input(
+                f"Enter take profit stock price{f' #{tp_number}' if tp_number else ''}: ",
+                float,
+                validation=lambda x: x > 0,
+                error_message="Please enter a valid positive number for the take profit stock price."
+            )
+            tp_data['stock_price'] = tp_stock_price
+
+        if 3 in tp_price_types:  # Stock price % movement
+            tp_stock_price_pct = get_input(
+                f"Enter take profit stock price percentage movement{f' #{tp_number}' if tp_number else ''}: ",
+                float,
+                validation=lambda x: x > 0,
+                error_message="Please enter a valid positive percentage"
+            )
+            tp_data['stock_price_pct'] = tp_stock_price_pct
+
+        if 2 in tp_price_types:  # Option premium %
+            tp_premium_pct = get_premium_percentage()
+            tp_data['premium_pct'] = tp_premium_pct
+
+        # Always set order type
+        tp_data['order_type'] = get_order_type_choice(
+            transaction_type=f"Take Profit{f' #{tp_number}' if tp_number else ''}"
+        )
+
+        return tp_data
+
     def add_take_profits(self):
         """Add take profit configuration to the play."""
         TerminalDisplay.header("Take Profit Configuration", show_timestamp=False)
@@ -454,17 +477,21 @@ class PlayBuilder:
         if multiple_tps_enabled and get_multiple_tp_choice():
             self._handle_multiple_take_profits()
         else:
-            self.tp_cache = [get_tp_parameters()]  # Single TP stored in cache
-            
+            self.tp_cache = [self.get_tp_parameters()]  # Single TP stored in cache
+                
         return self.play
-    
+
     def _handle_multiple_take_profits(self):
         """Handle configuration of multiple take profit levels."""
         num_tps = get_number_of_tps()
+        total_contracts = self.play['contracts']  # Get total contracts from base play
         
         for i in range(num_tps):
-            tp_data = get_tp_parameters(tp_number=i+1, total_tps=num_tps)
+            tp_data = self.get_tp_parameters(tp_number=i+1, total_tps=num_tps, total_contracts=total_contracts)
             self.tp_cache.append(tp_data)
+        
+        # Remove the contracts from the base play since they're now distributed across TPs
+        del self.play['contracts']
     
     def add_stop_loss(self):
         """Add stop loss configuration to the play."""
@@ -665,6 +692,11 @@ class PlayBuilder:
                 current_filename = f"{base_filename}_TP{i}.json"
             else:
                 current_filename = self.filename
+            
+            # Extract contracts from TP config and put it at root level
+            if 'contracts' in tp_config:
+                current_play['contracts'] = tp_config['contracts']
+                del tp_config['contracts']  # Remove it from TP config
             
             current_play['take_profit'] = tp_config
             
