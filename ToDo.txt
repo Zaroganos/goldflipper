@@ -1,0 +1,24 @@
+This is a list of things to do for the goldflipper project.
+
+- [ ] Add limit orders at the 'last' price to the execution flow and play creation:
+      1. Add price reference choice (bid/last) to play creation tool
+      2. Update play data structure to store price reference
+      3. Modify order execution logic to use selected price
+      4. Add price reference validation in core functions
+      5. Update logging to show price reference used
+      6. Maintain backward compatibility for existing plays
+- [ ] Fix the problem with plays whose limit order is not filled and expires at the end of the day:
+      1. Implement atomic file operations for all play file writes
+      2. Add file backups before critical operations
+      3. Add validation checks before saving play data
+      4. Add integrity verification for play files
+      5. Implement proper error handling and recovery for corrupted files
+- [ ] Implement a packaging and installation system for the program:
+      1. Create spec file for PyInstaller with all dependencies
+      2. Add data files to spec (config files, templates, etc.)
+      3. Set up proper file paths for packaged version
+      4. Create separate builds for Windows and Linux
+      5. Add version checking and auto-update capability
+      6. Create installation scripts for each platform
+      7. Set up proper logging paths for installed version
+
