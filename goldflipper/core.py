@@ -566,20 +566,25 @@ def open_position(play, play_file):
     
     try:
         # Create appropriate order request based on order type
-        is_limit_order = play.get('entry_point', {}).get('order_type') == 'limit'
+        order_type = play.get('entry_point', {}).get('order_type', 'limit at bid')  # Default to limit at bid
+        is_limit_order = order_type != 'market'
         
         if is_limit_order:
-            # Get bid price if enabled in settings
-            if config.get('orders', 'bid_price_settings', 'entry', default=True):
-                # OLD: limit_price = get_option_bid_price(...)
-                # NEW: Get bid directly from option_data
-                limit_price = option_data['bid']
-                if limit_price is None:
-                    logging.error("Failed to get bid price. Falling back to current premium.")
-                    display.error("Failed to get bid price. Falling back to current premium.")
-                    limit_price = current_premium
-            else:
+            # Determine which price to use for limit order
+            if order_type == 'limit at last':
                 limit_price = current_premium
+                logging.info(f"Using last traded price for limit order: ${limit_price:.2f}")
+                display.info(f"Using last traded price for limit order: ${limit_price:.2f}")
+            else:  # 'limit at bid'
+                # Get bid price if enabled in settings
+                if config.get('orders', 'bid_price_settings', 'entry', default=True):
+                    limit_price = option_data['bid']
+                    logging.info(f"Using bid price for limit order: ${limit_price:.2f}")
+                    display.info(f"Using bid price for limit order: ${limit_price:.2f}")
+                else:
+                    limit_price = current_premium
+                    logging.info(f"Using last traded price for limit order: ${limit_price:.2f}")
+                    display.info(f"Using last traded price for limit order: ${limit_price:.2f}")
                 
             # Round limit price to 2 decimal places
             limit_price = round(limit_price, 2)
@@ -707,15 +712,24 @@ def close_position(play, close_conditions, play_file):
         
         # Take profit handling
         if close_conditions['is_profit']:
-            if play['take_profit'].get('order_type') == 'limit':
+            # Get fresh option data
+            option_data = get_option_data(play['option_contract_symbol'])
+            if option_data is None:
+                logging.error("Failed to get current option data.")
+                display.error("Failed to get current option data.")
+                return False
+
+            if play['take_profit'].get('order_type') == 'limit at last':
+                limit_price = current_premium
+                logging.info(f"Using last traded price for TP limit order: ${limit_price:.2f}")
+                display.info(f"Using last traded price for TP limit order: ${limit_price:.2f}")
+            elif play['take_profit'].get('order_type') == 'limit at bid':
                 # Get bid price if enabled in settings
                 if config.get('orders', 'bid_price_settings', 'take_profit', default=True):
-                    # Get fresh option data to ensure latest bid
-                    option_data = get_option_data(play['option_contract_symbol'])
                     if option_data and option_data.get('bid') is not None:
                         limit_price = option_data['bid']
-                        logging.info(f"Using current bid price: ${limit_price:.2f}")
-                        display.info(f"Using current bid price: ${limit_price:.2f}")
+                        logging.info(f"Using bid price for TP limit order: ${limit_price:.2f}")
+                        display.info(f"Using bid price for TP limit order: ${limit_price:.2f}")
                     else:
                         logging.error("Failed to get bid price. Falling back to TP target price.")
                         display.error("Failed to get bid price. Falling back to TP target price.")
@@ -764,6 +778,13 @@ def close_position(play, close_conditions, play_file):
         
         # Stop loss handling
         else:
+            # Get fresh option data
+            option_data = get_option_data(play['option_contract_symbol'])
+            if option_data is None:
+                logging.error("Failed to get current option data.")
+                display.error("Failed to get current option data.")
+                return False
+
             # For contingency stop loss
             if close_conditions['sl_type'] == 'CONTINGENCY':
                 # Cancel any existing orders first
@@ -793,20 +814,23 @@ def close_position(play, close_conditions, play_file):
                     
                 # If only primary condition is met, use limit order
                 elif close_conditions['is_primary_loss']:
-                    # Get bid price if enabled in settings
-                    if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
-                        # Get fresh option data to ensure latest bid
-                        option_data = get_option_data(play['option_contract_symbol'])
-                        if option_data and option_data.get('bid') is not None:
-                            limit_price = option_data['bid']
-                            logging.info(f"Using current bid price: ${limit_price:.2f}")
-                            display.info(f"Using current bid price: ${limit_price:.2f}")
+                    if play['stop_loss'].get('order_type') == 'limit at last':
+                        limit_price = current_premium
+                        logging.info(f"Using last traded price for SL limit order: ${limit_price:.2f}")
+                        display.info(f"Using last traded price for SL limit order: ${limit_price:.2f}")
+                    else:  # 'limit at bid'
+                        # Get bid price if enabled in settings
+                        if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
+                            if option_data and option_data.get('bid') is not None:
+                                limit_price = option_data['bid']
+                                logging.info(f"Using bid price for SL limit order: ${limit_price:.2f}")
+                                display.info(f"Using bid price for SL limit order: ${limit_price:.2f}")
+                            else:
+                                logging.error("Failed to get bid price. Falling back to SL target price.")
+                                display.error("Failed to get bid price. Falling back to SL target price.")
+                                limit_price = play['stop_loss']['SL_option_prem']
                         else:
-                            logging.error("Failed to get bid price. Falling back to SL target price.")
-                            display.error("Failed to get bid price. Falling back to SL target price.")
                             limit_price = play['stop_loss']['SL_option_prem']
-                    else:
-                        limit_price = play['stop_loss']['SL_option_prem']
                     
                     # Round limit price to 2 decimal places
                     limit_price = round(limit_price, 2)
@@ -1306,7 +1330,7 @@ def execute_trade(play_file, play_type):
 
 def validate_play_order_types(play):
     """Validate order types in play data."""
-    valid_types = ['market', 'limit']
+    valid_types = ['market', 'limit at bid', 'limit at last']
     
     # Validate entry order type
     entry_point = play.get('entry_point', {})
@@ -1338,9 +1362,10 @@ def validate_play_order_types(play):
             logging.error("Contingency stop loss must have array of two order types")
             display.error("Contingency stop loss must have array of two order types")
             return False
-        if sl_order_type != ['limit', 'market']:
-            logging.error("Contingency stop loss must have ['limit', 'market'] order types")
-            display.error("Contingency stop loss must have ['limit', 'market'] order types")
+        # First order must be a limit order (either bid or last), second must be market
+        if not (sl_order_type[0].startswith('limit') and sl_order_type[1] == 'market'):
+            logging.error("Contingency stop loss must have ['limit at bid' or 'limit at last', 'market'] order types")
+            display.error("Contingency stop loss must have ['limit at bid' or 'limit at last', 'market'] order types")
             return False
     elif sl_order_type is not None and sl_order_type not in valid_types:
         logging.error(f"Invalid stop_loss order_type: {sl_order_type}")
@@ -1798,51 +1823,83 @@ def handle_end_of_day_pending_plays():
     """Move pending plays back to their previous states at market close."""
     try:
         # Handle pending-opening plays
-        pending_opening_dir = os.path.join(os.getcwd(), 'pending-opening')
+        pending_opening_dir = os.path.join(os.getcwd(), 'plays', 'pending-opening')
         if os.path.exists(pending_opening_dir):
             play_files = [os.path.join(pending_opening_dir, f) for f in os.listdir(pending_opening_dir) 
                          if f.endswith('.json')]
+                         
             for play_file in play_files:
                 try:
-                    # Cancel any existing orders first
-                    with open(play_file, 'r') as f:
-                        play = json.load(f)
-                    if play.get('status', {}).get('order_id'):
-                        try:
-                            client = get_alpaca_client()
-                            client.cancel_order_by_id(play['status']['order_id'])
-                            logging.info(f"Cancelled pending opening order: {play['status']['order_id']}")
-                            display.info(f"Cancelled pending opening order: {play['status']['order_id']}")
-                        except Exception as e:
-                            logging.warning(f"Error cancelling order: {e}")
-                            display.warning(f"Error cancelling order: {e}")
+                    # Load play data first and verify it's valid
+                    play = load_play(play_file)
+                    if not play:
+                        logging.error(f"Failed to load play data from {play_file}")
+                        display.error(f"Failed to load play data from {play_file}")
+                        continue
                     
-                    move_play_to_new(play_file)
+                    # Update play status before moving
+                    play['status'].update({
+                        'order_id': None,
+                        'order_status': None,
+                        'play_status': 'NEW'
+                    })
+                    
+                    # Save updated play data
+                    if not save_play(play, play_file):
+                        logging.error(f"Failed to save updated play data for {play_file}")
+                        display.error(f"Failed to save updated play data for {play_file}")
+                        continue
+                    
+                    # Move the play back to new
+                    try:
+                        move_play_to_new(play_file)
+                        logging.info(f"Successfully moved play back to new: {play_file}")
+                        display.info(f"Successfully moved play back to new: {play_file}")
+                    except Exception as e:
+                        logging.error(f"Error moving play to new: {e}")
+                        display.error(f"Error moving play to new: {e}")
+                        
                 except Exception as e:
                     logging.error(f"Error processing pending-opening play {play_file}: {e}")
                     display.error(f"Error processing pending-opening play {play_file}: {e}")
 
         # Handle pending-closing plays
-        pending_closing_dir = os.path.join(os.getcwd(), 'pending-closing')
+        pending_closing_dir = os.path.join(os.getcwd(), 'plays', 'pending-closing')
         if os.path.exists(pending_closing_dir):
             play_files = [os.path.join(pending_closing_dir, f) for f in os.listdir(pending_closing_dir) 
                          if f.endswith('.json')]
+                         
             for play_file in play_files:
                 try:
-                    # Cancel any existing orders first
-                    with open(play_file, 'r') as f:
-                        play = json.load(f)
-                    if play.get('status', {}).get('closing_order_id'):
-                        try:
-                            client = get_alpaca_client()
-                            client.cancel_order_by_id(play['status']['closing_order_id'])
-                            logging.info(f"Cancelled pending closing order: {play['status']['closing_order_id']}")
-                            display.info(f"Cancelled pending closing order: {play['status']['closing_order_id']}")
-                        except Exception as e:
-                            logging.warning(f"Error cancelling order: {e}")
-                            display.warning(f"Error cancelling order: {e}")
+                    # Load play data first and verify it's valid
+                    play = load_play(play_file)
+                    if not play:
+                        logging.error(f"Failed to load play data from {play_file}")
+                        display.error(f"Failed to load play data from {play_file}")
+                        continue
                     
-                    move_play_to_open(play_file)
+                    # Update play status before moving
+                    play['status'].update({
+                        'closing_order_id': None,
+                        'closing_order_status': None,
+                        'play_status': 'OPEN'
+                    })
+                    
+                    # Save updated play data
+                    if not save_play(play, play_file):
+                        logging.error(f"Failed to save updated play data for {play_file}")
+                        display.error(f"Failed to save updated play data for {play_file}")
+                        continue
+                    
+                    # Move the play back to open
+                    try:
+                        move_play_to_open(play_file)
+                        logging.info(f"Successfully moved play back to open: {play_file}")
+                        display.info(f"Successfully moved play back to open: {play_file}")
+                    except Exception as e:
+                        logging.error(f"Error moving play to open: {e}")
+                        display.error(f"Error moving play to open: {e}")
+                        
                 except Exception as e:
                     logging.error(f"Error processing pending-closing play {play_file}: {e}")
                     display.error(f"Error processing pending-closing play {play_file}: {e}")

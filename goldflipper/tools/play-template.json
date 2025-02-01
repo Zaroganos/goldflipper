@@ -10,7 +10,7 @@
   "play_expiration_date": "MM/DD/YYYY",
   "entry_point": {
     "stock_price": 0.0,
-    "order_type": "market or limit",
+    "order_type": "market or limit at bid or limit at last",
     "entry_premium": 0.0,
     "entry_stock_price": 0.0
   },
@@ -19,7 +19,7 @@
     "stock_price": 0.0,
     "stock_price_pct": 0.0,
     "premium_pct": 50.0,
-    "order_type": "market or limit",
+    "order_type": "market or limit at bid or limit at last",
     "TP_option_prem": 0.0,
     "TP_stock_price_target": 0.0
   },
@@ -31,7 +31,7 @@
     "contingency_stock_price": 0.0,
     "contingency_stock_price_pct": 0.0,
     "contingency_premium_pct": 25.0,
-    "order_type": "market or limit, or array with both if type is contingency",
+    "order_type": "market or limit at bid or limit at last, or array with both market and limit if type is contingency",
     "SL_option_prem": 0.0,
     "SL_stock_price_target": 0.0,
     "contingency_SL_option_prem": 0.0,

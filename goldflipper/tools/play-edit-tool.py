@@ -246,12 +246,12 @@ def edit_play_field(play_data, field, filepath):
             )
             play_data['take_profit']['stock_price_pct'] = pct
 
-        # Get order type (using existing functionality)
+        # Get order type for take profit
         play_data['take_profit']['order_type'] = get_input(
-            "\nEnter order type (market/limit): ",
+            "\nEnter order type (market/limit at bid/limit at last): ",
             str,
-            validation=lambda x: x.lower() in ['market', 'limit'],
-            error_message="Please enter 'market' or 'limit'"
+            validation=lambda x: x.lower() in ['market', 'limit at bid', 'limit at last'],
+            error_message="Please enter 'market', 'limit at bid', or 'limit at last'"
         ).lower()
 
     elif field == 'stop_loss':
@@ -385,13 +385,19 @@ def edit_play_field(play_data, field, filepath):
             play_data['stop_loss']['order_type'] = 'market'
         elif sl_type == 'LIMIT':
             play_data['stop_loss']['order_type'] = get_input(
-                "\nEnter order type (limit/stop_limit): ",
+                "\nEnter order type (limit at bid/limit at last): ",
                 str,
-                validation=lambda x: x.lower() in ['limit', 'stop_limit'],
-                error_message="Please enter 'limit' or 'stop_limit'"
+                validation=lambda x: x.lower() in ['limit at bid', 'limit at last'],
+                error_message="Please enter 'limit at bid' or 'limit at last'"
             ).lower()
         else:  # CONTINGENCY
-            play_data['stop_loss']['order_type'] = ['limit', 'market']
+            limit_type = get_input(
+                "\nEnter limit order type for primary stop loss (limit at bid/limit at last): ",
+                str,
+                validation=lambda x: x.lower() in ['limit at bid', 'limit at last'],
+                error_message="Please enter 'limit at bid' or 'limit at last'"
+            ).lower()
+            play_data['stop_loss']['order_type'] = [limit_type, 'market']
 
     elif field == 'contracts':
         # Only allow editing for plays in 'new' folder
