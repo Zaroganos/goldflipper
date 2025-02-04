@@ -158,19 +158,26 @@ def get_order_type_choice(is_stop_loss=False, transaction_type=""):
     """
     prompt = f"\nSelect order type for {transaction_type}:"
     prompt += "\n1. Market order"
-    prompt += "\n2. Limit order (default)"
-    prompt += "\nChoice (1/2) [2]: "
+    prompt += "\n2. Limit order at bid price (default)"
+    prompt += "\n3. Limit order at last traded price"
+    prompt += "\nChoice (1/2/3) [2]: "
     
     choice = get_input(
         prompt,
         int,
-        validation=lambda x: x in [1, 2],
-        error_message="Please enter 1 for market or 2 for limit order.",
+        validation=lambda x: x in [1, 2, 3],
+        error_message="Please enter 1 for market, 2 for limit at bid, or 3 for limit at last.",
         optional=True
     )
     
-    # If optional input is skipped (None returned), default to 2 (limit)
-    return 'market' if choice == 1 else 'limit'
+    # If optional input is skipped (None returned), default to 2 (limit at bid)
+    if choice is None:
+        return 'limit at bid'
+    return {
+        1: 'market',
+        2: 'limit at bid',
+        3: 'limit at last'
+    }[choice]
 
 def get_sl_type_choice():
     """Get user's choice for stop loss execution type (STOP/LIMIT/CONTINGENCY)."""
@@ -600,9 +607,11 @@ class PlayBuilder:
         if sl_data['SL_type'] == 'STOP':
             sl_data['order_type'] = 'market'
         elif sl_data['SL_type'] == 'LIMIT':
-            sl_data['order_type'] = 'limit'
+            sl_data['order_type'] = get_order_type_choice(is_stop_loss=True, transaction_type="Stop Loss")
         else:  # CONTINGENCY
-            sl_data['order_type'] = ['limit', 'market']  # Always this combination for contingency
+            # For contingency, we need to let user choose between 'limit at bid' and 'limit at last' for primary order
+            primary_order_type = get_order_type_choice(is_stop_loss=True, transaction_type="Primary Stop Loss")
+            sl_data['order_type'] = [primary_order_type, 'market']  # Second order always market
 
         self.play['stop_loss'] = sl_data
         return self.play

@@ -1,18 +1,26 @@
 This is a list of things to do for the goldflipper project.
 
-- [ ] Add limit orders at the 'last' price to the execution flow and play creation:
-      1. Add price reference choice (bid/last) to play creation tool
-      2. Update play data structure to store price reference
-      3. Modify order execution logic to use selected price
-      4. Add price reference validation in core functions
-      5. Update logging to show price reference used
-      6. Maintain backward compatibility for existing plays
+- [x] Add limit orders at the 'last' price to the execution flow and play creation:
+      1. ✓ Add price reference choice (bid/last) to play creation tool
+      2. ✓ Update play data structure to store price reference
+      3. ✓ Modify order execution logic to use selected price
+      4. ✓ Add price reference validation in core functions
+      5. ✓ Update logging to show price reference used
+      6. ✓ Maintain backward compatibility for existing plays
+
+      
 - [ ] Fix the problem with plays whose limit order is not filled and expires at the end of the day:
-      1. Implement atomic file operations for all play file writes
-      2. Add file backups before critical operations
-      3. Add validation checks before saving play data
-      4. Add integrity verification for play files
-      5. Implement proper error handling and recovery for corrupted files
+      1. ~~Implement atomic file operations for all play file writes~~ (Implemented in handle_end_of_day_pending_plays)
+      2. ~~Add file backups before critical operations~~ (Implemented via save_play validation)
+      3. ~~Add validation checks before saving play data~~ (Added load_play validation)
+      4. ~~Add integrity verification for play files~~ (Added in handle_end_of_day_pending_plays)
+      5. ~~Implement proper error handling and recovery for corrupted files~~ (Added comprehensive error handling)
+      - Additional improvements:
+        - Updated directory paths
+        - Removed unnecessary order cancellation for GTD orders
+        - Enhanced logging and error reporting
+
+
 - [ ] Implement a packaging and installation system for the program:
       1. Create spec file for PyInstaller with all dependencies
       2. Add data files to spec (config files, templates, etc.)
