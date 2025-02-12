@@ -1,0 +1,66 @@
+@echo off
+cd /d %~dp0
+
+NET SESSION >nul 2>&1
+if %errorLevel% == 0 (
+    echo Administrative permissions confirmed.
+) else (
+    echo Error: This script requires administrative privileges.
+    echo Please right-click and select "Run as administrator"
+    pause
+    exit /b 1
+)
+
+echo Checking Python installation...
+python --version 2>nul
+if errorlevel 1 (
+    echo Error: Python is not installed or not in PATH
+    pause
+    exit /b 1
+)
+
+echo Installing required dependencies...
+python -m pip install pywin32
+if errorlevel 1 (
+    echo Error installing dependencies
+    pause
+    exit /b 1
+)
+
+echo Installing GoldFlipper package in development mode...
+python -m pip install -e .
+if errorlevel 1 (
+    echo Error installing GoldFlipper package
+    pause
+    exit /b 1
+)
+
+echo Creating service directories...
+mkdir "%ProgramData%\GoldFlipper\logs" 2>nul
+icacls "%ProgramData%\GoldFlipper" /grant "Users":(OI)(CI)F /T
+
+echo Installing GoldFlipper Trading Service...
+python -m goldflipper.run --startup auto install
+if errorlevel 1 (
+    echo Error installing service
+    pause
+    exit /b 1
+)
+
+echo Configuring service permissions...
+sc privs GoldFlipperService SeChangeNotifyPrivilege/SeCreateGlobalPrivilege/SeSecurityPrivilege
+
+echo Starting GoldFlipper Trading Service...
+net start GoldFlipperService
+if errorlevel 1 (
+    echo Error starting service. Please check Windows Event Viewer for details.
+    echo You can also try starting the service manually from Services (services.msc)
+    pause
+    exit /b 1
+)
+
+echo.
+echo GoldFlipper Trading Service has been installed and started successfully!
+echo To manage the service, use Windows Services (services.msc)
+echo.
+pause 

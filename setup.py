@@ -7,14 +7,14 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setup(
     # Basic package information
     name='goldflipper',  # The name of your package
-    version='0.1.0',  # Initial version number (follow semantic versioning)
+    version='0.1.2',  # Initial version number (follow semantic versioning)
     author='Yaroshevskiy, Iliya',  # Replace with your name
     author_email='purpleafmanagement@gmail.com',  # Replace with your email
     description='A Python package for algorithmic trading using Alpaca.',
     long_description=long_description,  # Long description from README.md
     long_description_content_type="text/markdown",  # The format of the long description
     url='https://github.com/Zaroganos/goldflipper',  # URL to the project homepage
-    license='Proprietary. Copyright Purpleaf LLC. All rights reserved.',  # License under which the package is distributed
+    license='Proprietary. Copyright Iliya Yaroshevskiy. All rights reserved.',  # License under which the package is distributed
 
     # Package structure
     packages=find_packages(),  # Automatically discover and include all packages and sub-packages
@@ -46,8 +46,9 @@ setup(
         'ta>=0.10.0',  # Technical analysis library
         'textual>=0.38.1',  # TUI library
         'psutil>=5.9.0',  # System monitoring library
-        'nest-asyncio>=1.5.0' # Asynchronous library
-        # Add any other dependencies here
+        'nest-asyncio>=1.5.0', # Asynchronous library
+        'pywin32',
+        # Add other dependencies from your project here
     ],
 
     # Entry points to create command-line tools or scripts
@@ -60,7 +61,7 @@ setup(
     # Additional metadata for package indexing and classification
     classifiers=[
         'Programming Language :: Python :: 3',
-        'License :: OSI Approved :: Proprietary. Copyright Purpleaf LLC. All rights reserved.',
+        'License :: OSI Approved :: Proprietary. Copyright Iliya Yaroshevskiy. All rights reserved.',
         'Operating System :: OS Independent',
         'Development Status :: 4 - Beta',  # Project is in the beta stage
         'Intended Audience :: Developers',
@@ -74,8 +75,8 @@ setup(
 
     # Project URLs for additional resources
     project_urls={
-        'Bug Reports': 'https://github.com/yourusername/goldflipper/issues',
-        'Source': 'https://github.com/yourusername/goldflipper',
-        'Documentation': 'https://github.com/yourusername/goldflipper/wiki',
+        'Bug Reports': 'https://github.com/Zaroganos/goldflipper/issues',
+        'Source': 'https://github.com/Zaroganos/goldflipper',
+        'Documentation': 'https://github.com/Zaroganos/goldflipper/wiki',
     },
 )
