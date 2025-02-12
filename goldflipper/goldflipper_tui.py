@@ -5,123 +5,24 @@ from textual.screen import Screen
 import subprocess
 import sys
 import os
-import threading
-import time
-import logging
 from pathlib import Path
 from goldflipper.config.config import config
 import yaml
-import win32console
-import win32con
-
-def setup_logging(console_mode=False):
-    """Configure logging with both file and optional console output"""
-    
-    # Create logs directory if it doesn't exist
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    log_dir = os.path.join(current_dir, 'logs')
-    os.makedirs(log_dir, exist_ok=True)
-    
-    # Configure logging format
-    log_format = '%(asctime)s - %(levelname)s - %(message)s'
-    log_file = os.path.join(log_dir, 'trading_monitor.log')
-    
-    # Set up handlers
-    handlers = [logging.FileHandler(log_file)]
-    if console_mode:
-        handlers.append(logging.StreamHandler(sys.stdout))
-    
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format=log_format,
-        handlers=handlers
-    )
-    
-    # Log startup message
-    logging.info("Logging initialized for trading monitor")
-
-def is_admin():
-    try:
-        import ctypes
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
-
-class AdminChoiceScreen(Screen):
-    """Screen for choosing whether to run as admin or not"""
-    
-    def compose(self) -> ComposeResult:
-        yield Container(
-            Static("Running in regular user mode.\n\n" +
-                  "Would you like to:\n" +
-                  "1. Continue in regular mode (recommended for normal use)\n" +
-                  "2. Restart as administrator (required for service installation)",
-                  id="dialog-message"),
-            Container(
-                Button("Continue", variant="primary", id="continue_regular"),
-                Button("Restart as Admin", variant="warning", id="restart_admin"),
-                Button("Cancel", variant="error", id="cancel"),
-                classes="dialog-buttons"
-            ),
-            id="dialog-container"
-        )
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            package_root = os.path.dirname(current_dir)
-            
-            if event.button.id == "continue_regular":
-                self.app.pop_screen()
-                cmd = [
-                    'cmd', '/c', 
-                    'start', 
-                    'GoldFlipper Trading System',
-                    '/D', package_root,
-                    'cmd', '/k',
-                    'python', '-m', 'goldflipper.run', '--mode', 'console'
-                ]
-                self.app.exit()
-                subprocess.run(cmd, check=True)
-                
-            elif event.button.id == "restart_admin":
-                self.app.pop_screen()
-                cmd = ['powershell', 'Start-Process', 'python', '-ArgumentList',
-                       f'"-m goldflipper.run --mode console"',
-                       '-Verb', 'RunAs', '-WorkingDirectory', package_root]
-                subprocess.run(cmd)
-                self.app.exit()
-                
-            elif event.button.id == "cancel":
-                self.app.pop_screen()
-                
-        except Exception as e:
-            self.notify(f"Error handling button press: {str(e)}", severity="error")
 
 class WelcomeScreen(Screen):
     BINDINGS = [("q", "quit", "Quit")]
     
     def compose(self) -> ComposeResult:
-        # Determine the default active account:
-        # If the settings.yaml already specifies an active_account, use it;
-        # otherwise, use the default_account.
-        active_account = config.get('alpaca', 'active_account')
-        if not active_account:
-            active_account = config.get('alpaca', 'default_account')
-        
         yield Header()
         yield Container(
             Horizontal(
                 Static(" Welcome to Goldflipper ", id="welcome"),
                 Select(
-                    # Build the options list from all enabled accounts.
                     [(acc.get('nickname', name.replace('_', ' ').title()), name) 
                      for name, acc in config.get('alpaca', 'accounts').items() 
                      if acc.get('enabled', False)],
                     prompt="Select Trading Account",
-                    id="account_selector",
-                    value=active_account  # Set the preselected account here.
+                    id="account_selector"
                 ),
                 id="header_container"
             ),
@@ -147,7 +48,18 @@ class WelcomeScreen(Screen):
             ),
             classes="container",
         )
+        yield Static("Trading System: Unknown", id="trading_system_status")
         yield Footer()
+
+    def on_mount(self) -> None:
+        self.set_interval(5, self.refresh_system_status)
+
+    def refresh_system_status(self) -> None:
+        from goldflipper.utils import trading_system_status
+        is_running = trading_system_status.is_trading_system_running()
+        status_text = "Running" if is_running else "Not Running"
+        widget = self.query_one("#trading_system_status", Static)
+        widget.update(f"Trading System: {status_text}")
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle account selection changes"""
@@ -156,11 +68,6 @@ class WelcomeScreen(Screen):
         from pathlib import Path
 
         selected_account = event.value
-        current_active = config.get('alpaca', 'active_account')
-        # If the selected account is the same as the currently active account, do nothing.
-        if selected_account == current_active:
-            return
-
         accounts = config.get('alpaca', 'accounts')
         nickname = accounts[selected_account].get('nickname', selected_account.replace('_', ' ').title())
         
@@ -183,23 +90,6 @@ class WelcomeScreen(Screen):
         # Write the modified content back
         with open(settings_path, 'w') as file:
             file.writelines(lines)
-        
-        # Update the in-memory config immediately.
-        # Since the config object isn't subscriptable, we try alternative approaches.
-        try:
-            # Try direct assignment (if config were subscriptable)
-            config['alpaca']['active_account'] = selected_account
-        except TypeError:
-            # If the config object provides a setter method, use it.
-            if hasattr(config, 'set'):
-                config.set('alpaca', 'active_account', selected_account)
-            # As another fallback, check if the config object holds the underlying
-            # dictionary in an attribute (e.g., _config) and update that.
-            elif hasattr(config, '_config'):
-                config._config['alpaca']['active_account'] = selected_account
-            else:
-                # If none of these work, notify the user.
-                self.notify("Warning: Unable to update in-memory configuration", severity="warning")
         
         # Notify using the nickname
         self.notify(f"Switched to {nickname}")
@@ -257,32 +147,11 @@ class WelcomeScreen(Screen):
     def run_trading_monitor(self):
         try:
             if os.name == 'nt':  # Windows
-                # Check if running as admin
-                running_as_admin = is_admin()
-                
-                # Ask user for preference if not admin
-                if not running_as_admin:
-                    self.app.push_screen(AdminChoiceScreen())
-                    return
-                
-                # If running as admin, launch directly
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                package_root = os.path.dirname(current_dir)
-                cmd = [
-                    'cmd', '/c', 
-                    'start', 
-                    'GoldFlipper Trading System',
-                    '/D', package_root,
-                    'cmd', '/k',
-                    'python', '-m', 'goldflipper.run', '--mode', 'console'
-                ]
-                self.app.exit()
-                subprocess.run(cmd, check=True)
-                
+                cmd = 'python -m goldflipper.run'
+                subprocess.Popen(['cmd', '/k', cmd],
+                               creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:  # Unix-like systems
-                self.app.exit()
-                subprocess.Popen(['gnome-terminal', '--', 'python', '-m', 'goldflipper.run', '--mode', 'console'])
-                
+                subprocess.Popen(['gnome-terminal', '--', 'python', '-m', 'goldflipper.run'])
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -494,117 +363,10 @@ class GoldflipperTUI(App):
     Button:hover {
         background: $accent;
     }
-
-    #dialog-container {
-        width: 60%;
-        height: auto;
-        align: center middle;
-        background: $surface-darken-2;
-        border: heavy $accent;
-        padding: 1;
-        margin: 1;
-        offset: 30% 20%;
-    }
-    
-    #dialog-message {
-        width: 100%;
-        height: auto;
-        content-align: center middle;
-        padding: 1;
-        margin: 1;
-    }
-    
-    .dialog-buttons {
-        width: 100%;
-        height: auto;
-        align: center middle;
-        padding: 1;
-        margin: 1;
-    }
-    
-    .dialog-buttons Button {
-        margin: 1 2;
-        min-width: 16;
-    }
-    
-    Button.warning {
-        background: #d29922;
-        color: $text;
-    }
-    
-    Button.warning:hover {
-        background: #e8aa25;
-    }
-    
-    Button.error {
-        background: #a82320;
-        color: $text;
-    }
-    
-    Button.error:hover {
-        background: #bc2724;
-    }
-
-    AdminChoiceScreen {
-        align: center middle;
-    }
-    
-    #dialog-container {
-        width: 60%;
-        background: $surface-darken-2;
-        border: heavy $accent;
-        padding: 1;
-        margin: 1;
-    }
-    
-    #dialog-message {
-        text-align: center;
-        padding: 1;
-        margin: 1;
-    }
-    
-    .dialog-buttons {
-        layout: horizontal;
-        align: center middle;
-        padding: 1;
-        margin: 1;
-    }
-    
-    .dialog-buttons Button {
-        margin: 1 2;
-        min-width: 16;
-    }
     """
 
     def on_mount(self) -> None:
         self.push_screen(WelcomeScreen())
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button presses for admin choice"""
-        try:
-            if event.button.id == "continue_regular":
-                # Remove the dialog first
-                self.query("#dialog-container").remove()
-                # Then launch the system
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                package_root = os.path.dirname(current_dir)
-                self.launch_trading_system(package_root)
-            elif event.button.id == "restart_admin":
-                # Remove the dialog first
-                self.query("#dialog-container").remove()
-                # Then restart as admin
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                package_root = os.path.dirname(current_dir)
-                cmd = ['powershell', 'Start-Process', 'python', '-ArgumentList',
-                       f'"-m goldflipper.run --mode console"',
-                       '-Verb', 'RunAs', '-WorkingDirectory', package_root]
-                subprocess.run(cmd)
-                self.app.exit()
-            elif event.button.id == "cancel":
-                # Just remove the dialog
-                self.query("#dialog-container").remove()
-        except Exception as e:
-            self.notify(f"Error handling button press: {str(e)}", severity="error")
 
 if __name__ == "__main__":
     app = GoldflipperTUI()
