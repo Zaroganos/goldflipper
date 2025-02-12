@@ -103,16 +103,25 @@ class WelcomeScreen(Screen):
     BINDINGS = [("q", "quit", "Quit")]
     
     def compose(self) -> ComposeResult:
+        # Determine the default active account:
+        # If the settings.yaml already specifies an active_account, use it;
+        # otherwise, use the default_account.
+        active_account = config.get('alpaca', 'active_account')
+        if not active_account:
+            active_account = config.get('alpaca', 'default_account')
+        
         yield Header()
         yield Container(
             Horizontal(
                 Static(" Welcome to Goldflipper ", id="welcome"),
                 Select(
+                    # Build the options list from all enabled accounts.
                     [(acc.get('nickname', name.replace('_', ' ').title()), name) 
                      for name, acc in config.get('alpaca', 'accounts').items() 
                      if acc.get('enabled', False)],
                     prompt="Select Trading Account",
-                    id="account_selector"
+                    id="account_selector",
+                    value=active_account  # Set the preselected account here.
                 ),
                 id="header_container"
             ),
@@ -147,6 +156,11 @@ class WelcomeScreen(Screen):
         from pathlib import Path
 
         selected_account = event.value
+        current_active = config.get('alpaca', 'active_account')
+        # If the selected account is the same as the currently active account, do nothing.
+        if selected_account == current_active:
+            return
+
         accounts = config.get('alpaca', 'accounts')
         nickname = accounts[selected_account].get('nickname', selected_account.replace('_', ' ').title())
         
@@ -169,6 +183,23 @@ class WelcomeScreen(Screen):
         # Write the modified content back
         with open(settings_path, 'w') as file:
             file.writelines(lines)
+        
+        # Update the in-memory config immediately.
+        # Since the config object isn't subscriptable, we try alternative approaches.
+        try:
+            # Try direct assignment (if config were subscriptable)
+            config['alpaca']['active_account'] = selected_account
+        except TypeError:
+            # If the config object provides a setter method, use it.
+            if hasattr(config, 'set'):
+                config.set('alpaca', 'active_account', selected_account)
+            # As another fallback, check if the config object holds the underlying
+            # dictionary in an attribute (e.g., _config) and update that.
+            elif hasattr(config, '_config'):
+                config._config['alpaca']['active_account'] = selected_account
+            else:
+                # If none of these work, notify the user.
+                self.notify("Warning: Unable to update in-memory configuration", severity="warning")
         
         # Notify using the nickname
         self.notify(f"Switched to {nickname}")
