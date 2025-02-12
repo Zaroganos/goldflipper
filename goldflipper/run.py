@@ -166,6 +166,12 @@ def run_trading_system(console_mode=False):
         display.info("Starting GoldFlipper trading system")
     
     try:
+        # Run initialization and startup tests
+        success, state_manager = initialize_system()
+        if not success:
+            display.error("System initialization failed. Check the logs for details.")
+            return
+        
         logging.info("Initializing WatchdogManager")
         watchdog = WatchdogManager()
         
