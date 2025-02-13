@@ -166,7 +166,7 @@ class WelcomeScreen(Screen):
     def update_welcome_with_status(self, widget: Static) -> None:
         from goldflipper.utils import trading_system_status
         is_running = trading_system_status.is_trading_system_running()
-        status_text = "Trading System: Running" if is_running else "Trading System: Not Running"
+        status_text = "[green]Trading System: Running[/green]" if is_running else "[red]Trading System: Not Running[/red]"
         widget.update(f" {status_text} ")
         widget.remove_class("faded")
         self.set_interval(5, self.refresh_status_in_welcome)
@@ -174,7 +174,7 @@ class WelcomeScreen(Screen):
     def refresh_status_in_welcome(self) -> None:
         from goldflipper.utils import trading_system_status
         is_running = trading_system_status.is_trading_system_running()
-        status_text = "Trading System: Running" if is_running else "Trading System: Not Running"
+        status_text = "[green]Trading System: Running[/green]" if is_running else "[red]Trading System: Not Running[/red]"
         widget = self.query_one("#welcome", Static)
         widget.update(f" {status_text} ")
 
