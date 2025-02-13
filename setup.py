@@ -32,7 +32,7 @@ setup(
     },
 
     # Specify the Python version compatibility
-    python_requires='>=3.8',
+    python_requires='>=3.9',
 
     # Dependencies required for your package
     install_requires=[

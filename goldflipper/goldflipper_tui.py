@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from goldflipper.config.config import config
 import yaml
+import asyncio  # Added for asyncio.to_thread
 
 class WelcomeScreen(Screen):
     BINDINGS = [("q", "quit", "Quit")]
@@ -59,8 +60,102 @@ class WelcomeScreen(Screen):
         )
         yield Footer()
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
+        # Transition the welcome text after 3 seconds
         self.set_timer(3, self.transition_to_status)
+        # Update the connection status (and update periodically every 60 seconds)
+        await self.update_connection_status()
+        self.set_interval(60, lambda: self.call_later(self.update_connection_status))
+
+    async def update_connection_status(self) -> None:
+        """
+        Check the connection status using test_alpaca_connection,
+        then update the account selector by replacing it with a new instance.
+        This new instance will show the active account connection status.
+        """
+        import asyncio, os, yaml
+        from goldflipper.tools.get_alpaca_info import test_alpaca_connection
+
+        # Try to import Option (with fallback).
+        try:
+            from textual.widgets.select import Option
+        except ImportError:
+            from collections import namedtuple
+            Option = namedtuple("Option", ["label", "value"])
+
+        # Force a reset of the Alpaca client.
+        try:
+            from goldflipper.alpaca_client import reset_client
+            reset_client()
+        except Exception as e:
+            self.notify(f"Error resetting Alpaca client: {e}")
+
+        # Reload updated configuration.
+        try:
+            config.reload()
+        except Exception as e:
+            self.notify(f"Error reloading config: {e}")
+
+        active_account_config = config.get('alpaca', 'active_account')
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        settings_path = os.path.join(current_dir, 'config', 'settings.yaml')
+        try:
+            with open(settings_path, 'r') as file:
+                file_config = yaml.safe_load(file)
+            _ = file_config.get('alpaca', {}).get('active_account', 'unknown')
+        except Exception as e:
+            self.notify(f"Error reading settings file: {e}")
+
+        try:
+            _ = config.get('alpaca', 'accounts')[active_account_config]
+        except Exception as e:
+            return
+
+        # Run the connection test in a background thread.
+        connection_status, _ = await asyncio.to_thread(test_alpaca_connection)
+
+        # Build the options list with updated connection status.
+        accounts = config.get('alpaca', 'accounts')
+        new_options = []
+        for name, acc in accounts.items():
+            account_nickname = acc.get('nickname', name.replace('_', ' ').title())
+            if name == active_account_config:
+                if connection_status:
+                    display_label = f"[green]Connected:[/green] {account_nickname}"
+                else:
+                    display_label = f"[red]Not Connected:[/red] {account_nickname}"
+            else:
+                display_label = account_nickname
+            new_options.append(Option(label=display_label, value=name))
+
+        # Determine the label for the currently selected account.
+        selected_label = ""
+        for option in new_options:
+            if option.value == active_account_config:
+                selected_label = option.label
+                break
+
+        from textual.widgets import Select
+        try:
+            old_select = self.query_one("#account_selector", Select)
+        except Exception as e:
+            return
+
+        parent_container = old_select.parent
+        old_select.remove()
+        await asyncio.sleep(0.05)
+
+        new_select = Select(
+            options=new_options,
+            prompt=selected_label,
+            id="account_selector"
+        )
+        new_select.value = active_account_config
+
+        parent_container.mount(new_select)
+        await asyncio.sleep(0)
+        new_select.refresh()
 
     def transition_to_status(self) -> None:
         """Fade out the welcome text then update it with trading system status."""
@@ -85,36 +180,50 @@ class WelcomeScreen(Screen):
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle account selection changes"""
-        import yaml
         import os
-        from pathlib import Path
+        import asyncio
 
         selected_account = event.value
         accounts = config.get('alpaca', 'accounts')
         nickname = accounts[selected_account].get('nickname', selected_account.replace('_', ' ').title())
-        
+
         # Get the path to settings.yaml
         current_dir = os.path.dirname(os.path.abspath(__file__))
         settings_path = os.path.join(current_dir, 'config', 'settings.yaml')
-        
-        # Read the file content as lines
+
+        # Read the file content as lines and update the active_account.
         with open(settings_path, 'r') as file:
             lines = file.readlines()
-        
-        # Find and replace the active_account line
         for i, line in enumerate(lines):
             if "active_account:" in line:
-                # Preserve the indentation of the original line
                 indent = len(line) - len(line.lstrip())
                 lines[i] = " " * indent + f"active_account: '{selected_account}'  # Specify which account is currently active\n"
                 break
-        
-        # Write the modified content back
         with open(settings_path, 'w') as file:
             file.writelines(lines)
-        
-        # Notify using the nickname
+
+        # Immediately reset the client
+        try:
+            from goldflipper.alpaca_client import reset_client
+            reset_client()
+        except Exception as e:
+            self.notify(f"Error resetting client: {e}")
+
+        # Reload the configuration so we get the updated active_account.
+        try:
+            config.reload()
+        except Exception as e:
+            self.notify(f"Error reloading config: {e}")
+
+        self.active_account = selected_account
+        self.active_account_nickname = nickname
+
+        select_widget = self.query_one("#account_selector", Select)
+        select_widget.prompt = f"[yellow]Connecting...[/yellow] {nickname}"
+        select_widget.refresh()
+
         self.notify(f"Switched to {nickname}")
+        asyncio.create_task(self.update_connection_status())
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "create_play":

@@ -40,7 +40,7 @@
 alpaca:
   accounts:
     live:
-      enabled: false
+      enabled: true
       nickname: "Live Trading"
       api_key: 'YOUR_LIVE_API_KEY'
       secret_key: 'YOUR_LIVE_SECRET_KEY'

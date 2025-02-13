@@ -76,6 +76,10 @@ class Config:
             logging.error(f"Error loading configuration: {e}")
             self._config = {}
 
+    def reload(self):
+        """Reload configuration from the settings.yaml file."""
+        self._load_config()
+
     def _setup_paths(self):
         """
         Setup absolute paths and create required directories.
