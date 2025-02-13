@@ -14,14 +14,23 @@ class WelcomeScreen(Screen):
     
     def compose(self) -> ComposeResult:
         yield Header()
+        
+        # Determine active account to show its nickname as the prompt if available.
+        active_account = config.get('alpaca', 'active_account')
+        active_prompt = "Select Trading Account"
+        if active_account and active_account in config.get('alpaca', 'accounts'):
+            account_info = config.get('alpaca', 'accounts')[active_account]
+            if account_info.get('enabled', False):
+                active_prompt = account_info.get('nickname', active_account.replace('_', ' ').title())
+        
         yield Container(
             Horizontal(
                 Static(" Welcome to Goldflipper ", id="welcome"),
                 Select(
-                    [(acc.get('nickname', name.replace('_', ' ').title()), name) 
-                     for name, acc in config.get('alpaca', 'accounts').items() 
+                    [(acc.get('nickname', name.replace('_', ' ').title()), name)
+                     for name, acc in config.get('alpaca', 'accounts').items()
                      if acc.get('enabled', False)],
-                    prompt="Select Trading Account",
+                    prompt=active_prompt,
                     id="account_selector"
                 ),
                 id="header_container"
