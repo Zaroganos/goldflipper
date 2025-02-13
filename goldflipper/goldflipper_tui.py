@@ -48,18 +48,31 @@ class WelcomeScreen(Screen):
             ),
             classes="container",
         )
-        yield Static("Trading System: Unknown", id="trading_system_status")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.set_interval(5, self.refresh_system_status)
+        self.set_timer(3, self.transition_to_status)
 
-    def refresh_system_status(self) -> None:
+    def transition_to_status(self) -> None:
+        """Fade out the welcome text then update it with trading system status."""
+        welcome_widget = self.query_one("#welcome", Static)
+        welcome_widget.add_class("faded")
+        self.set_timer(0.6, lambda: self.update_welcome_with_status(welcome_widget))
+
+    def update_welcome_with_status(self, widget: Static) -> None:
         from goldflipper.utils import trading_system_status
         is_running = trading_system_status.is_trading_system_running()
-        status_text = "Running" if is_running else "Not Running"
-        widget = self.query_one("#trading_system_status", Static)
-        widget.update(f"Trading System: {status_text}")
+        status_text = "Trading System: Running" if is_running else "Trading System: Not Running"
+        widget.update(f" {status_text} ")
+        widget.remove_class("faded")
+        self.set_interval(5, self.refresh_status_in_welcome)
+
+    def refresh_status_in_welcome(self) -> None:
+        from goldflipper.utils import trading_system_status
+        is_running = trading_system_status.is_trading_system_running()
+        status_text = "Trading System: Running" if is_running else "Trading System: Not Running"
+        widget = self.query_one("#welcome", Static)
+        widget.update(f" {status_text} ")
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle account selection changes"""
@@ -130,27 +143,22 @@ class WelcomeScreen(Screen):
 
     def run_play_creation_tool(self):
         try:
-            # Get absolute paths
             current_dir = os.path.dirname(os.path.abspath(__file__))
             tools_dir = os.path.join(current_dir, "tools")
-            
-            if os.name == 'nt':  # Windows
-                # Create the command without string interpolation
+            if os.name == 'nt':
                 cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'play-creation-tool.py']
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'play-creation-tool.py'], 
-                               cwd=tools_dir)
+            else:
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'play-creation-tool.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
     def run_trading_monitor(self):
         try:
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 cmd = 'python -m goldflipper.run'
-                subprocess.Popen(['cmd', '/k', cmd],
-                               creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:  # Unix-like systems
+                subprocess.Popen(['cmd', '/k', cmd], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:
                 subprocess.Popen(['gnome-terminal', '--', 'python', '-m', 'goldflipper.run'])
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
@@ -159,13 +167,11 @@ class WelcomeScreen(Screen):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             tools_dir = os.path.join(current_dir, "tools")
-            
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'view_plays.py']
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'view_plays.py'], 
-                               cwd=tools_dir)
+            else:
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'view_plays.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -173,13 +179,11 @@ class WelcomeScreen(Screen):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             tools_dir = os.path.join(current_dir, "tools")
-            
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'system_status.py']
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'system_status.py'], 
-                               cwd=tools_dir)
+            else:
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'system_status.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -187,13 +191,11 @@ class WelcomeScreen(Screen):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             tools_dir = os.path.join(current_dir, "tools")
-            
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'configuration.py']
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'configuration.py'], 
-                               cwd=tools_dir)
+            else:
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'configuration.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -201,13 +203,11 @@ class WelcomeScreen(Screen):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             tools_dir = os.path.join(current_dir, "tools")
-            
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'auto_play_creator.py']
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'auto_play_creator.py'], 
-                               cwd=tools_dir)
+            else:
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'auto_play_creator.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -215,13 +215,11 @@ class WelcomeScreen(Screen):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             chart_dir = os.path.join(current_dir, "chart")
-            
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 cmd = ['cmd', '/k', 'cd', '/d', chart_dir, '&', 'python', 'chart_viewer.py']
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'chart_viewer.py'], 
-                               cwd=chart_dir)
+            else:
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'chart_viewer.py'], cwd=chart_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -229,13 +227,11 @@ class WelcomeScreen(Screen):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             tools_dir = os.path.join(current_dir, "tools")
-            
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'get_alpaca_info.py']
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'get_alpaca_info.py'], 
-                               cwd=tools_dir)
+            else:
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'get_alpaca_info.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -243,13 +239,11 @@ class WelcomeScreen(Screen):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             logging_dir = os.path.join(current_dir, "logging")
-            
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 cmd = ['cmd', '/k', 'cd', '/d', logging_dir, '&', 'python', 'trade_logger_ui.py']
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'trade_logger_ui.py'], 
-                               cwd=logging_dir)
+            else:
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'trade_logger_ui.py'], cwd=logging_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -257,13 +251,11 @@ class WelcomeScreen(Screen):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             tools_dir = os.path.join(current_dir, "tools")
-            
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'multi_market_data.py']
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'multi_market_data.py'], 
-                               cwd=tools_dir)
+            else:
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'multi_market_data.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -291,8 +283,14 @@ class GoldflipperTUI(App):
         background: $surface;
         text-style: bold;
         border: heavy $accent;
+        opacity: 1;
+        transition: opacity 0.5s linear;
     }
     
+    #welcome.faded {
+        opacity: 0;
+    }
+
     #account_selector {
         width: 35%;
         height: 5;
@@ -350,16 +348,16 @@ class GoldflipperTUI(App):
         width: 30;
         margin: 1;
     }
-
+    
     Button.success {
         background: #2ea043;
         color: white;
     }
-
+    
     Button.success:hover {
         background: #3fb950;
     }
-
+    
     Button:hover {
         background: $accent;
     }

@@ -64,7 +64,7 @@ alpaca:
       secret_key: 'Cimoq51fX5gvFXkCNLB1ir8AIbpAXzhTAyhGo7ze'
       base_url: 'https://paper-api.alpaca.markets/v2'
   default_account: 'paper_1'  # Specify which account to use by default
-  active_account: 'paper_2'  # Specify which account is currently active
+  active_account: 'paper_1'  # Specify which account is currently active
 
 
   
