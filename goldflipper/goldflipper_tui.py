@@ -10,6 +10,25 @@ from goldflipper.config.config import config
 import yaml
 import asyncio  # Added for asyncio.to_thread
 
+class ConfirmationScreen(Screen):
+    BINDINGS = [("q", "quit", "Cancel")]
+
+    def __init__(self, message: str, on_confirm, **kwargs):
+        super().__init__(**kwargs)
+        self.message = message
+        self.on_confirm = on_confirm
+
+    def compose(self) -> ComposeResult:
+        yield Static(self.message, id="confirmation_message")
+        yield Static("Press Y to confirm, N to cancel", id="confirmation_instructions")
+
+    def on_key(self, event) -> None:
+        if event.key.lower() == "y":
+            self.on_confirm()
+            self.app.pop_screen()
+        elif event.key.lower() == "n":
+            self.app.pop_screen()
+
 class WelcomeScreen(Screen):
     BINDINGS = [("q", "quit", "Quit")]
     
@@ -52,6 +71,7 @@ class WelcomeScreen(Screen):
                     Button("Configuration", variant="primary", id="configuration"),
                     Button("Open Chart", variant="primary", id="open_chart"),
                     Button("Trade Logger", variant="primary", id="trade_logger"),
+                    Button("Manage Service", variant="warning", id="manage_service"),
                     classes="button-column",
                 ),
                 id="button_container"
@@ -246,18 +266,72 @@ class WelcomeScreen(Screen):
             self.run_get_alpaca_info()
         elif event.button.id == "trade_logger":
             self.run_trade_logger()
-        elif event.button.id == "exit":
-            self.app.exit()
         elif event.button.id == "market_data_compare":
             self.run_market_data_compare()
+        elif event.button.id == "manage_service":
+            self.run_manage_service()
+
+    def run_manage_service(self) -> None:
+        """
+        Check if the service is installed and prompt the user to install or uninstall.
+        When confirmed, launch an elevated process using PowerShell so that UAC is triggered.
+        """
+        import os
+        import subprocess
+        if os.name != 'nt':
+            self.notify("Service management is available on Windows only.")
+            return
+
+        try:
+            import win32serviceutil
+            # If QueryServiceStatus succeeds, the service is installed.
+            win32serviceutil.QueryServiceStatus("GoldFlipperService")
+            service_installed = True
+        except Exception:
+            service_installed = False
+
+        if service_installed:
+            message = (
+                "You are about to STOP and UNINSTALL the GoldFlipper Service.\n"
+                "This will stop the running service and uninstall it.\n"
+                "This requires administrative privileges and will launch an elevated process.\n"
+                "Note: Changes made will not take effect until you reboot.\n"
+                "Do you want to proceed? (Y/N)"
+            )
+            mode = "remove"
+        else:
+            message = (
+                "You are about to INSTALL the Goldflipper Service and automatically start it.\n"
+                "This requires administrative privileges and will launch an elevated process.\n"
+                "Note: Changes made will not take effect until you reboot.\n"
+                "Do you want to proceed? (Y/N)"
+            )
+            mode = "install"
+
+        def perform_action():
+            if mode == "install":
+                final_command = (
+                    "python -m goldflipper.run --mode install; Start-Sleep -Seconds 2; net start GoldFlipperService"
+                )
+            else:
+                final_command = "net stop GoldFlipperService; python -m goldflipper.run --mode remove"
+            ps_command = f"Start-Process powershell -ArgumentList '-NoProfile -Command \"{final_command}\"' -Verb RunAs"
+            subprocess.Popen(["powershell", "-Command", ps_command])
+            self.notify(f"{'Uninstallation' if service_installed else 'Installation'} initiated. Changes will require a reboot to apply.")
+
+        self.app.push_screen(ConfirmationScreen(message, perform_action))
 
     def run_option_data_fetcher(self):
-        tools_dir = os.path.join(os.path.dirname(__file__), "tools")
-        script_path = os.path.join(tools_dir, "option_data_fetcher.py")
-        if os.name == 'nt':  # Windows
-            subprocess.Popen(['cmd', '/k', 'python', script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
-        else:  # Unix-like systems
-            subprocess.Popen(['gnome-terminal', '--', 'python', script_path])
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            tools_dir = os.path.join(current_dir, "tools")
+            if os.name == 'nt':  # Windows
+                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'option_data_fetcher.py']
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:  # Unix-like systems
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'option_data_fetcher.py'], cwd=tools_dir)
+        except Exception as e:
+            self.notify(f"Error: {str(e)}", severity="error")
 
     def run_play_creation_tool(self):
         try:
@@ -274,8 +348,8 @@ class WelcomeScreen(Screen):
     def run_trading_monitor(self):
         try:
             if os.name == 'nt':
-                cmd = 'python -m goldflipper.run'
-                subprocess.Popen(['cmd', '/k', cmd], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                cmd = ['cmd', '/k', 'python', '-m', 'goldflipper.run']
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
                 subprocess.Popen(['gnome-terminal', '--', 'python', '-m', 'goldflipper.run'])
         except Exception as e:
@@ -478,6 +552,12 @@ class GoldflipperTUI(App):
     
     Button:hover {
         background: $accent;
+    }
+    
+    /* Center confirmation dialog text */
+    #confirmation_message, #confirmation_instructions {
+        text-align: center;
+        width: 100%;
     }
     """
 

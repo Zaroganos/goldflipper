@@ -50,6 +50,9 @@ if errorlevel 1 (
 echo Configuring service permissions...
 sc privs GoldFlipperService SeChangeNotifyPrivilege/SeCreateGlobalPrivilege/SeSecurityPrivilege
 
+echo Configuring service recovery options...
+sc failure GoldFlipperService reset= 0 actions= restart/5000
+
 echo Starting GoldFlipper Trading Service...
 net start GoldFlipperService
 if errorlevel 1 (
