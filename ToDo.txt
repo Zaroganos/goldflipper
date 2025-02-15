@@ -29,6 +29,7 @@ This is a list of things to do for the goldflipper project.
       5. Add version checking and auto-update capability
       6. Create installation scripts for each platform
       7. Set up proper logging paths for installed version
+      8. Integrate PyInstaller packaging to create standalone executables and test on target platforms
 
 
 - [ ] Implement service functionality and resilience features:
