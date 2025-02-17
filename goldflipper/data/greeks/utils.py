@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Union, Dict, Any
 from .base import OptionData
-from goldflipper.data.greeks.delta import DeltaCalculator
+from ....data.greeks.delta import DeltaCalculator
 
 def convert_yfinance_data_to_option_data(
     yf_data: Dict[str, Any],

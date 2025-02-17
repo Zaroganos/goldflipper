@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os
 import json
 import subprocess
@@ -9,6 +10,7 @@ from textual.widgets import Header, Footer, Static, Button
 from textual.containers import Container, Horizontal
 from textual.widget import Widget
 from rich.text import Text
+from goldflipper.utils.resource import get_resource_path
 
 def open_file_explorer(path):
     """
@@ -263,8 +265,13 @@ class ViewPlaysApp(App):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "folder_button":
-            plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../plays"))
-            open_file_explorer(plays_dir)
+            try:
+                plays_dir = get_resource_path("plays")
+                if not os.path.exists(plays_dir):
+                    raise FileNotFoundError(f"Plays folder not found: {plays_dir}")
+                open_file_explorer(plays_dir)
+            except Exception as e:
+                print(f"Error opening plays folder: {str(e)}")
 
     async def on_mount(self):
         await self.load_plays()
@@ -303,6 +310,12 @@ class ViewPlaysApp(App):
                 play_card = PlayCard(play)
                 plays_container.mount(play_card)
 
-if __name__ == "__main__":
+def main():
     app = ViewPlaysApp()
     app.run()
+
+if __name__ == "__main__":
+    # If run outside of a package context (as in PyInstaller frozen mode), set the package name.
+    if __package__ is None:
+        __package__ = "goldflipper.tools"
+    main()

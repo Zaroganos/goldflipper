@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os
 import sys
 import json
@@ -5,10 +6,9 @@ from datetime import datetime
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(project_root)
 
-from goldflipper.logging.trade_logger import PlayLogger
-from goldflipper.utils.display import TerminalDisplay as display
+from ..logging.trade_logger import PlayLogger
+from ..utils.display import TerminalDisplay as display
 import tkinter as tk
 from tkinter import ttk, messagebox
 import webbrowser
@@ -95,6 +95,9 @@ class TradeLoggerUI:
         self.root.mainloop()
 
 if __name__ == "__main__":
+    # Minimal change: ensure __package__ is properly set for PyInstaller/frozen mode
+    if __package__ is None:
+        __package__ = "goldflipper.logging"
     app = TradeLoggerUI()
     app.logger.import_closed_plays()  # This will import all closed/expired plays
     app.run()

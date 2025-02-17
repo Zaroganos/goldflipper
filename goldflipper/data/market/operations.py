@@ -2,7 +2,7 @@ from typing import Dict, Optional, Any
 import logging
 from .manager import MarketDataManager
 from .providers.marketdataapp_provider import MarketDataAppProvider
-from goldflipper.utils.display import TerminalDisplay as display
+from ...utils.display import TerminalDisplay as display
 
 class MarketDataOperations:
     """Handles core market data operations for trading strategies"""

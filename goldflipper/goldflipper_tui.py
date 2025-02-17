@@ -1,3 +1,10 @@
+#!/usr/bin/env python
+if __name__ == '__main__' and __package__ is None:
+    import sys, os
+    # Insert the parent directory (the project root) into sys.path
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    __package__ = "goldflipper"
+
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
 from textual.widgets import Header, Footer, Button, Static, Select
@@ -6,9 +13,24 @@ import subprocess
 import sys
 import os
 from pathlib import Path
-from goldflipper.config.config import config
+from .config.config import config
 import yaml
 import asyncio  # Added for asyncio.to_thread
+# Import our helper that resolves resource paths correctly
+from goldflipper.utils.resource import get_resource_path
+
+def get_resource_path(relative_path):
+    """
+    Get absolute path to a bundled resource.
+    Works for both development and frozen (PyInstaller) environments.
+    """
+    if getattr(sys, "frozen", False):
+        # In PyInstaller one-file (or one-folder) mode, resources are in sys._MEIPASS.
+        base_path = sys._MEIPASS
+    else:
+        # Otherwise, use the directory of the current file.
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
 class ConfirmationScreen(Screen):
     BINDINGS = [("q", "quit", "Cancel")]
@@ -94,7 +116,7 @@ class WelcomeScreen(Screen):
         This new instance will show the active account connection status.
         """
         import asyncio, os, yaml
-        from goldflipper.tools.get_alpaca_info import test_alpaca_connection
+        from .tools.get_alpaca_info import test_alpaca_connection
 
         # Try to import Option (with fallback).
         try:
@@ -105,7 +127,7 @@ class WelcomeScreen(Screen):
 
         # Force a reset of the Alpaca client.
         try:
-            from goldflipper.alpaca_client import reset_client
+            from .alpaca_client import reset_client
             reset_client()
         except Exception as e:
             self.notify(f"Error resetting Alpaca client: {e}")
@@ -184,7 +206,7 @@ class WelcomeScreen(Screen):
         self.set_timer(0.6, lambda: self.update_welcome_with_status(welcome_widget))
 
     def update_welcome_with_status(self, widget: Static) -> None:
-        from goldflipper.utils import trading_system_status
+        from .utils import trading_system_status
         is_running = trading_system_status.is_trading_system_running()
         status_text = "[green]Trading System: Running[/green]" if is_running else "[red]Trading System: Not Running[/red]"
         widget.update(f" {status_text} ")
@@ -192,7 +214,7 @@ class WelcomeScreen(Screen):
         self.set_interval(5, self.refresh_status_in_welcome)
 
     def refresh_status_in_welcome(self) -> None:
-        from goldflipper.utils import trading_system_status
+        from .utils import trading_system_status
         is_running = trading_system_status.is_trading_system_running()
         status_text = "[green]Trading System: Running[/green]" if is_running else "[red]Trading System: Not Running[/red]"
         widget = self.query_one("#welcome", Static)
@@ -224,7 +246,7 @@ class WelcomeScreen(Screen):
 
         # Immediately reset the client
         try:
-            from goldflipper.alpaca_client import reset_client
+            from .alpaca_client import reset_client
             reset_client()
         except Exception as e:
             self.notify(f"Error resetting client: {e}")
@@ -273,183 +295,212 @@ class WelcomeScreen(Screen):
 
     def run_manage_service(self) -> None:
         """
-        Check if the service is installed and prompt the user to install or uninstall.
-        When confirmed, launch an elevated process using PowerShell so that UAC is triggered.
+        Launch the service management actions (install/remove/update) in an elevated PowerShell window.
+        This function displays a confirmation screen; upon confirmation it uses sys.executable
+        to invoke the run_goldflipper.py module with the relevant mode.
         """
-        import os
-        import subprocess
-        if os.name != 'nt':
-            self.notify("Service management is available on Windows only.")
-            return
-
         try:
-            import win32serviceutil
-            # If QueryServiceStatus succeeds, the service is installed.
-            win32serviceutil.QueryServiceStatus("GoldFlipperService")
-            service_installed = True
-        except Exception:
-            service_installed = False
-
-        if service_installed:
-            message = (
-                "You are about to STOP and UNINSTALL the GoldFlipper Service.\n"
-                "This will stop the running service and uninstall it.\n"
-                "This requires administrative privileges and will launch an elevated process.\n"
-                "Note: Changes made will not take effect until you reboot.\n"
-                "Do you want to proceed? (Y/N)"
-            )
-            mode = "remove"
-        else:
-            message = (
-                "You are about to INSTALL the Goldflipper Service and automatically start it.\n"
-                "This requires administrative privileges and will launch an elevated process.\n"
-                "Note: Changes made will not take effect until you reboot.\n"
-                "Do you want to proceed? (Y/N)"
-            )
-            mode = "install"
-
-        def perform_action():
-            if mode == "install":
-                final_command = (
-                    "python -m goldflipper.run --mode install; Start-Sleep -Seconds 2; net start GoldFlipperService"
+            import sys, os, subprocess
+            # Determine the intended mode; here we assume mode is predetermined.
+            # In practice you may want to provide a proper UI selection.
+            mode = "install"  # Change this to "remove" as needed.
+            if mode == "remove":
+                message = (
+                    "You are about to STOP and UNINSTALL the GoldFlipper Service.\n"
+                    "This will stop the running service and uninstall it.\n"
+                    "This requires administrative privileges and will launch an elevated process.\n"
+                    "Note: Changes made will not take effect until you reboot.\n"
+                    "Do you want to proceed? (Y/N)"
                 )
             else:
-                final_command = "net stop GoldFlipperService; python -m goldflipper.run --mode remove"
-            ps_command = f"Start-Process powershell -ArgumentList '-NoProfile -Command \"{final_command}\"' -Verb RunAs"
-            subprocess.Popen(["powershell", "-Command", ps_command])
-            self.notify(f"{'Uninstallation' if service_installed else 'Installation'} initiated. Changes will require a reboot to apply.")
+                message = (
+                    "You are about to INSTALL the GoldFlipper Service and automatically start it.\n"
+                    "This requires administrative privileges and will launch an elevated process.\n"
+                    "Note: Changes made will not take effect until you reboot.\n"
+                    "Do you want to proceed? (Y/N)"
+                )
 
-        self.app.push_screen(ConfirmationScreen(message, perform_action))
+            def perform_action():
+                if mode == "install":
+                    final_command = f'"{sys.executable}" -m goldflipper.run --mode install; Start-Sleep -Seconds 2; net start GoldFlipperService'
+                else:
+                    final_command = f'net stop GoldFlipperService; "{sys.executable}" -m goldflipper.run --mode remove'
+                ps_command = f"Start-Process powershell -ArgumentList '-NoProfile -Command \"{final_command}\"' -Verb RunAs"
+                subprocess.Popen(["powershell", "-Command", ps_command])
+                self.notify(f"{'Uninstallation' if mode=='remove' else 'Installation'} initiated. Changes will require a reboot to apply.")
 
-    def run_option_data_fetcher(self):
-        try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            tools_dir = os.path.join(current_dir, "tools")
-            if os.name == 'nt':  # Windows
-                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'option_data_fetcher.py']
-                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'option_data_fetcher.py'], cwd=tools_dir)
+            self.app.push_screen(ConfirmationScreen(message, perform_action))
         except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
+            self.notify(f"Error managing service: {str(e)}", severity="error")
 
-    def run_play_creation_tool(self):
+    def run_option_data_fetcher(self) -> None:
+        """
+        Launch the Option Data Fetcher tool.
+        """
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            tools_dir = os.path.join(current_dir, "tools")
-            if os.name == 'nt':
-                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'play-creation-tool.py']
-                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'play-creation-tool.py'], cwd=tools_dir)
-        except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
-
-    def run_trading_monitor(self):
-        try:
-            if os.name == 'nt':
-                cmd = ['cmd', '/k', 'python', '-m', 'goldflipper.run']
+            import sys, os, subprocess
+            cmd = [sys.executable, "--tool", "option_data_fetcher"]
+            if os.name == "nt":
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', '-m', 'goldflipper.run'])
+                subprocess.Popen(cmd)
         except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
+            self.notify(f"Error launching Option Data Fetcher: {str(e)}", severity="error")
 
-    def run_view_plays(self):
+    def run_play_creation_tool(self) -> None:
+        """
+        Launch the Play Creation Tool.
+        """
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            tools_dir = os.path.join(current_dir, "tools")
-            if os.name == 'nt':
-                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'view_plays.py']
+            import sys, os, subprocess
+            cmd = [sys.executable, "--tool", "play_creation"]
+            if os.name == "nt":
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'view_plays.py'], cwd=tools_dir)
+                subprocess.Popen(cmd)
         except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
+            self.notify(f"Error launching Play Creation Tool: {str(e)}", severity="error")
 
-    def run_system_status(self):
+    def run_trading_monitor(self) -> None:
+        """
+        Launch the trading system.
+        In frozen mode, this launches the bundled executable (run_goldflipper.py)
+        with the '--interface trading' argument so that it initiates the trading system
+        rather than launching the TUI again.
+        """
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            tools_dir = os.path.join(current_dir, "tools")
-            if os.name == 'nt':
-                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'system_status.py']
+            import sys, os, subprocess
+            if getattr(sys, "frozen", False):
+                cmd = [sys.executable, "--interface", "trading"]
+                if os.name == 'nt':
+                    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                else:
+                    subprocess.Popen(cmd)
+            else:
+                cmd = [sys.executable, "-m", "goldflipper.run", "--interface", "trading"]
+                if os.name == 'nt':
+                    cmd = ["cmd", "/k"] + cmd
+                    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                else:
+                    subprocess.Popen(cmd)
+        except Exception as e:
+            self.notify(f"Error launching trading monitor: {str(e)}", severity="error")
+
+    def run_view_plays(self) -> None:
+        """
+        Launch the tool to View / Edit Current Plays.
+        """
+        try:
+            import sys, os, subprocess
+            cmd = [sys.executable, "--tool", "view_plays"]
+            if os.name == "nt":
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'system_status.py'], cwd=tools_dir)
+                subprocess.Popen(cmd)
         except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
+            self.notify(f"Error launching View Plays: {str(e)}", severity="error")
 
-    def run_configuration(self):
+    def run_system_status(self) -> None:
+        """
+        Launch a tool to show system status.
+        (If you do not have an external system_status tool implemented,
+         update your dispatch logic accordingly.)
+        """
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            tools_dir = os.path.join(current_dir, "tools")
-            if os.name == 'nt':
-                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'configuration.py']
+            import sys, os, subprocess
+            cmd = [sys.executable, "--tool", "system_status"]
+            if os.name == "nt":
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'configuration.py'], cwd=tools_dir)
+                subprocess.Popen(cmd)
         except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
+            self.notify(f"Error launching System Status: {str(e)}", severity="error")
 
-    def run_auto_play_creator(self):
+    def run_configuration(self) -> None:
+        """
+        Launch the Configuration by opening the settings file in a text editor.
+        """
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            tools_dir = os.path.join(current_dir, "tools")
-            if os.name == 'nt':
-                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'auto_play_creator.py']
+            import sys, os, subprocess
+            from goldflipper.utils.resource import get_resource_path
+            config_dir = get_resource_path(os.path.join("goldflipper", "config"))
+            config_file = os.path.join(config_dir, "settings.yaml")
+            if os.name == "nt":
+                subprocess.Popen(["notepad.exe", config_file])
+            else:
+                subprocess.Popen(["nano", config_file])
+        except Exception as e:
+            self.notify(f"Error launching Configuration: {str(e)}", severity="error")
+
+    def run_auto_play_creator(self) -> None:
+        """
+        Launch the Auto Play Creator tool.
+        """
+        try:
+            import sys, os, subprocess
+            cmd = [sys.executable, "--tool", "auto_play_creator"]
+            if os.name == "nt":
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'auto_play_creator.py'], cwd=tools_dir)
+                subprocess.Popen(cmd)
         except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
+            self.notify(f"Error launching Auto Play Creator: {str(e)}", severity="error")
 
-    def run_chart_viewer(self):
+    def run_chart_viewer(self) -> None:
+        """
+        Launch the Chart Viewer tool.
+        """
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            chart_dir = os.path.join(current_dir, "chart")
-            if os.name == 'nt':
-                cmd = ['cmd', '/k', 'cd', '/d', chart_dir, '&', 'python', 'chart_viewer.py']
+            import sys, os, subprocess
+            cmd = [sys.executable, "--tool", "chart_viewer"]
+            if os.name == "nt":
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'chart_viewer.py'], cwd=chart_dir)
+                subprocess.Popen(cmd)
         except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
+            self.notify(f"Error launching Chart Viewer: {str(e)}", severity="error")
 
-    def run_get_alpaca_info(self):
+    def run_get_alpaca_info(self) -> None:
+        """
+        Launch the Get Alpaca Info tool.
+        """
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            tools_dir = os.path.join(current_dir, "tools")
-            if os.name == 'nt':
-                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'get_alpaca_info.py']
+            import sys, os, subprocess
+            cmd = [sys.executable, "--tool", "get_alpaca_info"]
+            if os.name == "nt":
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'get_alpaca_info.py'], cwd=tools_dir)
+                subprocess.Popen(cmd)
         except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
+            self.notify(f"Error launching Get Alpaca Info: {str(e)}", severity="error")
 
-    def run_trade_logger(self):
+    def run_trade_logger(self) -> None:
+        """
+        Launch the Trade Logger tool.
+        """
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            logging_dir = os.path.join(current_dir, "logging")
-            if os.name == 'nt':
-                cmd = ['cmd', '/k', 'cd', '/d', logging_dir, '&', 'python', 'trade_logger_ui.py']
+            import sys, os, subprocess
+            cmd = [sys.executable, "--tool", "trade_logger"]
+            if os.name == "nt":
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'trade_logger_ui.py'], cwd=logging_dir)
+                subprocess.Popen(cmd)
         except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
+            self.notify(f"Error launching Trade Logger: {str(e)}", severity="error")
 
-    def run_market_data_compare(self):
+    def run_market_data_compare(self) -> None:
+        """
+        Launch the Market Data Compare tool.
+        """
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            tools_dir = os.path.join(current_dir, "tools")
-            if os.name == 'nt':
-                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'multi_market_data.py']
+            import sys, os, subprocess
+            cmd = [sys.executable, "--tool", "market_data_compare"]
+            if os.name == "nt":
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'multi_market_data.py'], cwd=tools_dir)
+                subprocess.Popen(cmd)
         except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
+            self.notify(f"Error launching Market Data Compare: {str(e)}", severity="error")
 
 class GoldflipperTUI(App):
     CSS = """

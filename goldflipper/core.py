@@ -3,10 +3,10 @@ import logging
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from goldflipper.json_parser import load_play
-from goldflipper.alpaca_client import get_alpaca_client
-from goldflipper.config.config import config
-from goldflipper.utils.display import TerminalDisplay as display
+from .json_parser import load_play
+from .alpaca_client import get_alpaca_client
+from .config.config import config
+from .utils.display import TerminalDisplay as display
 from alpaca.trading.requests import (
     GetOptionContractsRequest, 
     LimitOrderRequest, 
@@ -16,10 +16,10 @@ from alpaca.trading.requests import (
 from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 import json
-from goldflipper.tools.option_data_fetcher import calculate_greeks
+from .tools.option_data_fetcher import calculate_greeks
 from uuid import UUID
 from typing import Optional, Dict, Any
-from goldflipper.data.market.manager import MarketDataManager  # Add this import
+from .data.market.manager import MarketDataManager  # Add this import
 
 # ==================================================
 # 1. BROKERAGE DATA RETRIEVAL

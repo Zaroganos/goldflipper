@@ -1,7 +1,7 @@
 import sys
 import os
 from alpaca.trading.client import TradingClient
-from goldflipper.config.config import config
+from .config.config import config
 
 # Debugging output
 print(f"Python path: {sys.path}")

@@ -1,14 +1,14 @@
+#!/usr/bin/env python
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-
-from goldflipper.alpaca_client import get_alpaca_client
-from goldflipper.utils.display import TerminalDisplay as display
+import json
 import logging
 from datetime import datetime
 from typing import Optional, Tuple, Dict, Any
-import json
-from goldflipper.config.config import config
+
+from ..alpaca_client import get_alpaca_client
+from ..utils.display import TerminalDisplay as display
+from ..config.config import config
 
 def get_order_info(order_id: str) -> Optional[Dict[str, Any]]:
     """
@@ -25,8 +25,9 @@ def get_order_info(order_id: str) -> Optional[Dict[str, Any]]:
     try:
         # Get active account nickname for display
         active_account = config.get('alpaca', 'active_account')
-        account_nickname = config.get('alpaca', 'accounts')[active_account].get('nickname', 
-                                   active_account.replace('_', ' ').title())
+        account_nickname = config.get('alpaca', 'accounts')[active_account].get(
+            'nickname', active_account.replace('_', ' ').title()
+        )
         
         order = client.get_order_by_id(order_id)
         return {
@@ -143,8 +144,8 @@ def get_all_positions() -> Optional[Dict[str, Dict[str, Any]]]:
 
 def test_alpaca_connection():
     """Test the connection to Alpaca API and return debug info."""
-    from goldflipper.alpaca_client import get_alpaca_client
-    from goldflipper.config.config import config
+    from ..alpaca_client import get_alpaca_client
+    from ..config.config import config
     client = get_alpaca_client()
     active_account = config.get('alpaca', 'active_account')
     account_nickname = config.get('alpaca', 'accounts')[active_account].get(
@@ -270,5 +271,32 @@ def main():
     else:
         display.info("No open positions found")
 
+    try:
+        print("Alpaca Info Tool\n-------------------")
+        print("Fetching Orders:")
+        orders = get_all_orders()
+        if orders:
+            print(json.dumps(orders, indent=4))
+        else:
+            print("Failed to retrieve orders.")
+
+        print("\nFetching Positions:")
+        positions = get_all_positions()
+        if positions:
+            print(json.dumps(positions, indent=4))
+        else:
+            print("Failed to retrieve positions.")
+
+        print("\nTesting Connection:")
+        success, debug_msg = test_alpaca_connection()
+        print(debug_msg)
+    except Exception as exc:
+        print(f"An error occurred: {exc}")
+    finally:
+        input("\nPress Enter to exit...")
+
 if __name__ == "__main__":
+    # Ensure proper package resolution for relative imports in frozen mode.
+    if __package__ is None:
+        __package__ = "goldflipper.tools"
     main()

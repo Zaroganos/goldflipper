@@ -83,3 +83,32 @@ This is a list of things to do for the goldflipper project.
 
 - These changes improve user clarity and ensure that service state actions are performed safely and with the proper permissions.
 
+- [ ] Refactor package imports for proper PyInstaller packaging:
+    1. In all modules inside the 'goldflipper' package (starting with goldflipper_tui.py), change absolute imports to relative imports. For example, change:
+         from goldflipper.config.config import config
+       to:
+         from .config.config import config
+    2. Review the sys.path modifications in entry scripts (e.g., at the top of goldflipper_tui.py). Ensure that:
+         - The parent directory is inserted into sys.path only if needed.
+         - __package__ is set appropriately (e.g., __package__ = "goldflipper") when running as __main__.
+    3. Update any other modules that use absolute imports from the package (such as in tools, run.py, or other submodules) to use relative imports consistently.
+    4. Test the application in development (using "python -m goldflipper.goldflipper_tui") and verify that the frozen executable (built by PyInstaller) works with the refactored imports.
+
+- [ ] Resolve circular import issues in the goldflipper package:
+    1. Review goldflipper/__init__.py and remove or refactor any top-level imports (e.g., remove "from goldflipper.config.config import config").
+    2. If needed, perform lazy (local) imports within functions to avoid circular references.
+    3. Check that no modules within the package import each other in a circular manner.
+    4. Rebuild and test the PyInstaller executable to confirm that the issue is resolved.
+- Then, in other parts of your code that need config, instead of:
+  from goldflipper.config.config import config
+  to:
+  from goldflipper import get_config
+  config = get_config()
+
+- [ ] Ensure all non-code data files are bundled with the PyInstaller executable:
+    1. Update the spec file to include YAML configuration files (e.g., modify includes to ['config/*.py', 'config/*.yaml', 'plays/*.json', 'tools/PlayTemplate/*']).
+    2. Consider using a resource path helper function in configuration modules to reliably locate bundled data files.
+    3. Clean, rebuild, and test the frozen executable to verify that all data files are accessible.
+
+
+

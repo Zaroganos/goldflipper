@@ -1,3 +1,30 @@
+#!/usr/bin/env python
+import sys, os
+
+if getattr(sys, 'frozen', False):
+    # When running as a bundled executable, sys._MEIPASS points to the temp folder.
+    base_path = sys._MEIPASS
+    if base_path not in sys.path:
+        sys.path.insert(0, base_path)
+    # Calculate the project root.
+    # sys.executable is something like ...\dist\GoldflipperTUI.exe so its parent is the dist folder.
+    # Go one level up to reach the project root.
+    project_root = os.path.abspath(os.path.join(os.path.dirname(sys.executable), '..'))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+else:
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+if __name__ == '__main__' and __package__ is None:
+    __package__ = 'goldflipper'
+
+# For debugging, you might temporarily print sys.path:
+# print("sys.path:", sys.path)
+
+from src.state.state_manager import StateManager
+
 ascii_art = r"""
                    ___       ___    .-.      ___                                                 
                   (   )     (   )  /    \   (   )  .-.                                           
@@ -19,20 +46,18 @@ Loading, please wait...
 """
 
 print(ascii_art)
-import os
 import logging
 import logging.handlers
-from goldflipper.core import monitor_plays_continuously
-from goldflipper.startup_test import run_startup_tests
+from .core import monitor_plays_continuously
+from .startup_test import run_startup_tests
 import sys
-from goldflipper.utils.display import TerminalDisplay as display
+from .utils.display import TerminalDisplay as display
 from pathlib import Path
 import win32serviceutil
 import win32service
 import win32event
 import servicemanager
-from goldflipper.watchdog.watchdog_manager import WatchdogManager
-from src.state.state_manager import StateManager
+from .watchdog.watchdog_manager import WatchdogManager
 from datetime import datetime
 import time
 import argparse
@@ -184,7 +209,7 @@ def run_trading_system(console_mode=False):
         state_dir.mkdir(exist_ok=True)
         state_manager = StateManager(state_dir)
         
-        from goldflipper.core import monitor_plays_continuously
+        from .core import monitor_plays_continuously
         cycle_count = 0
         
         while True:
@@ -243,12 +268,10 @@ def run_trading_system(console_mode=False):
 
 def main():
     parser = argparse.ArgumentParser(description='GoldFlipper Trading System')
-    parser.add_argument('--mode', choices=['console', 'service', 'install', 'remove', 'update'],
-                       default='console', help='Run mode')
-    
+    parser.add_argument("--mode", choices=["console", "service", "install", "remove", "update"], default="console", help="Run mode")
     args = parser.parse_args()
     
-    if args.mode == 'console':
+    if args.mode == "console":
         run_trading_system(console_mode=True)
     elif args.mode in ['install', 'remove', 'update']:
         # Handle service installation commands
@@ -258,7 +281,7 @@ def main():
             win32serviceutil.HandleCommandLine(GoldFlipperService, argv=['', 'remove'])
         elif args.mode == 'update':
             win32serviceutil.HandleCommandLine(GoldFlipperService, argv=['', 'update'])
-    elif args.mode == 'service':
+    elif args.mode == "service":
         # Run as a Windows service
         servicemanager.Initialize()
         servicemanager.PrepareToHostSingle(GoldFlipperService)

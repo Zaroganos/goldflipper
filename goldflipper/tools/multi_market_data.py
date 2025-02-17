@@ -14,12 +14,11 @@ import re
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, project_root)
 
-from goldflipper.data.market.providers.base import MarketDataProvider
-from goldflipper.data.market.providers.alpaca_provider import AlpacaProvider
-from goldflipper.data.market.providers.yfinance_provider import YFinanceProvider
-from goldflipper.data.market.providers.marketdataapp_provider import MarketDataAppProvider
+from ..data.market.providers.base import MarketDataProvider
+from ..data.market.providers.alpaca_provider import AlpacaProvider
+from ..data.market.providers.yfinance_provider import YFinanceProvider
+from ..data.market.providers.marketdataapp_provider import MarketDataAppProvider
 
 class MarketDataComparator:
     """Compares market data from multiple providers"""

@@ -13,18 +13,33 @@ The Config class handles:
 """
 
 import os
+import sys
 import yaml
 import logging
 
+def get_resource_path(relative_path):
+    """
+    Get absolute path to a resource.
+    
+    This works in both development and PyInstaller one‑file mode:
+        - In development, the base is the current directory.
+        - When frozen, the base is sys._MEIPASS (PyInstaller's extraction directory).
+    """
+    if getattr(sys, "frozen", False):
+        base_path = sys._MEIPASS
+    else:
+        # Adjust this as needed; many use os.path.abspath(".") or the directory of __file__
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 def load_config():
-    config_path = os.path.join(os.path.dirname(__file__), 'settings.yaml')
-    try:
-        with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
-    except FileNotFoundError:
+    # When frozen, the YAML file should be inside sys._MEIPASS under:
+    # goldflipper/config/settings.yaml
+    config_path = get_resource_path(os.path.join("goldflipper", "config", "settings.yaml"))
+    if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file not found at {config_path}")
-    except yaml.YAMLError as e:
-        raise ValueError(f"Error parsing YAML configuration: {e}")
+    with open(config_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
 config = load_config()
 
@@ -67,7 +82,7 @@ class Config:
         Attempts to load settings.yaml from the config directory.
         Falls back to empty dict if file is not found or invalid.
         """
-        config_path = os.path.join(os.path.dirname(__file__), 'settings.yaml')
+        config_path = get_resource_path(os.path.join("goldflipper", "config", "settings.yaml"))
         try:
             with open(config_path, 'r') as f:
                 self._config = yaml.safe_load(f)

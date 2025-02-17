@@ -1,16 +1,16 @@
+#!/usr/bin/env python
 import os
 import sys
 
 # Add the project root directory to Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-sys.path.append(project_root)
 
 import psutil
 import json
 from datetime import datetime
 import subprocess
 import alpaca
-from goldflipper.alpaca_client import get_alpaca_client
+from ..alpaca_client import get_alpaca_client
 
 def update_alpaca():
     """
@@ -55,5 +55,17 @@ def check_system_status():
     except Exception as e:
         print(f"\nError accessing Alpaca API: {e}")
 
+def run_system_status():
+    update_alpaca()
+    check_system_status()
+
+def main():
+    run_system_status()
+    # Pause at the end so that the console window remains visible.
+    input("Press Enter to exit...")
+
 if __name__ == "__main__":
-    check_system_status() 
+    # Ensure proper package resolution in frozen mode.
+    if __package__ is None:
+        __package__ = "goldflipper.tools"
+    main() 

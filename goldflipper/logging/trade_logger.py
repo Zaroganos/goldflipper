@@ -1,8 +1,10 @@
-from datetime import datetime
-import pandas as pd
+#!/usr/bin/env python
 import os
+import sys
 import json
-from typing import List, Dict, Any
+from datetime import datetime
+import subprocess
+import pandas as pd
 import logging
 
 class PlayLogger:
@@ -78,7 +80,7 @@ class PlayLogger:
         print(f"Total plays imported: {imported_count}")
         return imported_count
     
-    def log_play(self, play_data: Dict[str, Any], status: str):
+    def log_play(self, play_data: dict, status: str):
         """Log a single play to CSV"""
         logging_data = play_data.get('logging', {})
         
@@ -173,7 +175,7 @@ class PlayLogger:
         df = pd.concat([df, new_entry], ignore_index=True)
         df.to_csv(self.csv_path, index=False)
     
-    def _calculate_pl(self, play_data: Dict[str, Any]) -> float:
+    def _calculate_pl(self, play_data: dict) -> float:
         """Calculate profit/loss for the play"""
         logging_data = play_data.get('logging', {})
         if logging_data.get('premium_atClose') and logging_data.get('premium_atOpen'):

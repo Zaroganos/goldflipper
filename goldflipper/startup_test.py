@@ -7,10 +7,9 @@ import requests
 
 # Add project root to path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-sys.path.append(project_root)
 
-from goldflipper.alpaca_client import get_alpaca_client
-from goldflipper.config.config import config
+from .alpaca_client import get_alpaca_client
+from .config.config import config
 
 def test_alpaca_connection():
     """Test Alpaca API connectivity and account status."""

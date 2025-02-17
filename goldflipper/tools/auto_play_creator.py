@@ -7,10 +7,9 @@ import sys
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(project_root)
 
-from goldflipper.config.config import config
-from goldflipper.utils.display import TerminalDisplay as display
+from ..config.config import config
+from ..utils.display import TerminalDisplay as display
 import logging
 
 class AutoPlayCreator:
@@ -271,7 +270,7 @@ class AutoPlayCreator:
         # Generate random 3-digit string
         random_suffix = ''.join(random.choices(string.digits, k=3))
         
-        # Get current timestamp in the same format as play-creation-tool
+        # Get current timestamp in the same format as play_creation_tool
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
         # Combine components: AUTO_symbol_timestamp_randomsuffix

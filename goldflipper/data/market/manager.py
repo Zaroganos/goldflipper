@@ -9,7 +9,7 @@ from .providers.yfinance_provider import YFinanceProvider
 from .providers.alpaca_provider import AlpacaProvider
 from .cache import CycleCache
 from .errors import *
-from goldflipper.utils.display import TerminalDisplay as display
+from ...utils.display import TerminalDisplay as display
 
 class MarketDataManager:
     """Central manager for market data operations"""

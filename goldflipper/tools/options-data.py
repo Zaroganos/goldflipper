@@ -4,7 +4,6 @@ import sys
 # Get the absolute path to the project root directory
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 # Add the project root to Python path
-sys.path.insert(0, project_root)
 
 import yfinance as yf
 import logging
@@ -12,7 +11,7 @@ from datetime import datetime
 import pandas as pd
 import json
 import time
-from goldflipper.utils.display import TerminalDisplay as display
+from ..utils.display import TerminalDisplay as display
 
 def setup_logging():
     logging.basicConfig(

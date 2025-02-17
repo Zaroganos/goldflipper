@@ -10,7 +10,7 @@ setup(
     version='0.1.2',  # Initial version number (follow semantic versioning)
     author='Yaroshevskiy, Iliya',  # Replace with your name
     author_email='purpleafmanagement@gmail.com',  # Replace with your email
-    description='A Python package for algorithmic trading using Alpaca.',
+    description='A Python package for options trading using Alpaca.',
     long_description=long_description,  # Long description from README.md
     long_description_content_type="text/markdown",  # The format of the long description
     url='https://github.com/Zaroganos/goldflipper',  # URL to the project homepage

@@ -1,6 +1,6 @@
-from goldflipper.chart.candlestick import CandlestickChart
-from goldflipper.data.indicators.ema import EMACalculator
-from goldflipper.data.indicators.macd import MACDCalculator
+from ...chart.candlestick import CandlestickChart
+from ...data.indicators.ema import EMACalculator
+from ...data.indicators.macd import MACDCalculator
 import yfinance as yf
 
 def create_chart_example(symbol: str):

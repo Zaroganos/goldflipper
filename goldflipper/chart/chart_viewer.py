@@ -1,17 +1,16 @@
 import os
 import sys
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, project_root)
 
 import yfinance as yf
-from goldflipper.chart.candlestick import CandlestickChart
-from goldflipper.data.indicators.ema import EMACalculator
-from goldflipper.data.indicators.macd import MACDCalculator
-from goldflipper.data.indicators.ttm_squeeze import TTMSqueezeCalculator
-from goldflipper.utils.display import TerminalDisplay as display
+from ..chart.candlestick import CandlestickChart
+from ..data.indicators.ema import EMACalculator
+from ..data.indicators.macd import MACDCalculator
+from ..data.indicators.ttm_squeeze import TTMSqueezeCalculator
+from ..utils.display import TerminalDisplay as display
 import logging
 import pandas as pd
-from goldflipper.data.indicators.base import MarketData
+from ..data.indicators.base import MarketData
 import yaml
 
 def validate_period_interval(period: str, interval: str) -> tuple[bool, str]:
@@ -206,4 +205,6 @@ def main():
             continue
 
 if __name__ == "__main__":
+    if __package__ is None:
+        __package__ = "goldflipper.chart"
     main() 

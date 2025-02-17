@@ -4,7 +4,6 @@ import sys
 # Get the absolute path to the project root directory
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 # Add the project root to Python path
-sys.path.insert(0, project_root)
 
 import yfinance as yf
 import logging
@@ -12,30 +11,30 @@ from datetime import datetime
 import pandas as pd
 import json
 import yaml
-from goldflipper.utils.display import TerminalDisplay as display
+from ..utils.display import TerminalDisplay as display
 
-from goldflipper.data.greeks.base import OptionData
-from goldflipper.data.greeks.delta import DeltaCalculator
-from goldflipper.data.greeks.gamma import GammaCalculator
-from goldflipper.data.greeks.theta import ThetaCalculator
-from goldflipper.data.greeks.vega import VegaCalculator
-from goldflipper.data.greeks.rho import RhoCalculator
-from goldflipper.data.greeks.elasticity import ElasticityCalculator
-from goldflipper.data.greeks.epsilon import EpsilonCalculator
-from goldflipper.data.greeks.vanna import VannaCalculator
-from goldflipper.data.greeks.charm import CharmCalculator
-from goldflipper.data.greeks.vomma import VommaCalculator
-from goldflipper.data.greeks.veta import VetaCalculator
-from goldflipper.data.greeks.vera import VeraCalculator
-from goldflipper.data.greeks.speed import SpeedCalculator
-from goldflipper.data.greeks.zomma import ZommaCalculator
-from goldflipper.data.greeks.color import ColorCalculator
-from goldflipper.data.greeks.ultima import UltimaCalculator
-from goldflipper.data.greeks.parmicharma import ParmicharmaCalculator
-from goldflipper.data.indicators.base import MarketData
-from goldflipper.data.indicators.ttm_squeeze import TTMSqueezeCalculator
-from goldflipper.data.indicators.ema import EMACalculator
-from goldflipper.data.indicators.macd import MACDCalculator
+from ..data.greeks.base import OptionData
+from ..data.greeks.delta import DeltaCalculator
+from ..data.greeks.gamma import GammaCalculator
+from ..data.greeks.theta import ThetaCalculator
+from ..data.greeks.vega import VegaCalculator
+from ..data.greeks.rho import RhoCalculator
+from ..data.greeks.elasticity import ElasticityCalculator
+from ..data.greeks.epsilon import EpsilonCalculator
+from ..data.greeks.vanna import VannaCalculator
+from ..data.greeks.charm import CharmCalculator
+from ..data.greeks.vomma import VommaCalculator
+from ..data.greeks.veta import VetaCalculator
+from ..data.greeks.vera import VeraCalculator
+from ..data.greeks.speed import SpeedCalculator
+from ..data.greeks.zomma import ZommaCalculator
+from ..data.greeks.color import ColorCalculator
+from ..data.greeks.ultima import UltimaCalculator
+from ..data.greeks.parmicharma import ParmicharmaCalculator
+from ..data.indicators.base import MarketData
+from ..data.indicators.ttm_squeeze import TTMSqueezeCalculator
+from ..data.indicators.ema import EMACalculator
+from ..data.indicators.macd import MACDCalculator
 
 
 pd.set_option('display.max_rows', None)

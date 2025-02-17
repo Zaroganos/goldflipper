@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os
 import json
 import re
@@ -9,9 +10,8 @@ import sys
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(project_root)
 
-from goldflipper.utils.display import TerminalDisplay
+from ..utils.display import TerminalDisplay
 
 def get_input(prompt, input_type=str, validation=None, error_message="Invalid input. Please try again.", optional=False):
     """
@@ -767,5 +767,9 @@ def create_play():
             TerminalDisplay.error(f"Error creating play: {ve}", show_timestamp=False)
             return None
 
-if __name__ == "__main__":
+def main():
+    """Entry point for the Play Creation Tool."""
     create_play()
+
+if __name__ == "__main__":
+    main()
