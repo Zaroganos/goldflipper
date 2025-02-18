@@ -1690,7 +1690,9 @@ def monitor_plays_continuously():
             display.error(error_msg)
             logging.error(error_msg)
 
-        time.sleep(30)  # Wait for 30 seconds before next cycle
+        # Read the polling_interval from settings.yaml under the monitoring section.
+        polling_interval = config.get('monitoring', 'polling_interval', default=30)
+        time.sleep(polling_interval)  # Wait for the configured interval before the next cycle
 
 # ==================================================
 # 8. ANCILLARY FUNCTIONS
