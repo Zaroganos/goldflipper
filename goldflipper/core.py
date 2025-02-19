@@ -656,14 +656,14 @@ def close_position(play, close_conditions, play_file):
         return False
 
     qty = play.get('contracts', 1)  # Default to 1 if not specified
-    
+
     try:
         # Initialize closing status
         play['status']['closing_order_id'] = None
         play['status']['closing_order_status'] = None
         play['status']['contingency_order_id'] = None
         play['status']['contingency_order_status'] = None
-        
+
         # Get current market data for logging
         # OLD: current_stock_price = get_current_stock_price(play['symbol'])
         # NEW: Use our new function
@@ -673,7 +673,7 @@ def close_position(play, close_conditions, play_file):
         # NEW: Use our new function
         option_data = get_option_data(play['option_contract_symbol'])
         current_premium = option_data['premium'] if option_data else None
-        
+
         # Determine close type and condition
         close_type = (
             'TP' if close_conditions['is_profit'] 
@@ -706,11 +706,11 @@ def close_position(play, close_conditions, play_file):
             'close_type': close_type,
             'close_condition': close_condition
         })
-        
+
         # Save initial closing status
         save_play(play, play_file)
-        
-        # Take profit handling
+
+        # ---- TAKE PROFIT HANDLING ----
         if close_conditions['is_profit']:
             # Get fresh option data
             option_data = get_option_data(play['option_contract_symbol'])
@@ -719,6 +719,7 @@ def close_position(play, close_conditions, play_file):
                 display.error("Failed to get current option data.")
                 return False
 
+            # Determine limit price based on TP order type
             if play['take_profit'].get('order_type') == 'limit at last':
                 limit_price = current_premium
                 logging.info(f"Using last traded price for TP limit order: ${limit_price:.2f}")
@@ -736,8 +737,9 @@ def close_position(play, close_conditions, play_file):
                         limit_price = play['take_profit']['TP_option_prem']
                 else:
                     limit_price = play['take_profit']['TP_option_prem']
-                
-                # Round limit price to 2 decimal places
+
+            # Build order for take profit if limit order requested
+            if play['take_profit'].get('order_type', '').lower().startswith("limit"):
                 limit_price = round(limit_price, 2)
                 order_req = LimitOrderRequest(
                     symbol=contract_symbol,
@@ -745,7 +747,7 @@ def close_position(play, close_conditions, play_file):
                     limit_price=limit_price,
                     side=OrderSide.SELL,
                     type=OrderType.LIMIT,
-                    time_in_force=TimeInForce.DAY
+                    time_in_force=TimeInForce.DAY,
                 )
                 logging.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
                 display.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
@@ -777,17 +779,16 @@ def close_position(play, close_conditions, play_file):
                 display.info("Play moved to CLOSED state for market TP order")
         
         # Stop loss handling
-        else:
-            # Get fresh option data
+                    # Get fresh option data
             option_data = get_option_data(play['option_contract_symbol'])
             if option_data is None:
                 logging.error("Failed to get current option data.")
                 display.error("Failed to get current option data.")
                 return False
-
-            # For contingency stop loss
-            if close_conditions['sl_type'] == 'CONTINGENCY':
-                # Cancel any existing orders first
+        else:
+            # Handle contingency stop loss first
+            if play['stop_loss'].get('SL_type', '').upper() == 'CONTINGENCY':
+                # Cancel all existing orders as a contingency measure
                 try:
                     client.cancel_all_orders()
                     logging.info("Cancelled all existing orders")
@@ -816,23 +817,24 @@ def close_position(play, close_conditions, play_file):
                 elif close_conditions['is_primary_loss']:
                     if play['stop_loss'].get('order_type') == 'limit at last':
                         limit_price = current_premium
-                        logging.info(f"Using last traded price for SL limit order: ${limit_price:.2f}")
-                        display.info(f"Using last traded price for SL limit order: ${limit_price:.2f}")
-                    else:  # 'limit at bid'
-                        # Get bid price if enabled in settings
+                        logging.info(f"Using last traded price for primary SL limit order: ${limit_price:.2f}")
+                        display.info(f"Using last traded price for primary SL limit order: ${limit_price:.2f}")
+                    elif play['stop_loss'].get('order_type') == 'limit at bid':
                         if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
                             if option_data and option_data.get('bid') is not None:
                                 limit_price = option_data['bid']
-                                logging.info(f"Using bid price for SL limit order: ${limit_price:.2f}")
-                                display.info(f"Using bid price for SL limit order: ${limit_price:.2f}")
+                                logging.info(f"Using bid price for primary SL limit order: ${limit_price:.2f}")
+                                display.info(f"Using bid price for primary SL limit order: ${limit_price:.2f}")
                             else:
-                                logging.error("Failed to get bid price. Falling back to SL target price.")
-                                display.error("Failed to get bid price. Falling back to SL target price.")
+                                logging.error("Failed to get bid price. Falling back to SL target premium.")
+                                display.error("Failed to get bid price. Falling back to SL target premium.")
                                 limit_price = play['stop_loss']['SL_option_prem']
                         else:
                             limit_price = play['stop_loss']['SL_option_prem']
-                    
-                    # Round limit price to 2 decimal places
+                    else:
+                        logging.warning("Unknown SL order type for CONTINGENCY. Falling back to SL target premium.")
+                        limit_price = play['stop_loss']['SL_option_prem']
+
                     limit_price = round(limit_price, 2)
                     order_req = LimitOrderRequest(
                         symbol=contract_symbol,
@@ -840,10 +842,10 @@ def close_position(play, close_conditions, play_file):
                         limit_price=limit_price,
                         side=OrderSide.SELL,
                         type=OrderType.LIMIT,
-                        time_in_force=TimeInForce.DAY
+                        time_in_force=TimeInForce.DAY,
                     )
-                    logging.info(f"Creating primary stop loss limit sell order at ${limit_price:.2f}")
-                    display.info(f"Creating primary stop loss limit sell order at ${limit_price:.2f}")
+                    logging.info(f"Creating primary SL limit sell order at ${limit_price:.2f}")
+                    display.info(f"Creating primary SL limit sell order at ${limit_price:.2f}")
                     response = client.submit_order(order_req)
                     
                     # Add PENDING-CLOSING transition for limit orders
@@ -853,23 +855,27 @@ def close_position(play, close_conditions, play_file):
                     })
                     save_play(play, play_file)
                     move_play_to_pending_closing(play_file)
-                    logging.info("Play moved to PENDING-CLOSING state for primary limit SL order")
-                    display.info("Play moved to PENDING-CLOSING state for primary limit SL order")
-            
-            # For regular limit stop loss
-            elif play['stop_loss'].get('order_type') == 'limit':
-                # Get bid price if enabled in settings
-                if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
-                    option_data = get_option_data(play['option_contract_symbol'])
-                    if option_data and option_data.get('bid') is not None:
-                        limit_price = option_data['bid']
-                        logging.info(f"Using current bid price: ${limit_price:.2f}")
-                        display.info(f"Using current bid price: ${limit_price:.2f}")
-                    if limit_price is None:
-                        logging.error("Failed to get bid price. Falling back to SL target price.")
-                        display.error("Failed to get bid price. Falling back to SL target price.")
+            # Now handle regular (non-contingency) limit stop loss
+            elif play['stop_loss'].get('SL_type', '').upper() == 'LIMIT':
+                sl_order = play['stop_loss'].get('order_type', '').lower()
+                if sl_order == 'limit at last':
+                    limit_price = current_premium
+                    logging.info(f"Using last traded price for SL limit order: ${limit_price:.2f}")
+                    display.info(f"Using last traded price for SL limit order: ${limit_price:.2f}")
+                elif sl_order == 'limit at bid':
+                    if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
+                        if option_data and option_data.get('bid') is not None:
+                            limit_price = option_data['bid']
+                            logging.info(f"Using current bid price for SL limit order: ${limit_price:.2f}")
+                            display.info(f"Using current bid price for SL limit order: ${limit_price:.2f}")
+                        else:
+                            logging.error("Failed to get bid price. Falling back to SL target premium.")
+                            display.error("Failed to get bid price. Falling back to SL target premium.")
+                            limit_price = play['stop_loss']['SL_option_prem']
+                    else:
                         limit_price = play['stop_loss']['SL_option_prem']
                 else:
+                    logging.warning(f"Unrecognized SL order type '{sl_order}' for LIMIT SL type. Falling back to SL target premium.")
                     limit_price = play['stop_loss']['SL_option_prem']
                 
                 # Round limit price to 2 decimal places
@@ -880,7 +886,7 @@ def close_position(play, close_conditions, play_file):
                     limit_price=limit_price,
                     side=OrderSide.SELL,
                     type=OrderType.LIMIT,
-                    time_in_force=TimeInForce.DAY
+                    time_in_force=TimeInForce.DAY,
                 )
                 logging.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
                 display.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
@@ -898,6 +904,7 @@ def close_position(play, close_conditions, play_file):
             
             # For regular market stop loss
             else:
+                # For SL_type 'STOP' or any other types, use a market order
                 response = client.close_position(
                     symbol_or_asset_id=contract_symbol,
                     close_options=ClosePositionRequest(qty=str(qty))
@@ -916,7 +923,7 @@ def close_position(play, close_conditions, play_file):
         display.info(f"Order submitted: {response}")
         
         return True
-        
+
     except Exception as e:
         logging.error(f"Error closing position: {e}")
         display.error(f"Error closing position: {e}")
