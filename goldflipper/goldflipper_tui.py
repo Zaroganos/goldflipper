@@ -338,10 +338,10 @@ class WelcomeScreen(Screen):
             current_dir = os.path.dirname(os.path.abspath(__file__))
             tools_dir = os.path.join(current_dir, "tools")
             if os.name == 'nt':
-                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'play-creation-tool.py']
+                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'play_creation_tool.py']
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'play-creation-tool.py'], cwd=tools_dir)
+                subprocess.Popen(['gnome-terminal', '--', 'python', 'play_creation_tool.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
