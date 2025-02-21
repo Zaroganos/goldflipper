@@ -53,8 +53,16 @@ PUTS_ENTRY = {
     "strike_price": 7
 }
 PUTS_VALIDATION = CALLS_VALIDATION.copy()
-PUTS_TP = CALLS_TP.copy()
-PUTS_SL = CALLS_SL.copy()
+PUTS_TP = {
+    "tp_stock_price": 14,
+    "tp_premium_pct": 15,
+    "tp_stock_pct": 16,
+}
+PUTS_SL = {
+    "sl_stock_price": 19,
+    "sl_premium_pct": 20,
+    "sl_stock_pct": 21,
+}
 
 # --- Utility Functions ---
 
@@ -353,41 +361,44 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     if "INVALID" in option_symbol:
         errors.append(f"Row {row_num}: Invalid option symbol generated")
 
-    # Process Take Profit and Stop Loss sections
-    if section == "calls":
-        tp_mapping = CALLS_TP
-        sl_mapping = CALLS_SL
-    else:
-        tp_mapping = PUTS_TP
-        sl_mapping = PUTS_SL
+    # Unified TP/SL processing with multiple price type support
+    def process_condition(condition_type):
+        """Process TP/SL conditions with multiple price types"""
+        prefix = "tp" if condition_type == "tp" else "sl"
+        base_idx = CALLS_TP if section == "calls" else PUTS_TP
+        if condition_type == "sl":
+            base_idx = CALLS_SL if section == "calls" else PUTS_SL
 
-    # Process Take Profit
-    take_profit = {}
-    tp_stock = get_cell(section_range_start + tp_mapping["tp_stock_price"]).strip()
-    if tp_stock and tp_stock != 'N/A':
-        take_profit["share_price"] = safe_convert_float(tp_stock, "TP stock price", row_num, errors)
-    
-    tp_premium = get_cell(section_range_start + tp_mapping["tp_premium_pct"]).strip().replace('%', '')
-    if tp_premium and tp_premium != 'N/A':
-        take_profit["premium_pct"] = safe_convert_float(tp_premium, "TP premium %", row_num, errors)
-    
-    # Process Stop Loss 
-    stop_loss = {}
-    sl_stock = get_cell(section_range_start + sl_mapping["sl_stock_price"]).strip()
-    if sl_stock and sl_stock != 'N/A':
-        stop_loss["share_price"] = safe_convert_float(sl_stock, "SL stock price", row_num, errors)
-    
-    sl_premium = get_cell(section_range_start + sl_mapping["sl_premium_pct"]).strip().replace('%', '')
-    if sl_premium and sl_premium != 'N/A':
-        stop_loss["premium_pct"] = safe_convert_float(sl_premium, "SL premium %", row_num, errors)
+        condition = {}
+        # Stock price
+        stock_price = get_cell(base_idx[f"{prefix}_stock_price"])
+        if stock_price and stock_price != 'N/A':
+            converted = safe_convert_float(stock_price, f"{condition_type} stock price", row_num, errors)
+            if converted: condition["share_price"] = converted
+        
+        # Premium percentage
+        premium_pct = get_cell(base_idx[f"{prefix}_premium_pct"]).replace('%', '')
+        if premium_pct and premium_pct != 'N/A':
+            converted = safe_convert_float(premium_pct, f"{condition_type} premium %", row_num, errors)
+            if converted: condition["premium_pct"] = converted
+        
+        # Stock percentage
+        stock_pct = get_cell(base_idx[f"{prefix}_stock_pct"]).replace('%', '')
+        if stock_pct and stock_pct != 'N/A':
+            converted = safe_convert_float(stock_pct, f"{condition_type} stock %", row_num, errors)
+            if converted: condition["stock_pct"] = converted
 
-    # Add order types only if section exists
-    if take_profit:
-        take_profit["order_type"] = "limit at last"
-    
-    if stop_loss:
-        stop_loss["SL_type"] = "LIMIT"
-        stop_loss["order_type"] = "limit at last"
+        # Only create condition if at least one price type exists
+        if condition:
+            condition["order_type"] = "limit at last"
+            if condition_type == "sl":
+                condition["SL_type"] = "LIMIT"
+            return condition
+        return None
+
+    # Process both TP and SL
+    take_profit = process_condition("tp")
+    stop_loss = process_condition("sl")
 
     # Remove logging section and match exact field order
     play = {
