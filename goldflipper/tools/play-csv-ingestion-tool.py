@@ -7,6 +7,7 @@ import copy
 import platform
 import subprocess
 from datetime import datetime
+from collections import defaultdict
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -169,22 +170,77 @@ def safe_convert_int(value, field_name, row_num, errors):
         errors.append(f"Row {row_num}: Unable to convert field '{field_name}' value '{value}' to int after cleaning.")
         return None
 
-def fix_expiration_date(exp_date):
-    """Handle more date formats including 1-digit months/days"""
+def fix_expiration_date(raw_date, ref_year=None):
+    """Ultra-resilient date parser with enhanced 2-digit year handling"""
+    if not raw_date or str(raw_date).lower() == "n/a":
+        return None
+
+    # Clean input aggressively
+    date_str = re.sub(r"[^0-9/\\-]", "", str(raw_date).strip()).replace("\\", "/").replace("-", "/")
+    
+    # Handle empty string after cleaning
+    if not date_str:
+        return None
+
+    # Handle formats with missing year components
+    if ref_year and len(date_str.split('/')) == 2:
+        date_str += f"/{ref_year}"
+    
+    # Try all possible date formats with priority to MM/DD formats
     formats = [
-        "%m/%d/%Y", "%m/%d/%y", 
-        "%m-%d-%Y", "%m-%d-%y",
-        "%Y/%m/%d", "%Y-%m-%d"
+        "%m/%d/%Y", "%m/%d/%y", "%Y/%m/%d",
+        "%m/%d", "%d/%m/%Y", "%d/%m/%y",
+        "%Y-%m-%d", "%y-%m-%d", "%m-%d"
     ]
     
     for fmt in formats:
         try:
-            dt = datetime.strptime(exp_date.strip(), fmt)
+            dt = datetime.strptime(date_str, fmt)
+            # Handle 2-digit year ambiguity
+            if dt.year > 2100:
+                dt = dt.replace(year=dt.year - 100)
+            elif dt.year < 1900:
+                dt = dt.replace(year=ref_year) if ref_year else dt.replace(year=2000 + dt.year)
             return dt.strftime("%m/%d/%Y")
         except ValueError:
             continue
-    
-    return exp_date  # Return original if all attempts fail
+
+    # Final fallback: extract any date-like pattern
+    date_components = re.findall(r'\d+', date_str)
+    if len(date_components) >= 3:
+        m, d, y = date_components[0], date_components[1], date_components[2]
+    elif len(date_components) == 2 and ref_year:
+        m, d, y = date_components[0], date_components[1], ref_year
+    else:
+        return None
+
+    try:
+        y = int(y)
+        m = int(m)
+        d = int(d)
+        
+        # Year adjustments
+        if y < 50:
+            y += 2000
+        elif y < 100:
+            y += 1900
+            
+        # Create date with validation
+        dt = datetime(y, m, d)
+        return dt.strftime("%m/%d/%Y")
+    except:
+        return None
+
+def parse_order_type(cell_value):
+    """Convert spreadsheet order types to standard values"""
+    lower_val = cell_value.strip().lower()
+    if 'market' in lower_val:
+        return 'market'
+    if 'bid' in lower_val:
+        return 'limit at bid'
+    if 'mid' in lower_val or 'last' in lower_val:  # Treat "Mid" as "last"
+        return 'limit at last'
+    return 'limit at last'  # Default fallback
 
 # --- Core Processing Function ---
 
@@ -270,106 +326,103 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     # Determine the trade type (e.g. "call" or "put")
     trade_type = section[:-1] if section.endswith("s") else section
 
-    # Initialize play with template structure
+    # Modified date handling with error suppression
+    raw_exp_date = get_cell(mapping["expiration_date"])
+    exp_date = fix_expiration_date(raw_exp_date) or raw_exp_date
+    
+    # Get reference year from expiration date
+    ref_year = None
+    try:
+        ref_year = datetime.strptime(exp_date, "%m/%d/%Y").year
+    except:
+        pass
+
+    # Process GTD date with expiration year fallback
+    raw_gtd_date = get_cell(4)
+    gtd_date = fix_expiration_date(raw_gtd_date, ref_year=ref_year) or exp_date
+
+    # Generate option contract symbol using the proper method
+    option_symbol = create_option_contract_symbol(
+        symbol=symbol_value,
+        expiration_date=exp_date,
+        strike_price=f"{strike_numeric:.3f}",  # Ensure 3 decimal places
+        trade_type=trade_type  # 'calls' or 'puts'
+    )
+
+    # Error handling if needed
+    if "INVALID" in option_symbol:
+        errors.append(f"Row {row_num}: Invalid option symbol generated")
+
+    # Process Take Profit and Stop Loss sections
+    if section == "calls":
+        tp_mapping = CALLS_TP
+        sl_mapping = CALLS_SL
+    else:
+        tp_mapping = PUTS_TP
+        sl_mapping = PUTS_SL
+
+    # Process Take Profit
+    take_profit = {}
+    tp_stock = get_cell(section_range_start + tp_mapping["tp_stock_price"]).strip()
+    if tp_stock and tp_stock != 'N/A':
+        take_profit["share_price"] = safe_convert_float(tp_stock, "TP stock price", row_num, errors)
+    
+    tp_premium = get_cell(section_range_start + tp_mapping["tp_premium_pct"]).strip().replace('%', '')
+    if tp_premium and tp_premium != 'N/A':
+        take_profit["premium_pct"] = safe_convert_float(tp_premium, "TP premium %", row_num, errors)
+    
+    # Process Stop Loss 
+    stop_loss = {}
+    sl_stock = get_cell(section_range_start + sl_mapping["sl_stock_price"]).strip()
+    if sl_stock and sl_stock != 'N/A':
+        stop_loss["share_price"] = safe_convert_float(sl_stock, "SL stock price", row_num, errors)
+    
+    sl_premium = get_cell(section_range_start + sl_mapping["sl_premium_pct"]).strip().replace('%', '')
+    if sl_premium and sl_premium != 'N/A':
+        stop_loss["premium_pct"] = safe_convert_float(sl_premium, "SL premium %", row_num, errors)
+
+    # Add order types only if section exists
+    if take_profit:
+        take_profit["order_type"] = "limit at last"
+    
+    if stop_loss:
+        stop_loss["SL_type"] = "LIMIT"
+        stop_loss["order_type"] = "limit at last"
+
+    # Remove logging section and match exact field order
     play = {
         "symbol": symbol_value or "",
-        "trade_type": trade_type.upper(),  # PUT/CALL
+        "trade_type": trade_type.upper(),
         "entry_point": {
             "stock_price": entry_stock_numeric,
-            "order_type": get_cell(mapping.get("order_type", 11)) or "limit at bid"
+            "order_type": parse_order_type(get_cell(mapping.get("order_type", 11)))
         },
-        "strike_price": strike_numeric,
-        "expiration_date": exp_date.strftime("%Y-%m-%d"),
+        "strike_price": f"{strike_numeric:.1f}",
+        "expiration_date": exp_date,
         "contracts": contracts_numeric,
+        "option_contract_symbol": option_symbol,
+        "play_name": generate_play_name(symbol_value, trade_type),
+        "play_class": "SIMPLE",
+        "conditional_plays": {},
+        "strategy": "Option Swings",
+        "creation_date": datetime.now().strftime("%Y-%m-%d"),
+        "creator": "auto-ingestor",
         "status": {
             "play_status": "NEW",
             "order_id": None,
             "order_status": None,
             "position_exists": False,
+            "last_checked": None,
             "closing_order_id": None,
             "closing_order_status": None,
             "contingency_order_id": None,
             "contingency_order_status": None,
             "conditionals_handled": False
         },
-        "play_class": "SIMPLE",
-        "conditional_plays": {},
-        "strategy": "Option Swings",
-        "play_expiration_date": get_cell(4).strftime("%Y-%m-%d"),
-        "take_profit": {
-            "stock_price": get_cell(CALLS_TP["tp_stock_price"]) if section == "calls" else get_cell(PUTS_TP["tp_stock_price"]),
-            "stock_price_pct": get_cell(CALLS_TP["tp_stock_pct"]) if section == "calls" else get_cell(PUTS_TP["tp_stock_pct"]),
-            "premium_pct": get_cell(CALLS_TP["tp_premium_pct"]) if section == "calls" else get_cell(PUTS_TP["tp_premium_pct"]),
-            "order_type": "limit at bid"
-        }
+        "play_expiration_date": gtd_date,
+        "stop_loss": stop_loss if stop_loss else None,
+        "take_profit": take_profit if take_profit else None
     }
-
-    # --- Process Take Profit ---
-    tp_stock = get_cell(CALLS_TP["tp_stock_price"]) if section == "calls" else get_cell(PUTS_TP["tp_stock_price"])
-    tp_prem = get_cell(CALLS_TP["tp_premium_pct"]) if section == "calls" else get_cell(PUTS_TP["tp_premium_pct"])
-    tp_stock_pct = get_cell(CALLS_TP["tp_stock_pct"]) if section == "calls" else get_cell(PUTS_TP["tp_stock_pct"])
-    
-    tp_data = {
-        "TP_type": "Single",
-        "stock_price": None,
-        "stock_price_pct": None,
-        "premium_pct": None,
-        "order_type": "limit at bid",
-        "TP_option_prem": None,
-        "TP_stock_price_target": None
-    }
-    
-    # Map CSV values to correct fields
-    if tp_stock:
-        tp_data["TP_stock_price_target"] = safe_convert_float(tp_stock, "TP stock price", row_num, errors)
-    if tp_prem:
-        tp_data["premium_pct"] = safe_convert_float(tp_prem, "TP premium pct", row_num, errors)
-    if tp_stock_pct:
-        tp_data["stock_price_pct"] = safe_convert_float(tp_stock_pct, "TP stock pct", row_num, errors)
-    
-    play["take_profit"] = tp_data
-
-    # --- Process Stop Loss ---
-    sl_stock = get_cell(CALLS_SL["sl_stock_price"]) if section == "calls" else get_cell(PUTS_SL["sl_stock_price"])
-    sl_prem = get_cell(CALLS_SL["sl_premium_pct"]) if section == "calls" else get_cell(PUTS_SL["sl_premium_pct"])
-    sl_stock_pct = get_cell(CALLS_SL["sl_stock_pct"]) if section == "calls" else get_cell(PUTS_SL["sl_stock_pct"])
-    
-    sl_data = {
-        "SL_type": "LIMIT",
-        "stock_price": None,
-        "stock_price_pct": None,
-        "premium_pct": None,
-        "order_type": "limit at bid"
-    }
-    
-    if sl_stock:
-        sl_data["stock_price"] = safe_convert_float(sl_stock, "SL stock price", row_num, errors)
-    if sl_prem:
-        sl_data["premium_pct"] = safe_convert_float(sl_prem, "SL premium pct", row_num, errors)
-    if sl_stock_pct:
-        sl_data["stock_price_pct"] = safe_convert_float(sl_stock_pct, "SL stock pct", row_num, errors)
-    
-    play["stop_loss"] = sl_data
-
-    # --- Option Symbol Generation ---
-    try:
-        if strike_numeric:
-            play["option_contract_symbol"] = create_option_contract_symbol(
-                play["symbol"],
-                play["expiration_date"],
-                strike_numeric,
-                play["trade_type"].lower()
-            )
-    except Exception as e:
-        errors.append(f"Row {row_num} ({section}): Error generating option symbol: {e}")
-        play["option_contract_symbol"] = f"ERR_{play['symbol']}_{exp_date.replace('/', '')}"
-
-    # --- Metadata ---
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    play_name = f"{play['symbol']}-{play['trade_type']}-{timestamp}"
-    play["play_name"] = play_name
-    play["creation_date"] = datetime.now().strftime("%Y-%m-%d")
-    play["creator"] = "auto"
 
     return play, errors
 
@@ -475,5 +528,16 @@ def main():
     
     print(f"\nIngestion complete. Valid plays: {len(valid_plays)}.")
 
+# Initialize play counter at module level
+play_counter = defaultdict(int)
+
+def generate_play_name(symbol, trade_type):
+    """Generate unique play name with counter and timestamp"""
+    key = f"{symbol}-{trade_type}"
+    play_counter[key] += 1
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    return f"{symbol}-{trade_type}-{play_counter[key]}-{timestamp}"
+
 if __name__ == "__main__":
     main()
+    
