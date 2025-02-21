@@ -62,7 +62,8 @@ class WelcomeScreen(Screen):
                     Button("Launch Trading System", variant="success", id="start_monitor"),
                     Button("Auto Play Creator", variant="primary", id="auto_play_creator"),
                     Button("Get Alpaca Info", variant="primary", id="get_alpaca_info"),
-                    Button("Market Data Compare", variant="primary", id="market_data_compare"),
+                    # Button("Market Data Compare", variant="primary", id="market_data_compare"),  # Temporarily commented out
+                    Button("Upload Template", variant="primary", id="upload_template"),
                     classes="button-column",
                 ),
                 Container(
@@ -266,10 +267,12 @@ class WelcomeScreen(Screen):
             self.run_get_alpaca_info()
         elif event.button.id == "trade_logger":
             self.run_trade_logger()
-        elif event.button.id == "market_data_compare":
-            self.run_market_data_compare()
+        #elif event.button.id == "market_data_compare":
+        #    self.run_market_data_compare()
         elif event.button.id == "manage_service":
             self.run_manage_service()
+        elif event.button.id == "upload_template":
+            self.run_upload_template()
 
     def run_manage_service(self) -> None:
         """
@@ -439,6 +442,52 @@ class WelcomeScreen(Screen):
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
+    def run_upload_template(self) -> None:
+        """
+        Prompts the user to select a CSV file and launches the CSV ingestion tool.
+        The tool processes the file and saves resulting plays to the New and Temp folders.
+        """
+        import os
+        import subprocess
+
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()  # Hide the root window.
+            file_path = filedialog.askopenfilename(
+                title="Select CSV Template",
+                filetypes=[("CSV Files", "*.csv")]
+            )
+            root.destroy()
+        except Exception as e:
+            self.notify(f"File dialog error: {e}")
+            file_path = input("Enter CSV file path: ").strip()
+
+        if not file_path:
+            self.notify("No file selected, upload aborted.")
+            return
+
+        # Assume the CSV ingestion tool is located in the 'tools' subfolder.
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        tools_dir = os.path.join(current_dir, "tools")
+
+        if os.name == "nt":  # Windows
+            cmd = [
+                "cmd", "/k", "python",
+                os.path.join(tools_dir, "play-csv-ingestion-tool.py"),
+                file_path
+            ]
+            subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        else:  # Unix-like systems
+            cmd = [
+                "gnome-terminal", "--", "python3",
+                os.path.join(tools_dir, "play-csv-ingestion-tool.py"),
+                file_path
+            ]
+            subprocess.Popen(cmd, cwd=tools_dir)
+
+'''
     def run_market_data_compare(self):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -450,7 +499,7 @@ class WelcomeScreen(Screen):
                 subprocess.Popen(['gnome-terminal', '--', 'python', 'multi_market_data.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
-
+'''
 class GoldflipperTUI(App):
     CSS = """
     Screen {
