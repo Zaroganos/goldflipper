@@ -68,7 +68,7 @@ def setup_logging(console_mode=False):
 
 def initialize_system():
     """Initialize the trading system and perform startup checks."""
-    display.header("Initializing GoldFlipper Trading System")
+    display.header("Initializing Goldflipper Trading System")
     
     # Initialize state manager
     state_dir = Path(__file__).parent / 'state'
@@ -78,8 +78,8 @@ def initialize_system():
     # Load previous state if exists
     previous_state = state_manager.load_state()
     if previous_state:
-        logging.info("Recovered previous state")
-        display.info("Recovered previous state")
+        logging.info("Not implemented: Recovered previous state")
+        display.info("Not implemented: Recovered previous state")
         # TODO: Implement state recovery logic
     
     # Run startup self-tests
@@ -103,10 +103,10 @@ def initialize_system():
         display.error("\nSome Tests Failed - Check Details Above")
         return False, state_manager
 
-class GoldFlipperService(win32serviceutil.ServiceFramework):
-    _svc_name_ = "GoldFlipperService"
-    _svc_display_name_ = "GoldFlipper Trading Service"
-    _svc_description_ = "Automated trading service for the GoldFlipper platform"
+class GoldflipperService(win32serviceutil.ServiceFramework):
+    _svc_name_ = "GoldflipperService"
+    _svc_display_name_ = "Goldflipper Trading Service"
+    _svc_description_ = "Automated trading service for the Goldflipper platform"
 
     def __init__(self, args):
         win32serviceutil.ServiceFramework.__init__(self, args)
@@ -167,10 +167,10 @@ class GoldFlipperService(win32serviceutil.ServiceFramework):
 def run_trading_system(console_mode=False):
     """Run the trading system in either console or service mode"""
     setup_logging(console_mode)
-    logging.info(f"Starting GoldFlipper trading system in {'console' if console_mode else 'service'} mode")
+    logging.info(f"Starting Goldflipper trading system in {'console' if console_mode else 'service'} mode")
     
     if console_mode:
-        display.info("Starting GoldFlipper trading system")
+        display.info("Starting Goldflipper trading system")
     
     try:
         # Run initialization and startup tests
@@ -180,11 +180,19 @@ def run_trading_system(console_mode=False):
             return
         
         logging.info("Initializing WatchdogManager")
+        if console_mode:
+            display.info("Initializing WatchdogManager")
+
         watchdog = WatchdogManager()
         
-        logging.info("Starting watchdog monitoring")
+        logging.info("Starting watchdog monitoring")    
+        if console_mode:
+            display.info("Starting watchdog monitoring")
+
         watchdog.start_monitoring()
         watchdog.update_heartbeat()
+        if console_mode:
+            display.info("Initial heartbeat set")
         logging.info("Initial heartbeat set")
         
         state_dir = Path(__file__).parent / 'state'
@@ -198,6 +206,8 @@ def run_trading_system(console_mode=False):
             try:
                 cycle_count += 1
                 logging.info(f"Starting cycle {cycle_count}")
+                if console_mode:
+                    display.info(f"Cycle {cycle_count} started")
                 watchdog.update_heartbeat()
                 
                 # Remove the thread creation and use direct call
@@ -245,7 +255,7 @@ def run_trading_system(console_mode=False):
             display.info("Shutdown complete")
 
 def main():
-    parser = argparse.ArgumentParser(description='GoldFlipper Trading System')
+    parser = argparse.ArgumentParser(description='Goldflipper Trading System')
     parser.add_argument('--mode', choices=['console', 'service', 'install', 'remove', 'update'],
                        default='console', help='Run mode')
     
@@ -256,15 +266,15 @@ def main():
     elif args.mode in ['install', 'remove', 'update']:
         # Handle service installation commands
         if args.mode == 'install':
-            win32serviceutil.HandleCommandLine(GoldFlipperService, argv=['', '--startup', 'auto', 'install'])
+            win32serviceutil.HandleCommandLine(GoldflipperService, argv=['', '--startup', 'auto', 'install'])
         elif args.mode == 'remove':
-            win32serviceutil.HandleCommandLine(GoldFlipperService, argv=['', 'remove'])
+            win32serviceutil.HandleCommandLine(GoldflipperService, argv=['', 'remove'])
         elif args.mode == 'update':
-            win32serviceutil.HandleCommandLine(GoldFlipperService, argv=['', 'update'])
+            win32serviceutil.HandleCommandLine(GoldflipperService, argv=['', 'update'])
     elif args.mode == 'service':
         # Run as a Windows service
         servicemanager.Initialize()
-        servicemanager.PrepareToHostSingle(GoldFlipperService)
+        servicemanager.PrepareToHostSingle(GoldflipperService)
         servicemanager.StartServiceCtrlDispatcher()
 
 if __name__ == "__main__":
