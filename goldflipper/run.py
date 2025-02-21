@@ -24,6 +24,7 @@ import logging
 import logging.handlers
 from goldflipper.core import monitor_plays_continuously
 from goldflipper.startup_test import run_startup_tests
+from goldflipper.config.config import config
 import sys
 from goldflipper.utils.display import TerminalDisplay as display
 from pathlib import Path
@@ -48,6 +49,11 @@ def setup_logging(console_mode=False):
     log_dir = base_dir / 'logs'
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / 'app_run.log'
+    
+    # Clear existing handlers first
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
     
     handlers = [logging.FileHandler(log_file, encoding='utf-8')]
     
@@ -146,7 +152,8 @@ class GoldFlipperService(win32serviceutil.ServiceFramework):
                     self.watchdog.update_heartbeat()
                     monitor_plays_continuously()
                     self.watchdog.update_heartbeat()
-                    win32event.WaitForSingleObject(self.stop_event, 30000)  # 30-second check interval
+                    polling_interval = config.get('monitoring', 'polling_interval', default=30) * 1000  # Convert to milliseconds
+                    win32event.WaitForSingleObject(self.stop_event, polling_interval)
                 except Exception as e:
                     logging.error(f"Error in main loop: {str(e)}")
                     # Implement exponential backoff here
@@ -201,8 +208,9 @@ def run_trading_system(console_mode=False):
                 monitor_thread.start()
                 
                 # Wait for a maximum of 30 seconds while updating heartbeat
-                for _ in range(6):
-                    time.sleep(5)
+                polling_interval = config.get('monitoring', 'polling_interval', default=30)
+                for _ in range(int(30 / polling_interval)):
+                    time.sleep(polling_interval)
                     watchdog.update_heartbeat()
                     logging.info("Heartbeat updated during monitoring")
                 
