@@ -200,24 +200,19 @@ def run_trading_system(console_mode=False):
                 logging.info(f"Starting cycle {cycle_count}")
                 watchdog.update_heartbeat()
                 
-                # Create a thread for monitor_plays_continuously
-                monitor_thread = threading.Thread(
-                    target=monitor_plays_continuously,
-                    daemon=True
-                )
-                monitor_thread.start()
-                
-                # Wait for a maximum of 30 seconds while updating heartbeat
+                # Remove the thread creation and use direct call
+                try:
+                    monitor_plays_continuously()
+                except Exception as e:
+                    error_msg = f"Error in monitoring: {str(e)}"
+                    logging.error(error_msg)
+                    if console_mode:
+                        display.error(error_msg)
+
+                # Keep the heartbeat update but without the inner loop
                 polling_interval = config.get('monitoring', 'polling_interval', default=30)
-                for _ in range(int(30 / polling_interval)):
-                    time.sleep(polling_interval)
-                    watchdog.update_heartbeat()
-                    logging.info("Heartbeat updated during monitoring")
-                
-                if monitor_thread.is_alive():
-                    logging.info("Monitor thread still running (market might be closed)")
-                else:
-                    logging.info("Monitor thread completed")
+                time.sleep(polling_interval)
+                watchdog.update_heartbeat()
                 
                 if console_mode:
                     display.info(f"Cycle {cycle_count} completed")
