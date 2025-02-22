@@ -13,8 +13,8 @@ from collections import defaultdict
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-# Import the helper that generates the option contract symbol
 from goldflipper.tools.play_creation_tool import create_option_contract_symbol
+from goldflipper.config.config import config
 
 # --- Constants and Fixed Index Ranges ---
 # These ranges assume that the final header row splits calls and puts via a blank separator column.
@@ -28,7 +28,8 @@ CALLS_ENTRY = {
     "expiration_date": 3,  # "Expiration (Contract)"
     "entry_stock_price": 10, # "Share Price (Buy)"
     "contracts": 12,   # "# of Con"
-    "strike_price": 7   # "Strike Price" column
+    "strike_price": 7,   # "Strike Price" column
+    "order_type": 17  # Added order type column
 }
 CALLS_VALIDATION = {
     "itm": 6,
@@ -39,29 +40,34 @@ CALLS_TP = {
     "tp_stock_price": 14,
     "tp_premium_pct": 15,
     "tp_stock_pct": 16,
+    "tp_order_type": 17  # Added order type column
 }
 CALLS_SL = {
     "sl_stock_price": 19,
     "sl_premium_pct": 20,
     "sl_stock_pct": 21,
+    "sl_order_type": 22  # Added order type column
 }
 PUTS_ENTRY = {
     "symbol": 2,       # Same relative position in puts section
     "expiration_date": 3,
     "entry_stock_price": 10,
     "contracts": 12,
-    "strike_price": 7
+    "strike_price": 7,
+    "order_type": 17  # Added order type column
 }
 PUTS_VALIDATION = CALLS_VALIDATION.copy()
 PUTS_TP = {
     "tp_stock_price": 14,
     "tp_premium_pct": 15,
     "tp_stock_pct": 16,
+    "tp_order_type": 17  # Added order type column
 }
 PUTS_SL = {
     "sl_stock_price": 19,
     "sl_premium_pct": 20,
     "sl_stock_pct": 21,
+    "sl_order_type": 22  # Added order type column
 }
 
 # --- Utility Functions ---
@@ -240,13 +246,15 @@ def fix_expiration_date(raw_date, ref_year=None):
         return None
 
 def parse_order_type(cell_value):
-    """Convert spreadsheet order types to standard values"""
-    lower_val = cell_value.strip().lower()
+    """Convert spreadsheet order types to standardized values"""
+    lower_val = str(cell_value).strip().lower()
     if 'market' in lower_val:
         return 'market'
     if 'bid' in lower_val:
         return 'limit at bid'
-    if 'mid' in lower_val or 'last' in lower_val:  # Treat "Mid" as "last"
+    if 'ask' in lower_val or 'offer' in lower_val:
+        return 'limit at ask'
+    if 'mid' in lower_val or 'last' in lower_val:
         return 'limit at last'
     return 'limit at last'  # Default fallback
 
@@ -363,7 +371,7 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
 
     # Unified TP/SL processing with multiple price type support
     def process_condition(condition_type):
-        """Process TP/SL conditions with multiple price types"""
+        """Process TP/SL conditions with order type handling"""
         prefix = "tp" if condition_type == "tp" else "sl"
         base_idx = CALLS_TP if section == "calls" else PUTS_TP
         if condition_type == "sl":
@@ -388,11 +396,19 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
             converted = safe_convert_float(stock_pct, f"{condition_type} stock %", row_num, errors)
             if converted: condition["stock_pct"] = converted
 
+        # Get order type from correct column
+        order_type_col = base_idx[f"{prefix}_order_type"]
+        raw_order_type = get_cell(order_type_col)
+        parsed_order_type = parse_order_type(raw_order_type)
+
+        # Set SL_type based on order type
+        if condition_type == "sl":
+            condition["SL_type"] = "STOP" if parsed_order_type == "market" else "LIMIT"
+        
+        condition["order_type"] = parsed_order_type
+
         # Only create condition if at least one price type exists
         if condition:
-            condition["order_type"] = "limit at last"
-            if condition_type == "sl":
-                condition["SL_type"] = "LIMIT"
             return condition
         return None
 
@@ -400,13 +416,18 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     take_profit = process_condition("tp")
     stop_loss = process_condition("sl")
 
+    # Process entry order type
+    entry_order_type_col = mapping["order_type"]
+    raw_entry_order_type = get_cell(entry_order_type_col)
+    parsed_entry_order_type = parse_order_type(raw_entry_order_type)
+
     # Remove logging section and match exact field order
     play = {
         "symbol": symbol_value or "",
         "trade_type": trade_type.upper(),
         "entry_point": {
             "stock_price": entry_stock_numeric,
-            "order_type": parse_order_type(get_cell(mapping.get("order_type", 11)))
+            "order_type": parsed_entry_order_type
         },
         "strike_price": f"{strike_numeric:.1f}",
         "expiration_date": exp_date,
@@ -447,23 +468,30 @@ def save_play(play, section):
     os.makedirs(target_dir, exist_ok=True)
     filename = re.sub(r"[^\w\-]", "_", play["play_name"]) + ".json"
     filepath = os.path.join(target_dir, filename)
+    
     try:
         with open(filepath, "w") as f:
             json.dump(play, f, indent=4)
         print(f"[SUCCESS] ({section}) Play saved to: {filepath}")
-        try:
-            if platform.system() == "Windows":
-                subprocess.run(["notepad.exe", filepath])
-            elif platform.system() == "Darwin":
-                subprocess.run(["open", "-t", filepath])
-            else:
-                subprocess.run(["xdg-open", filepath])
-        except Exception as e:
-            print(f"[WARNING] Could not open file automatically: {e}")
+        
     except Exception as e:
         print(f"[ERROR] Failed to save play: {e}")
 
 def main():
+    # At the very start:
+    print(f"Script version: 2024-02-21-debug-01")
+    
+    # After config import:
+    from goldflipper.config.config import config
+    print(f"Config instance ID: {id(config)}")
+    config.reload()  # Force fresh load
+    
+    # At the file open check:
+    ingestor_config = config.get('csv_ingestor') or {}
+    print(f"Raw ingestor config: {ingestor_config}")
+    should_open = ingestor_config.get('open_after_creation', True)
+    print(f"Final open_after_creation value: {should_open} (type: {type(should_open)})")
+
     import argparse
     parser = argparse.ArgumentParser(description="Ingest plays from a standardized CSV template.")
     parser.add_argument("csv_file", help="Path to the CSV file containing play data.")
@@ -508,6 +536,7 @@ def main():
 
     valid_plays = []
     all_errors = []
+    created_files = []
     for i, row in enumerate(data_rows, start=1):
         # Process calls only if calls symbol exists
         if row[CALLS_START + CALLS_ENTRY["symbol"]].strip():
@@ -515,6 +544,12 @@ def main():
             if play_calls:
                 valid_plays.append(("calls", play_calls))
             all_errors.extend(errors_calls)
+            if play_calls:
+                output_filename = f"Play_{datetime.now().strftime('%Y%m%d-%H%M')}_{play_calls['symbol']}_calls.json"
+                output_path = os.path.join(os.path.join(project_root, "goldflipper", "plays", "new"), output_filename)
+                with open(output_path, 'w') as f:
+                    json.dump(play_calls, f, indent=2)
+                created_files.append(output_path)
         
         # Process puts only if puts symbol exists
         if row[PUTS_START + PUTS_ENTRY["symbol"]].strip():
@@ -522,6 +557,12 @@ def main():
             if play_puts:
                 valid_plays.append(("puts", play_puts))
             all_errors.extend(errors_puts)
+            if play_puts:
+                output_filename = f"Play_{datetime.now().strftime('%Y%m%d-%H%M')}_{play_puts['symbol']}_puts.json"
+                output_path = os.path.join(os.path.join(project_root, "goldflipper", "plays", "new"), output_filename)
+                with open(output_path, 'w') as f:
+                    json.dump(play_puts, f, indent=2)
+                created_files.append(output_path)
 
     if all_errors:
         print("\nError Summary (last up to 10 messages):")
@@ -538,6 +579,17 @@ def main():
         save_play(play, section)
     
     print(f"\nIngestion complete. Valid plays: {len(valid_plays)}.")
+
+    # Single file-opening location
+    if config.get('csv_ingestor', 'open_after_creation', default=True):
+        for json_path in created_files:
+            if os.path.exists(json_path):
+                if sys.platform == "win32":
+                    os.startfile(json_path)
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", json_path])
+                else:
+                    subprocess.run(["xdg-open", json_path])
 
 # Initialize play counter at module level
 play_counter = defaultdict(int)

@@ -64,7 +64,7 @@ alpaca:
       secret_key: 'Cimoq51fX5gvFXkCNLB1ir8AIbpAXzhTAyhGo7ze'
       base_url: 'https://paper-api.alpaca.markets/v2'
   default_account: 'paper_1'  # Specify which account to use by default
-  active_account: 'paper_1'  # Specify which account is currently active
+  active_account: 'paper_3'  # Specify which account is currently active
 
 
   
@@ -526,3 +526,16 @@ market_data_display:
         price: 2
         greeks: 4
         percentage: 2
+
+####################################################################################################
+# CSV Ingestor Settings -- so far only open_after_creation is used. (more settings may be added later)
+####################################################################################################
+csv_ingestor:
+  open_after_creation: false  # Whether to automatically open created JSON files
+  default_viewer: "code"      # Options: "code" (VSCode), "explorer" (File Explorer), "none"
+  validation:
+    enabled: true             # Enable CSV validation before processing
+    strict_mode: false        # Reject files with any validation errors if true
+  backup:
+    keep_originals: true      # Keep original CSV files after processing
+    backup_dir: "ingestor_backups"  # Directory to store CSV backups
