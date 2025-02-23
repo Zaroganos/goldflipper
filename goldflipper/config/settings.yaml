@@ -54,7 +54,7 @@ alpaca:
     paper_2:
       enabled: true
       nickname: "Staging"
-      api_key: 'PPKKJUXTR1S0XFVKNE8TZ'
+      api_key: 'PKKJUXTR1S0XFVKNE8TZ'
       secret_key: 'CPM9WZxjOzoJZlcX6lbNCILc3Y4kXtm1YsigJq67'
       base_url: 'https://paper-api.alpaca.markets/v2'
     paper_3:
