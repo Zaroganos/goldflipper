@@ -185,7 +185,7 @@ def safe_convert_int(value, field_name, row_num, errors):
         return None
 
 def fix_expiration_date(raw_date, ref_year=None):
-    """Ultra-resilient date parser with enhanced 2-digit year handling"""
+    """Ultra-resilient date parser with smart year handling"""
     if not raw_date or str(raw_date).lower() == "n/a":
         return None
 
@@ -196,10 +196,20 @@ def fix_expiration_date(raw_date, ref_year=None):
     if not date_str:
         return None
 
-    # Handle formats with missing year components
-    if ref_year and len(date_str.split('/')) == 2:
-        date_str += f"/{ref_year}"
+    # Get current date for year comparison
+    current_date = datetime.now()
     
+    # If only month and day provided, add current year
+    parts = date_str.split('/')
+    if len(parts) == 2:
+        month, day = int(parts[0]), int(parts[1])
+        # Try current year first
+        target_date = datetime(current_date.year, month, day)
+        # If date has passed, use next year
+        if target_date < current_date:
+            target_date = datetime(current_date.year + 1, month, day)
+        return target_date.strftime("%m/%d/%Y")
+
     # Try all possible date formats with priority to MM/DD formats
     formats = [
         "%m/%d/%Y", "%m/%d/%y", "%Y/%m/%d",
@@ -210,11 +220,23 @@ def fix_expiration_date(raw_date, ref_year=None):
     for fmt in formats:
         try:
             dt = datetime.strptime(date_str, fmt)
+            # Handle 2-digit year
+            if dt.year < 100:
+                if dt.year < 50:  # Assume 20xx for years less than 50
+                    dt = dt.replace(year=2000 + dt.year)
+                else:  # Assume 19xx for years 50 and above
+                    dt = dt.replace(year=1900 + dt.year)
+            
             # Handle 2-digit year ambiguity
             if dt.year > 2100:
                 dt = dt.replace(year=dt.year - 100)
             elif dt.year < 1900:
                 dt = dt.replace(year=ref_year) if ref_year else dt.replace(year=2000 + dt.year)
+                    
+            # If resulting date is in the past, add a year
+            if dt < current_date:
+                dt = dt.replace(year=dt.year + 1)
+                
             return dt.strftime("%m/%d/%Y")
         except ValueError:
             continue
