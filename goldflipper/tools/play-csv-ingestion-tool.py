@@ -29,7 +29,7 @@ CALLS_ENTRY = {
     "entry_stock_price": 10, # "Share Price (Buy)"
     "contracts": 12,   # "# of Con"
     "strike_price": 7,   # "Strike Price" column
-    "order_type": 17  # Added order type column
+    "order_type": 11  # "Order Type" column for entry
 }
 CALLS_VALIDATION = {
     "itm": 6,
@@ -40,13 +40,13 @@ CALLS_TP = {
     "tp_stock_price": 14,
     "tp_premium_pct": 15,
     "tp_stock_pct": 16,
-    "tp_order_type": 17  # Added order type column
+    "tp_order_type": 18  # "Order Type" column for sell side (shared between TP and SL)
 }
 CALLS_SL = {
     "sl_stock_price": 19,
     "sl_premium_pct": 20,
     "sl_stock_pct": 21,
-    "sl_order_type": 22  # Added order type column
+    "sl_order_type": 18  # Same as TP - using the shared sell side order type
 }
 PUTS_ENTRY = {
     "symbol": 2,       # Same relative position in puts section
@@ -54,20 +54,20 @@ PUTS_ENTRY = {
     "entry_stock_price": 10,
     "contracts": 12,
     "strike_price": 7,
-    "order_type": 17  # Added order type column
+    "order_type": 11  # "Order Type" column for entry
 }
 PUTS_VALIDATION = CALLS_VALIDATION.copy()
 PUTS_TP = {
     "tp_stock_price": 14,
     "tp_premium_pct": 15,
     "tp_stock_pct": 16,
-    "tp_order_type": 17  # Added order type column
+    "tp_order_type": 18  # "Order Type" column for sell side (shared between TP and SL)
 }
 PUTS_SL = {
     "sl_stock_price": 19,
     "sl_premium_pct": 20,
     "sl_stock_pct": 21,
-    "sl_order_type": 22  # Added order type column
+    "sl_order_type": 18  # Same as TP - using the shared sell side order type
 }
 
 # --- Utility Functions ---
@@ -272,11 +272,11 @@ def parse_order_type(cell_value):
     lower_val = str(cell_value).strip().lower()
     if 'market' in lower_val:
         return 'market'
-    if 'bid' in lower_val:
+    if any(term in lower_val for term in ['bid', 'limit (bid)']):
         return 'limit at bid'
-    if 'ask' in lower_val or 'offer' in lower_val:
+    if any(term in lower_val for term in ['ask', 'limit (ask)']):
         return 'limit at ask'
-    if 'mid' in lower_val or 'last' in lower_val:
+    if any(term in lower_val for term in ['mid', 'last']):
         return 'limit at last'
     return 'limit at last'  # Default fallback
 

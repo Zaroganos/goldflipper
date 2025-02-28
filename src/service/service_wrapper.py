@@ -9,10 +9,10 @@ from datetime import datetime
 from pathlib import Path
 import traceback  # Add this for detailed error tracking
 
-class GoldFlipperService(win32serviceutil.ServiceFramework):
-    _svc_name_ = "GoldFlipperService"
-    _svc_display_name_ = "GoldFlipper Trading Service"
-    _svc_description_ = "Automated trading service for the GoldFlipper platform"
+class GoldflipperService(win32serviceutil.ServiceFramework):
+    _svc_name_ = "GoldflipperService"
+    _svc_display_name_ = "Goldflipper Trading Service"
+    _svc_description_ = "Automated trading service for the Goldflipper platform"
 
     def __init__(self, args):
         try:
@@ -21,7 +21,7 @@ class GoldFlipperService(win32serviceutil.ServiceFramework):
             self.running = False
             
             # Set up base directories
-            self.base_dir = Path(os.environ.get('PROGRAMDATA', '')) / 'GoldFlipper'
+            self.base_dir = Path(os.environ.get('PROGRAMDATA', '')) / 'Goldflipper'
             self.log_dir = self.base_dir / 'logs'
             self.log_dir.mkdir(parents=True, exist_ok=True)
             
@@ -45,7 +45,7 @@ class GoldFlipperService(win32serviceutil.ServiceFramework):
                 logging.handlers.NTEventLogHandler(self._svc_name_)
             ]
         )
-        self.logger = logging.getLogger('GoldFlipperService')
+        self.logger = logging.getLogger('GoldflipperService')
         self.logger.info("Logging initialized")
 
     def SvcStop(self):
@@ -109,10 +109,10 @@ if __name__ == '__main__':
     try:
         if len(sys.argv) == 1:
             servicemanager.Initialize()
-            servicemanager.PrepareToHostSingle(GoldFlipperService)
+            servicemanager.PrepareToHostSingle(GoldflipperService)
             servicemanager.StartServiceCtrlDispatcher()
         else:
-            win32serviceutil.HandleCommandLine(GoldFlipperService)
+            win32serviceutil.HandleCommandLine(GoldflipperService)
     except Exception as e:
         servicemanager.LogErrorMsg(f"Service host error: {str(e)}\n{traceback.format_exc()}")
         raise 
