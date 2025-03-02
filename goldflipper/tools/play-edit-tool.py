@@ -248,10 +248,10 @@ def edit_play_field(play_data, field, filepath):
 
         # Get order type for take profit
         play_data['take_profit']['order_type'] = get_input(
-            "\nEnter order type (market/limit at bid/limit at last): ",
+            "\nEnter order type (market/limit at bid/limit at last/limit at ask/limit at mid): ",
             str,
-            validation=lambda x: x.lower() in ['market', 'limit at bid', 'limit at last'],
-            error_message="Please enter 'market', 'limit at bid', or 'limit at last'"
+            validation=lambda x: x.lower() in ['market', 'limit at bid', 'limit at last', 'limit at ask', 'limit at mid'],
+            error_message="Please enter 'market', 'limit at bid', 'limit at last', 'limit at ask', or 'limit at mid'"
         ).lower()
 
     elif field == 'stop_loss':
@@ -385,17 +385,17 @@ def edit_play_field(play_data, field, filepath):
             play_data['stop_loss']['order_type'] = 'market'
         elif sl_type == 'LIMIT':
             play_data['stop_loss']['order_type'] = get_input(
-                "\nEnter order type (limit at bid/limit at last): ",
+                "\nEnter order type (limit at bid/limit at last/limit at ask/limit at mid): ",
                 str,
-                validation=lambda x: x.lower() in ['limit at bid', 'limit at last'],
-                error_message="Please enter 'limit at bid' or 'limit at last'"
+                validation=lambda x: x.lower() in ['limit at bid', 'limit at last', 'limit at ask', 'limit at mid'],
+                error_message="Please enter 'limit at bid', 'limit at last', 'limit at ask', or 'limit at mid'"
             ).lower()
         else:  # CONTINGENCY
             limit_type = get_input(
-                "\nEnter limit order type for primary stop loss (limit at bid/limit at last): ",
+                "\nEnter limit order type for primary stop loss (limit at bid/limit at last/limit at ask/limit at mid): ",
                 str,
-                validation=lambda x: x.lower() in ['limit at bid', 'limit at last'],
-                error_message="Please enter 'limit at bid' or 'limit at last'"
+                validation=lambda x: x.lower() in ['limit at bid', 'limit at last', 'limit at ask', 'limit at mid'],
+                error_message="Please enter 'limit at bid', 'limit at last', 'limit at ask', or 'limit at mid'"
             ).lower()
             play_data['stop_loss']['order_type'] = [limit_type, 'market']
 

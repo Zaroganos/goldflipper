@@ -575,6 +575,26 @@ def open_position(play, play_file):
                 limit_price = current_premium
                 logging.info(f"Using last traded price for limit order: ${limit_price:.2f}")
                 display.info(f"Using last traded price for limit order: ${limit_price:.2f}")
+            elif order_type == 'limit at ask':
+                # Get ask price if available
+                if option_data and option_data.get('ask') is not None:
+                    limit_price = option_data['ask']
+                    logging.info(f"Using ask price for limit order: ${limit_price:.2f}")
+                    display.info(f"Using ask price for limit order: ${limit_price:.2f}")
+                else:
+                    limit_price = current_premium
+                    logging.warning(f"Ask price not available, falling back to last traded price: ${limit_price:.2f}")
+                    display.warning(f"Ask price not available, falling back to last traded price: ${limit_price:.2f}")
+            elif order_type == 'limit at mid':
+                # Calculate mid price if bid and ask are available
+                if option_data and option_data.get('bid') is not None and option_data.get('ask') is not None:
+                    limit_price = (option_data['bid'] + option_data['ask']) / 2
+                    logging.info(f"Using mid price for limit order: ${limit_price:.2f}")
+                    display.info(f"Using mid price for limit order: ${limit_price:.2f}")
+                else:
+                    limit_price = current_premium
+                    logging.warning(f"Bid/ask prices not available for mid calculation, falling back to last traded price: ${limit_price:.2f}")
+                    display.warning(f"Bid/ask prices not available for mid calculation, falling back to last traded price: ${limit_price:.2f}")
             else:  # 'limit at bid'
                 # Get bid price if enabled in settings
                 if config.get('orders', 'bid_price_settings', 'entry', default=True):
@@ -724,6 +744,26 @@ def close_position(play, close_conditions, play_file):
                 limit_price = current_premium
                 logging.info(f"Using last traded price for TP limit order: ${limit_price:.2f}")
                 display.info(f"Using last traded price for TP limit order: ${limit_price:.2f}")
+            elif play['take_profit'].get('order_type') == 'limit at ask':
+                # Get ask price if available
+                if option_data and option_data.get('ask') is not None:
+                    limit_price = option_data['ask']
+                    logging.info(f"Using ask price for TP limit order: ${limit_price:.2f}")
+                    display.info(f"Using ask price for TP limit order: ${limit_price:.2f}")
+                else:
+                    logging.error("Failed to get ask price. Falling back to TP target price.")
+                    display.error("Failed to get ask price. Falling back to TP target price.")
+                    limit_price = play['take_profit']['TP_option_prem']
+            elif play['take_profit'].get('order_type') == 'limit at mid':
+                # Calculate mid price if bid and ask are available
+                if option_data and option_data.get('bid') is not None and option_data.get('ask') is not None:
+                    limit_price = (option_data['bid'] + option_data['ask']) / 2
+                    logging.info(f"Using mid price for TP limit order: ${limit_price:.2f}")
+                    display.info(f"Using mid price for TP limit order: ${limit_price:.2f}")
+                else:
+                    logging.error("Failed to get bid/ask prices for mid calculation. Falling back to TP target price.")
+                    display.error("Failed to get bid/ask prices for mid calculation. Falling back to TP target price.")
+                    limit_price = play['take_profit']['TP_option_prem']
             elif play['take_profit'].get('order_type') == 'limit at bid':
                 # Get bid price if enabled in settings
                 if config.get('orders', 'bid_price_settings', 'take_profit', default=True):
@@ -737,6 +777,10 @@ def close_position(play, close_conditions, play_file):
                         limit_price = play['take_profit']['TP_option_prem']
                 else:
                     limit_price = play['take_profit']['TP_option_prem']
+            else:
+                logging.warning(f"Unknown TP order type: {play['take_profit'].get('order_type')}. Falling back to TP target price.")
+                display.warning(f"Unknown TP order type: {play['take_profit'].get('order_type')}. Falling back to TP target price.")
+                limit_price = play['take_profit']['TP_option_prem']
 
             # Build order for take profit if limit order requested
             if play['take_profit'].get('order_type', '').lower().startswith("limit"):
@@ -819,6 +863,30 @@ def close_position(play, close_conditions, play_file):
                         limit_price = current_premium
                         logging.info(f"Using last traded price for primary SL limit order: ${limit_price:.2f}")
                         display.info(f"Using last traded price for primary SL limit order: ${limit_price:.2f}")
+                    elif play['stop_loss'].get('order_type') == 'limit at ask':
+                        if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
+                            if option_data and option_data.get('ask') is not None:
+                                limit_price = option_data['ask']
+                                logging.info(f"Using ask price for primary SL limit order: ${limit_price:.2f}")
+                                display.info(f"Using ask price for primary SL limit order: ${limit_price:.2f}")
+                            else:
+                                logging.error("Failed to get ask price. Falling back to SL target premium.")
+                                display.error("Failed to get ask price. Falling back to SL target premium.")
+                                limit_price = play['stop_loss']['SL_option_prem']
+                        else:
+                            limit_price = play['stop_loss']['SL_option_prem']
+                    elif play['stop_loss'].get('order_type') == 'limit at mid':
+                        if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
+                            if option_data and option_data.get('bid') is not None and option_data.get('ask') is not None:
+                                limit_price = (option_data['bid'] + option_data['ask']) / 2
+                                logging.info(f"Using mid price for primary SL limit order: ${limit_price:.2f}")
+                                display.info(f"Using mid price for primary SL limit order: ${limit_price:.2f}")
+                            else:
+                                logging.error("Failed to get bid/ask prices for mid calculation. Falling back to SL target premium.")
+                                display.error("Failed to get bid/ask prices for mid calculation. Falling back to SL target premium.")
+                                limit_price = play['stop_loss']['SL_option_prem']
+                        else:
+                            limit_price = play['stop_loss']['SL_option_prem']
                     elif play['stop_loss'].get('order_type') == 'limit at bid':
                         if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
                             if option_data and option_data.get('bid') is not None:
@@ -862,6 +930,30 @@ def close_position(play, close_conditions, play_file):
                     limit_price = current_premium
                     logging.info(f"Using last traded price for SL limit order: ${limit_price:.2f}")
                     display.info(f"Using last traded price for SL limit order: ${limit_price:.2f}")
+                elif sl_order == 'limit at ask':
+                    if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
+                        if option_data and option_data.get('ask') is not None:
+                            limit_price = option_data['ask']
+                            logging.info(f"Using ask price for SL limit order: ${limit_price:.2f}")
+                            display.info(f"Using ask price for SL limit order: ${limit_price:.2f}")
+                        else:
+                            logging.error("Failed to get ask price. Falling back to SL target premium.")
+                            display.error("Failed to get ask price. Falling back to SL target premium.")
+                            limit_price = play['stop_loss']['SL_option_prem']
+                    else:
+                        limit_price = play['stop_loss']['SL_option_prem']
+                elif sl_order == 'limit at mid':
+                    if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
+                        if option_data and option_data.get('bid') is not None and option_data.get('ask') is not None:
+                            limit_price = (option_data['bid'] + option_data['ask']) / 2
+                            logging.info(f"Using mid price for SL limit order: ${limit_price:.2f}")
+                            display.info(f"Using mid price for SL limit order: ${limit_price:.2f}")
+                        else:
+                            logging.error("Failed to get bid/ask prices for mid calculation. Falling back to SL target premium.")
+                            display.error("Failed to get bid/ask prices for mid calculation. Falling back to SL target premium.")
+                            limit_price = play['stop_loss']['SL_option_prem']
+                    else:
+                        limit_price = play['stop_loss']['SL_option_prem']
                 elif sl_order == 'limit at bid':
                     if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
                         if option_data and option_data.get('bid') is not None:
@@ -1337,7 +1429,7 @@ def execute_trade(play_file, play_type):
 
 def validate_play_order_types(play):
     """Validate order types in play data."""
-    valid_types = ['market', 'limit at bid', 'limit at last']
+    valid_types = ['market', 'limit at bid', 'limit at last', 'limit at ask', 'limit at mid']
     
     # Validate entry order type
     entry_point = play.get('entry_point', {})
@@ -1369,10 +1461,10 @@ def validate_play_order_types(play):
             logging.error("Contingency stop loss must have array of two order types")
             display.error("Contingency stop loss must have array of two order types")
             return False
-        # First order must be a limit order (either bid or last), second must be market
+        # First order must be a limit order, second must be market
         if not (sl_order_type[0].startswith('limit') and sl_order_type[1] == 'market'):
-            logging.error("Contingency stop loss must have ['limit at bid' or 'limit at last', 'market'] order types")
-            display.error("Contingency stop loss must have ['limit at bid' or 'limit at last', 'market'] order types")
+            logging.error("Contingency stop loss must have ['limit at bid/ask/mid/last', 'market'] order types")
+            display.error("Contingency stop loss must have ['limit at bid/ask/mid/last', 'market'] order types")
             return False
     elif sl_order_type is not None and sl_order_type not in valid_types:
         logging.error(f"Invalid stop_loss order_type: {sl_order_type}")
