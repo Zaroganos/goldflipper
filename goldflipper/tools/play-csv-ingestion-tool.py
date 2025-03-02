@@ -19,55 +19,59 @@ from goldflipper.config.config import config
 # --- Constants and Fixed Index Ranges ---
 # These ranges assume that the final header row splits calls and puts via a blank separator column.
 CALLS_START = 0
-CALLS_END = 23   # Calls section covers indices 0 to 22; index 23 is a separator.
-PUTS_START = 24  # Puts section starts at index 24.
+CALLS_END = 24   # Calls section covers indices 0 to 23; index 24 is a separator.
+PUTS_START = 25  # Puts section starts at index 25.
 
 # Fixed (expected) index mappings for each section.
 CALLS_ENTRY = {
     "symbol": 2,       # "Ticket" column (3rd column in calls section)
     "expiration_date": 3,  # "Expiration (Contract)"
-    "entry_stock_price": 10, # "Share Price (Buy)"
-    "contracts": 12,   # "# of Con"
-    "strike_price": 7,   # "Strike Price" column
-    "order_type": 11  # "Order Type" column for entry
+    "gtd": 4,          # "GTD" column
+    "oco": 5,          # "OCO" column - new column
+    "entry_stock_price": 11, # "Share Price (Buy)"
+    "contracts": 13,   # "# of Con"
+    "strike_price": 8,   # "Strike Price" column
+    "order_type": 12  # "Order Type" column for entry
 }
 CALLS_VALIDATION = {
-    "itm": 6,
-    "atm": 7,
-    "otm": 8,
+    "itm": 7,
+    "atm": 8,
+    "otm": 9,
 }
 CALLS_TP = {
-    "tp_stock_price": 14,
-    "tp_premium_pct": 15,
-    "tp_stock_pct": 16,
-    "tp_order_type": 18  # "Order Type" column for sell side (shared between TP and SL)
+    "tp_stock_price": 15,
+    "tp_premium_pct": 16,
+    "tp_stock_pct": 17,
+    "tp_order_type": 19  # "Order Type" column for sell side (shared between TP and SL)
 }
 CALLS_SL = {
-    "sl_stock_price": 19,
-    "sl_premium_pct": 20,
-    "sl_stock_pct": 21,
-    "sl_order_type": 18  # Same as TP - using the shared sell side order type
+    "sl_stock_price": 20,
+    "sl_premium_pct": 21,
+    "sl_stock_pct": 22,
+    "sl_order_type": 19  # Same as TP - using the shared sell side order type
 }
 PUTS_ENTRY = {
     "symbol": 2,       # Same relative position in puts section
     "expiration_date": 3,
-    "entry_stock_price": 10,
-    "contracts": 12,
-    "strike_price": 7,
-    "order_type": 11  # "Order Type" column for entry
+    "gtd": 4,
+    "oco": 5,          # "OCO" column - new column
+    "entry_stock_price": 11,
+    "contracts": 13,
+    "strike_price": 8,
+    "order_type": 12  # "Order Type" column for entry
 }
 PUTS_VALIDATION = CALLS_VALIDATION.copy()
 PUTS_TP = {
-    "tp_stock_price": 14,
-    "tp_premium_pct": 15,
-    "tp_stock_pct": 16,
-    "tp_order_type": 18  # "Order Type" column for sell side (shared between TP and SL)
+    "tp_stock_price": 15,
+    "tp_premium_pct": 16,
+    "tp_stock_pct": 17,
+    "tp_order_type": 19  # "Order Type" column for sell side (shared between TP and SL)
 }
 PUTS_SL = {
-    "sl_stock_price": 19,
-    "sl_premium_pct": 20,
-    "sl_stock_pct": 21,
-    "sl_order_type": 18  # Same as TP - using the shared sell side order type
+    "sl_stock_price": 20,
+    "sl_premium_pct": 21,
+    "sl_stock_pct": 22,
+    "sl_order_type": 19  # Same as TP - using the shared sell side order type
 }
 
 # --- Utility Functions ---
@@ -272,11 +276,13 @@ def parse_order_type(cell_value):
     lower_val = str(cell_value).strip().lower()
     if 'market' in lower_val:
         return 'market'
-    if any(term in lower_val for term in ['bid', 'limit (bid)']):
+    if any(term in lower_val for term in ['bid', 'limit (bid)', 'limit at bid']):
         return 'limit at bid'
-    if any(term in lower_val for term in ['ask', 'limit (ask)']):
+    if any(term in lower_val for term in ['ask', 'limit (ask)', 'limit at ask']):
         return 'limit at ask'
-    if any(term in lower_val for term in ['mid', 'last']):
+    if any(term in lower_val for term in ['mid', 'limit (mid)', 'limit at mid']):
+        return 'limit at mid'
+    if any(term in lower_val for term in ['last', 'limit (last)', 'limit at last']):
         return 'limit at last'
     return 'limit at last'  # Default fallback
 
@@ -314,6 +320,15 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     exp_date = fix_expiration_date(expiration_value) if expiration_value else ""
     if not re.match(r"\d{2}/\d{2}/\d{4}$", exp_date):
         errors.append(f"Row {row_num} ({section}): Expiration date '{exp_date}' is not in MM/DD/YYYY format.")
+
+    # Extract OCO value
+    oco_value = get_cell(mapping["oco"])
+    oco_number = None
+    if oco_value:
+        try:
+            oco_number = int(oco_value)
+        except ValueError:
+            errors.append(f"Row {row_num} ({section}): Invalid OCO value '{oco_value}'. Must be a number.")
 
     entry_stock_value = get_cell(mapping["entry_stock_price"])
     if not entry_stock_value:
@@ -457,7 +472,10 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
         "option_contract_symbol": option_symbol,
         "play_name": generate_play_name(symbol_value, trade_type),
         "play_class": "SIMPLE",
-        "conditional_plays": {},
+        "conditional_plays": {
+            "OCO_triggers": [],
+            "OTO_triggers": []
+        },
         "strategy": "Option Swings",
         "creation_date": datetime.now().strftime("%Y-%m-%d"),
         "creator": "auto-ingestor",
@@ -475,7 +493,8 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
         },
         "play_expiration_date": gtd_date,
         "stop_loss": stop_loss if stop_loss else None,
-        "take_profit": take_profit if take_profit else None
+        "take_profit": take_profit if take_profit else None,
+        "oco_number": oco_number  # Store the OCO number for later processing
     }
 
     return play, errors
@@ -501,7 +520,7 @@ def save_play(play, section):
 
 def main():
     # At the very start:
-    print(f"Script version: 2024-02-21-debug-01")
+    print(f"Script version: 2025-03-03-v1.3")
     
     # After config import:
     from goldflipper.config.config import config
@@ -549,16 +568,18 @@ def main():
     
     strike_calls = find_strike_index(calls_headers)
     if strike_calls is None:
-        strike_calls = 7
-        print("Warning: Falling back to default strike column index 7 for calls.")
+        strike_calls = 8  # Updated index for strike price
+        print("Warning: Falling back to default strike column index 8 for calls.")
     strike_puts = find_strike_index(puts_headers)
     if strike_puts is None:
-        strike_puts = 7
-        print("Warning: Falling back to default strike column index 7 for puts.")
+        strike_puts = 8  # Updated index for strike price
+        print("Warning: Falling back to default strike column index 8 for puts.")
 
     valid_plays = []
     all_errors = []
     created_files = []
+    
+    # First pass: Create all plays
     for i, row in enumerate(data_rows, start=1):
         # Process calls only if calls symbol exists
         if row[CALLS_START + CALLS_ENTRY["symbol"]].strip():
@@ -566,12 +587,6 @@ def main():
             if play_calls:
                 valid_plays.append(("calls", play_calls))
             all_errors.extend(errors_calls)
-            if play_calls:
-                output_filename = f"Play_{datetime.now().strftime('%Y%m%d-%H%M')}_{play_calls['symbol']}_calls.json"
-                output_path = os.path.join(os.path.join(project_root, "goldflipper", "plays", "new"), output_filename)
-                with open(output_path, 'w') as f:
-                    json.dump(play_calls, f, indent=2)
-                created_files.append(output_path)
         
         # Process puts only if puts symbol exists
         if row[PUTS_START + PUTS_ENTRY["symbol"]].strip():
@@ -579,12 +594,50 @@ def main():
             if play_puts:
                 valid_plays.append(("puts", play_puts))
             all_errors.extend(errors_puts)
-            if play_puts:
-                output_filename = f"Play_{datetime.now().strftime('%Y%m%d-%H%M')}_{play_puts['symbol']}_puts.json"
-                output_path = os.path.join(os.path.join(project_root, "goldflipper", "plays", "new"), output_filename)
-                with open(output_path, 'w') as f:
-                    json.dump(play_puts, f, indent=2)
-                created_files.append(output_path)
+
+    # Second pass: Process OCO relationships
+    # Group plays by OCO number
+    oco_groups = {}
+    for section, play in valid_plays:
+        oco_number = play.get("oco_number")
+        if oco_number is not None:
+            if oco_number not in oco_groups:
+                oco_groups[oco_number] = []
+            oco_groups[oco_number].append((section, play))
+    
+    # Set up OCO relationships
+    for oco_number, plays in oco_groups.items():
+        if len(plays) > 1:
+            # Group by section (calls/puts)
+            calls_plays = [play for section, play in plays if section == "calls"]
+            puts_plays = [play for section, play in plays if section == "puts"]
+            
+            # Process calls OCO relationships
+            if len(calls_plays) > 1:
+                for play in calls_plays:
+                    other_plays = [p["play_name"] + ".json" for p in calls_plays if p["play_name"] != play["play_name"]]
+                    play["conditional_plays"]["OCO_triggers"] = other_plays
+            
+            # Process puts OCO relationships
+            if len(puts_plays) > 1:
+                for play in puts_plays:
+                    other_plays = [p["play_name"] + ".json" for p in puts_plays if p["play_name"] != play["play_name"]]
+                    play["conditional_plays"]["OCO_triggers"] = other_plays
+    
+    # Remove the temporary oco_number field
+    for section, play in valid_plays:
+        if "oco_number" in play:
+            del play["oco_number"]
+    
+    # Save all plays
+    for section, play in valid_plays:
+        save_play(play, section)
+        # Get the filepath from the save_play function
+        base_dir = os.path.join(project_root, "goldflipper", "plays")
+        target_dir = os.path.join(base_dir, "temp" if play.get("play_class", "SIMPLE") == "OTO" else "new")
+        filename = re.sub(r"[^\w\-]", "_", play["play_name"]) + ".json"
+        filepath = os.path.join(target_dir, filename)
+        created_files.append(filepath)
 
     if all_errors:
         print("\nError Summary (last up to 10 messages):")
@@ -596,9 +649,6 @@ def main():
         if user_input != "Y":
             print("Aborting ingestion due to errors.")
             return
-    
-    for section, play in valid_plays:
-        save_play(play, section)
     
     print(f"\nIngestion complete. Valid plays: {len(valid_plays)}.")
 

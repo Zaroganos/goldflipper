@@ -1,5 +1,0 @@
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-Calls,,,,,,,,,,,,,,,,,,,,,,,,, Puts,,,,,,,,,,,,,,,,,,,,,
-Option Parameters,,,,,,Strike Price,,,,Buy Conditions,,,,Sell Conditions ,,,,,,,,,,Option Parameters,,,,,,Strike Price,,,,Buy Conditions,,,,Sell Conditions ,,,,,,,,
-#,Date (Coded),Ticket ,Expiration (Contract),GTD,,ITM,ATM ,OTM,,Share Price (Buy),Order Type,# of Con,,Share Price (TP),Prem %,Stock %,# of Con,Order Type,Share Price (SL),Prem %,Stock %,# of con,,#,Date,Ticket,Expiration (Contract),GTD,,ITM,ATM ,OTM,,Share Price (Buy),Order Type,# of Con,,Share Price (TP),Prem %,Stock %,Order Type,# of con,Share Price (SL),Prem %,Stock %,# of con
-,,,,,,,,,,,,,,,,,,,,,,,,1,2/19/25,DLTR,3/21/25,2/28/25,,,,70,,76.85,Limit (Bid),3,,74.1,50%,3.60%,3,Limit (Bid),79.4,29,1.90%,1

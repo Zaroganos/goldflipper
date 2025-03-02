@@ -41,8 +41,8 @@
   "strategy": "string",
   "creation_date": "MM/DD/YYYY",
   "conditional_plays": {
-    "OCO_triggers": ["play name 1", "play name 2"],
-    "OTO_triggers": ["play name 1", "play name 2"]
+    "OCO_triggers": ["play name 1.json", "play name 2.json"],
+    "OTO_triggers": ["play name 1.json", "play name 2.json"]
   },
   "status": {
     "play_status": "TEMP / NEW / PENDING-OPENING / OPEN / PENDING-CLOSING / CLOSED / EXPIRED",
