@@ -2,11 +2,12 @@ from datetime import datetime
 import pandas as pd
 import os
 import json
+import shutil
 from typing import List, Dict, Any
 import logging
 
 class PlayLogger:
-    def __init__(self, base_directory=None):
+    def __init__(self, base_directory=None, save_to_desktop=True):
         if base_directory is None:
             # Get the project root directory
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,12 +15,18 @@ class PlayLogger:
         else:
             self.base_directory = base_directory
         
+        # Main log directory
         self.log_directory = os.path.join(os.path.dirname(__file__), "logs")
-        self.csv_path = os.path.join(self.log_directory, "trade_log.csv")
         
         # Create log directory if it doesn't exist
         if not os.path.exists(self.log_directory):
             os.makedirs(self.log_directory)
+        
+        # Current working log file
+        self.csv_path = os.path.join(self.log_directory, "trade_log.csv")
+        
+        # Save to desktop option
+        self.save_to_desktop = save_to_desktop
             
         # Initialize or load existing CSV
         if not os.path.exists(self.csv_path):
@@ -174,18 +181,65 @@ class PlayLogger:
         df.to_csv(self.csv_path, index=False)
     
     def _calculate_pl(self, play_data: Dict[str, Any]) -> float:
-        """Calculate profit/loss for the play"""
-        logging_data = play_data.get('logging', {})
-        if logging_data.get('premium_atClose') and logging_data.get('premium_atOpen'):
+        """Calculate profit/loss in dollars"""
+        if 'premium_atOpen' in play_data and 'premium_atClose' in play_data:
+            logging_data = play_data
             return (logging_data['premium_atClose'] - logging_data['premium_atOpen']) * play_data['contracts'] * 100
         return 0.0
 
-    def export_to_spreadsheet(self, format='csv'):
-        """Export logs to spreadsheet format with enhanced formatting"""
+    def export_to_spreadsheet(self, format='csv', save_to_desktop=None):
+        """
+        Export logs to spreadsheet format with enhanced formatting
+        
+        Args:
+            format (str): 'csv' or 'excel' format
+            save_to_desktop (bool, optional): Override instance setting for saving to desktop
+        
+        Returns:
+            dict: Dictionary containing paths to the exported files
+        """
+        # Create timestamp for unique directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_dir = os.path.join(self.log_directory, f"trade_log_{timestamp}")
+        
+        # Create the export directory
+        if not os.path.exists(export_dir):
+            os.makedirs(export_dir)
+            
+        # Determine if we should save to desktop
+        if save_to_desktop is None:
+            save_to_desktop = self.save_to_desktop
+            
+        # Get desktop path
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        
+        # Dictionary to store all paths
+        result_paths = {
+            'export_dir': export_dir,
+            'main_file': None,
+            'desktop_file': None
+        }
+        
         if format == 'csv':
-            return self.csv_path
+            # Main export file
+            export_path = os.path.join(export_dir, "trade_log.csv")
+            
+            # Read the current CSV and save to the new location
+            df = pd.read_csv(self.csv_path)
+            df.to_csv(export_path, index=False)
+            
+            # Save a copy to the desktop if requested
+            if save_to_desktop:
+                desktop_file = os.path.join(desktop_path, f"trade_log_{timestamp}.csv")
+                df.to_csv(desktop_file, index=False)
+                result_paths['desktop_file'] = desktop_file
+                
+            result_paths['main_file'] = export_path
+            return result_paths
+            
         elif format == 'excel':
-            excel_path = os.path.join(self.log_directory, "trade_log.xlsx")
+            # Main export file
+            export_path = os.path.join(export_dir, "trade_log.xlsx")
             df = pd.read_csv(self.csv_path)
             
             # Define friendly column names mapping
@@ -215,12 +269,14 @@ class PlayLogger:
             
             # Rename columns
             df = df.rename(columns=column_mapping)
+            
             # Create Excel writer object with xlsxwriter engine
             writer = pd.ExcelWriter(
-                excel_path,
+                export_path,
                 engine='xlsxwriter',
                 engine_kwargs={'options': {'nan_inf_to_errors': True}}
             )
+            
             with writer as writer:
                 df.to_excel(writer, index=False, sheet_name='Trade Log')
                 
@@ -582,7 +638,14 @@ class PlayLogger:
                 # Add autofilter
                 worksheet.autofilter(0, 0, len(df), len(df.columns) - 1)
             
-            return excel_path
+            # Save a copy to the desktop if requested
+            if save_to_desktop:
+                desktop_file = os.path.join(desktop_path, f"trade_log_{timestamp}.xlsx")
+                shutil.copy(export_path, desktop_file)
+                result_paths['desktop_file'] = desktop_file
+            
+            result_paths['main_file'] = export_path
+            return result_paths
 
     def _create_summary_stats(self) -> pd.DataFrame:
         """Create summary statistics from the trade log"""
@@ -614,3 +677,49 @@ class PlayLogger:
         except Exception as e:
             logging.error(f"Error calculating summary stats: {str(e)}")
             raise
+            
+    def get_export_history(self):
+        """
+        Get a list of all exported trade logs
+        
+        Returns:
+            list: List of dictionaries containing export information
+        """
+        exports = []
+        
+        # Check if log directory exists
+        if not os.path.exists(self.log_directory):
+            return exports
+            
+        # Look for trade_log_* directories
+        for item in os.listdir(self.log_directory):
+            item_path = os.path.join(self.log_directory, item)
+            
+            # Check if it's a directory and matches our naming pattern
+            if os.path.isdir(item_path) and item.startswith("trade_log_"):
+                # Extract timestamp from directory name
+                try:
+                    timestamp_str = item.replace("trade_log_", "")
+                    timestamp = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
+                    
+                    # Check for CSV and Excel files
+                    csv_path = os.path.join(item_path, "trade_log.csv")
+                    excel_path = os.path.join(item_path, "trade_log.xlsx")
+                    
+                    export_info = {
+                        "timestamp": timestamp,
+                        "directory": item_path,
+                        "csv_exists": os.path.exists(csv_path),
+                        "excel_exists": os.path.exists(excel_path),
+                        "csv_path": csv_path if os.path.exists(csv_path) else None,
+                        "excel_path": excel_path if os.path.exists(excel_path) else None
+                    }
+                    
+                    exports.append(export_info)
+                except (ValueError, IndexError):
+                    # Skip directories that don't match our expected format
+                    continue
+                    
+        # Sort by timestamp (newest first)
+        exports.sort(key=lambda x: x["timestamp"], reverse=True)
+        return exports
