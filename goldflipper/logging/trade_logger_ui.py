@@ -22,8 +22,10 @@ class TradeLoggerUI:
         self.root.geometry("800x500")  # Increased size to accommodate new features
         self.logger = PlayLogger()
         
-        # Desktop export toggle
+        # Export options
         self.save_to_desktop = tk.BooleanVar(value=True)
+        self.export_csv = tk.BooleanVar(value=True)
+        self.export_excel = tk.BooleanVar(value=True)
         
         self.setup_ui()
         
@@ -39,36 +41,44 @@ class TradeLoggerUI:
         # Buttons frame
         button_frame = ttk.Frame(main_frame)
         button_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
-        button_frame.columnconfigure(4, weight=1)  # Make the last column expandable
+        button_frame.columnconfigure(2, weight=1)  # Make the last column expandable
         
         ttk.Button(button_frame, text="View Web Dashboard", 
                   command=self.launch_web_dashboard).grid(row=0, column=0, pady=5, padx=2)
-        ttk.Button(button_frame, text="Export to Excel", 
-                  command=self.export_excel).grid(row=0, column=1, pady=5, padx=2)
-        ttk.Button(button_frame, text="Export to CSV", 
-                  command=self.export_csv).grid(row=0, column=2, pady=5, padx=2)
+        ttk.Button(button_frame, text="Export", 
+                  command=self.export_data).grid(row=0, column=1, pady=5, padx=2)
         ttk.Button(button_frame, text="View Export History", 
-                  command=self.show_export_history).grid(row=0, column=3, pady=5, padx=2)
+                  command=self.show_export_history).grid(row=0, column=2, pady=5, padx=2)
         
-        # Desktop export toggle
-        desktop_frame = ttk.Frame(button_frame)
-        desktop_frame.grid(row=0, column=4, pady=5, padx=10, sticky=tk.E)
+        # Export options frame
+        options_frame = ttk.LabelFrame(main_frame, text="Export Options", padding="5")
+        options_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
+        
+        # Format options
+        format_frame = ttk.Frame(options_frame)
+        format_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(format_frame, text="Format:").pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Checkbutton(format_frame, text="CSV", 
+                       variable=self.export_csv).pack(side=tk.LEFT, padx=10)
+        ttk.Checkbutton(format_frame, text="Excel", 
+                       variable=self.export_excel).pack(side=tk.LEFT, padx=10)
+        
+        # Desktop option
+        desktop_frame = ttk.Frame(options_frame)
+        desktop_frame.pack(fill=tk.X, pady=5)
+        
         ttk.Checkbutton(desktop_frame, text="Save to Desktop", 
-                       variable=self.save_to_desktop).pack(side=tk.RIGHT)
-        
-        # Debug button (hidden by default)
-        debug_button = ttk.Button(main_frame, text="Debug P/L Calculation", 
-                                 command=self.debug_pl_calculation)
-        debug_button.grid(row=4, column=0, pady=5, sticky=tk.W)
+                       variable=self.save_to_desktop).pack(side=tk.LEFT, padx=(0, 10))
         
         # Summary stats
         stats_frame = ttk.LabelFrame(main_frame, text="Summary Statistics", padding="5")
-        stats_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=10)
+        stats_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
         self.update_summary_stats(stats_frame)
         
         # Create a notebook for tabs
         self.notebook = ttk.Notebook(main_frame)
-        self.notebook.grid(row=2, column=0, sticky=(tk.N, tk.S, tk.E, tk.W), pady=5)
+        self.notebook.grid(row=3, column=0, sticky=(tk.N, tk.S, tk.E, tk.W), pady=5)
         
         # Tab for history
         self.history_frame = ttk.Frame(self.notebook, padding="5")
@@ -76,7 +86,7 @@ class TradeLoggerUI:
         
         # Refresh button
         ttk.Button(main_frame, text="Refresh Data", 
-                  command=lambda: self.update_summary_stats(stats_frame)).grid(row=3, column=0, pady=5)
+                  command=lambda: self.update_summary_stats(stats_frame)).grid(row=4, column=0, pady=5)
 
     def update_summary_stats(self, frame):
         """Update the statistics display"""
@@ -232,25 +242,49 @@ class TradeLoggerUI:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to launch dashboard: {str(e)}")
 
-    def export_excel(self):
+    def export_data(self):
+        """Export data based on selected format options"""
         try:
+            # Check if at least one format is selected
+            if not self.export_csv.get() and not self.export_excel.get():
+                messagebox.showwarning("Export Warning", "Please select at least one export format (CSV or Excel).")
+                return
+                
             # Update the logger's save_to_desktop setting
             self.logger.save_to_desktop = self.save_to_desktop.get()
             
-            # Export both formats (CSV and Excel)
-            result = self.logger.export_to_spreadsheet(format='both')
+            # Determine which format to use
+            if self.export_csv.get() and self.export_excel.get():
+                format_option = 'both'
+            elif self.export_csv.get():
+                format_option = 'csv'
+            else:  # Excel only
+                format_option = 'excel'
             
-            # Show success message with appropriate paths
+            # Export the data
+            result = self.logger.export_to_spreadsheet(format=format_option)
+            
+            # Build success message
             message = "Files exported to:\n"
-            message += f"Excel: {result['excel_file']}\n"
-            message += f"CSV: {result['csv_file']}\n"
             
-            if result['excel_desktop_file'] or result['csv_desktop_file']:
-                message += "\nCopies have been saved to your Desktop:"
-                if result['excel_desktop_file']:
-                    message += f"\nExcel: {result['excel_desktop_file']}"
-                if result['csv_desktop_file']:
-                    message += f"\nCSV: {result['csv_desktop_file']}"
+            if format_option in ['csv', 'both'] and result.get('csv_file'):
+                message += f"CSV: {result['csv_file']}\n"
+                
+            if format_option in ['excel', 'both'] and result.get('excel_file'):
+                message += f"Excel: {result['excel_file']}\n"
+            
+            # Add desktop paths if applicable
+            desktop_files = []
+            if self.save_to_desktop.get():
+                if format_option in ['csv', 'both'] and result.get('csv_desktop_file'):
+                    desktop_files.append(f"CSV: {result['csv_desktop_file']}")
+                    
+                if format_option in ['excel', 'both'] and result.get('excel_desktop_file'):
+                    desktop_files.append(f"Excel: {result['excel_desktop_file']}")
+            
+            if desktop_files:
+                message += "\nCopies have been saved to your Desktop:\n"
+                message += "\n".join(desktop_files)
                 
             messagebox.showinfo("Export Successful", message)
             
@@ -260,113 +294,6 @@ class TradeLoggerUI:
                 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export files: {str(e)}")
-
-    def export_csv(self):
-        try:
-            # Update the logger's save_to_desktop setting
-            self.logger.save_to_desktop = self.save_to_desktop.get()
-            
-            # Export both formats (CSV and Excel)
-            result = self.logger.export_to_spreadsheet(format='both')
-            
-            # Show success message with appropriate paths
-            message = "Files exported to:\n"
-            message += f"CSV: {result['csv_file']}\n"
-            message += f"Excel: {result['excel_file']}\n"
-            
-            if result['csv_desktop_file'] or result['excel_desktop_file']:
-                message += "\nCopies have been saved to your Desktop:"
-                if result['csv_desktop_file']:
-                    message += f"\nCSV: {result['csv_desktop_file']}"
-                if result['excel_desktop_file']:
-                    message += f"\nExcel: {result['excel_desktop_file']}"
-                
-            messagebox.showinfo("Export Successful", message)
-            
-            # Refresh the export history if it's visible
-            if hasattr(self, 'history_frame') and self.notebook.index(self.notebook.select()) == 0:
-                self.show_export_history()
-                
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to export files: {str(e)}")
-
-    def debug_pl_calculation(self):
-        """Debug the P/L calculation and show results"""
-        try:
-            # Get debug data
-            debug_df = self.logger.debug_pl_calculation()
-            
-            # Create a new window to display the debug info
-            debug_window = tk.Toplevel(self.root)
-            debug_window.title("P/L Calculation Debug")
-            debug_window.geometry("800x600")
-            
-            # Create a frame for the debug info
-            debug_frame = ttk.Frame(debug_window, padding="10")
-            debug_frame.pack(fill=tk.BOTH, expand=True)
-            
-            # Add a label with instructions
-            ttk.Label(debug_frame, text="This shows the original P/L values compared to recalculated values.").pack(pady=5)
-            
-            # Create a frame for the treeview
-            tree_frame = ttk.Frame(debug_frame)
-            tree_frame.pack(fill=tk.BOTH, expand=True)
-            
-            # Create scrollbar
-            scrollbar = ttk.Scrollbar(tree_frame)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            
-            # Create treeview
-            columns = ("Play", "Symbol", "Contracts", "Premium Open", "Premium Close", 
-                      "Original P/L", "Recalculated P/L", "Difference")
-            tree = ttk.Treeview(tree_frame, columns=columns, show="headings", yscrollcommand=scrollbar.set)
-            
-            # Configure scrollbar
-            scrollbar.config(command=tree.yview)
-            
-            # Set column headings
-            for col in columns:
-                tree.heading(col, text=col)
-                tree.column(col, width=100)
-            
-            # Add data to treeview
-            for _, row in debug_df.iterrows():
-                values = (
-                    row['play_name'],
-                    row['symbol'],
-                    row['contracts'],
-                    f"${row['premium_atOpen']:.2f}" if pd.notna(row['premium_atOpen']) else "N/A",
-                    f"${row['premium_atClose']:.2f}" if pd.notna(row['premium_atClose']) else "N/A",
-                    f"${row['profit_loss']:.2f}" if pd.notna(row['profit_loss']) else "N/A",
-                    f"${row['recalculated_pl']:.2f}" if pd.notna(row['recalculated_pl']) else "N/A",
-                    f"${row['pl_difference']:.2f}" if pd.notna(row['pl_difference']) else "N/A"
-                )
-                tree.insert("", tk.END, values=values)
-                
-            tree.pack(fill=tk.BOTH, expand=True)
-            
-            # Add a button to export the debug data
-            ttk.Button(debug_frame, text="Export Debug Data", 
-                      command=lambda: self.export_debug_data(debug_df)).pack(pady=10)
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to debug P/L calculation: {str(e)}")
-            
-    def export_debug_data(self, debug_df):
-        """Export the debug data to CSV"""
-        try:
-            # Create timestamp for filename
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            debug_file = os.path.join(desktop_path, f"pl_debug_{timestamp}.csv")
-            
-            # Export to CSV
-            debug_df.to_csv(debug_file, index=False)
-            
-            messagebox.showinfo("Debug Export Successful", f"Debug data exported to:\n{debug_file}")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to export debug data: {str(e)}")
 
     def run(self):
         self.root.mainloop()

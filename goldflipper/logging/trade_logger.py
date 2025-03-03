@@ -810,39 +810,3 @@ class PlayLogger:
         # Sort by timestamp (newest first)
         exports.sort(key=lambda x: x["timestamp"], reverse=True)
         return exports
-
-    def debug_pl_calculation(self):
-        """
-        Debug method to check profit/loss calculations in the current log
-        
-        Returns:
-            pd.DataFrame: DataFrame with original and recalculated P/L values
-        """
-        try:
-            # Read the current CSV
-            df = pd.read_csv(self.csv_path)
-            
-            # Create a copy for debugging
-            debug_df = df.copy()
-            
-            # Add recalculated P/L column
-            debug_df['recalculated_pl'] = 0.0
-            
-            # Recalculate P/L for each row
-            for idx, row in debug_df.iterrows():
-                premium_open = row.get('premium_atOpen')
-                premium_close = row.get('premium_atClose')
-                contracts = row.get('contracts')
-                
-                if pd.notna(premium_open) and pd.notna(premium_close) and pd.notna(contracts):
-                    debug_df.at[idx, 'recalculated_pl'] = (premium_close - premium_open) * contracts * 100
-            
-            # Add difference column
-            debug_df['pl_difference'] = debug_df['profit_loss'] - debug_df['recalculated_pl']
-            
-            # Return the debug DataFrame
-            return debug_df
-            
-        except Exception as e:
-            logging.error(f"Error in debug_pl_calculation: {str(e)}")
-            raise
