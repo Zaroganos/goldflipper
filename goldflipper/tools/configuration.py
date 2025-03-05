@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import platform
+import shutil
 
 def open_settings():
     """Open settings.yaml file with the system's default editor."""
@@ -9,8 +10,21 @@ def open_settings():
     settings_path = os.path.join(current_dir, 'config', 'settings.yaml')
     
     if not os.path.exists(settings_path):
-        print(f"Error: Settings file not found at {settings_path}")
-        return False
+        # Settings file doesn't exist - create it from template
+        template_path = os.path.join(current_dir, 'config', 'settings_template.yaml')
+        
+        if not os.path.exists(template_path):
+            print(f"Error: Template file not found at {template_path}")
+            return False
+            
+        try:
+            # Copy the template to settings.yaml
+            shutil.copy2(template_path, settings_path)
+            print(f"\nCreated new settings file from template.")
+            print(f"Please review and update the settings with your API keys and preferences.")
+        except Exception as e:
+            print(f"Error creating settings file from template: {e}")
+            return False
         
     try:
         if platform.system() == 'Windows':

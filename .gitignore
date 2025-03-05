@@ -34,7 +34,9 @@ __pycache__/
 *.log
 logs/
 
-# Configurations and Secrets -- this doesn't appear to be configured properly yet. set this later on (dir needs to be changed likely)
+# Configurations and Secrets
+# User-specific settings file (generated from template)
+goldflipper/goldflipper/config/settings.yaml
 # to goldflipper/config/config.py, but make sure the it is somehow initialized separately and the user enters the keys???
 # The user's entered credentials also should be encrypted somehow so they are not stored in plaintext.
 config/config.py
