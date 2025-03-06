@@ -76,19 +76,19 @@ alpaca:
       base_url: 'https://api.alpaca.markets'
     paper_1:
       enabled: true
-      nickname: "Profitability Testing"
+      nickname: "Paper 1"
       api_key: 'YOUR_PAPER_API_KEY_1'  # Replace with your paper trading API key
       secret_key: 'YOUR_PAPER_SECRET_KEY_1'  # Replace with your paper trading secret key
       base_url: 'https://paper-api.alpaca.markets/v2'
     paper_2:
       enabled: true
-      nickname: "Staging"
+      nickname: "Paper 2"
       api_key: 'YOUR_PAPER_API_KEY_2'  # Replace with your paper trading API key (optional)
       secret_key: 'YOUR_PAPER_SECRET_KEY_2'  # Replace with your paper trading secret key (optional)
       base_url: 'https://paper-api.alpaca.markets/v2'
     paper_3:
       enabled: true
-      nickname: "Dev Testing"
+      nickname: "Paper 3"
       api_key: 'YOUR_PAPER_API_KEY_3'  # Replace with your paper trading API key (optional)
       secret_key: 'YOUR_PAPER_SECRET_KEY_3'  # Replace with your paper trading secret key (optional)
       base_url: 'https://paper-api.alpaca.markets/v2'

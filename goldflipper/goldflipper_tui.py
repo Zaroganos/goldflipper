@@ -5,8 +5,9 @@ from textual.screen import Screen
 import subprocess
 import sys
 import os
+import time
 from pathlib import Path
-from goldflipper.config.config import config
+from goldflipper.config.config import config, settings_just_created, reset_settings_created_flag
 import yaml
 import asyncio  # Added for asyncio.to_thread
 
@@ -35,21 +36,41 @@ class WelcomeScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         
+        # Use the global flag from config module to determine if settings file was just created
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        settings_path = os.path.join(current_dir, 'config', 'settings.yaml')
+        
+        # Set button variants based on whether settings were just created
+        launch_variant = "primary" if settings_just_created else "success"
+        config_variant = "success" if settings_just_created else "primary"
+        
+        # Debug print to confirm path and existence
+        print(f"\n\nDEBUG: Settings path: {settings_path}")
+        print(f"DEBUG: Settings exists: {os.path.exists(settings_path)}")
+        print(f"DEBUG: Settings just created: {settings_just_created}")
+        print(f"DEBUG: Current directory: {current_dir}\n\n")
+        
         # Determine active account to show its nickname as the prompt if available.
-        active_account = config.get('alpaca', 'active_account')
         active_prompt = "Select Trading Account"
-        if active_account and active_account in config.get('alpaca', 'accounts'):
-            account_info = config.get('alpaca', 'accounts')[active_account]
-            if account_info.get('enabled', False):
-                active_prompt = account_info.get('nickname', active_account.replace('_', ' ').title())
+        try:
+            active_account = config.get('alpaca', 'active_account')
+            if active_account and active_account in config.get('alpaca', 'accounts', {}):
+                account_info = config.get('alpaca', 'accounts')[active_account]
+                if account_info.get('enabled', False):
+                    active_prompt = account_info.get('nickname', active_account.replace('_', ' ').title())
+            
+            account_options = [(acc.get('nickname', name.replace('_', ' ').title()), name)
+                       for name, acc in config.get('alpaca', 'accounts', {}).items()
+                       if acc.get('enabled', False)]
+        except Exception as e:
+            # If config can't be loaded, use empty account list
+            account_options = []
         
         yield Container(
             Horizontal(
                 Static(" Welcome to Goldflipper ", id="welcome"),
                 Select(
-                    [(acc.get('nickname', name.replace('_', ' ').title()), name)
-                     for name, acc in config.get('alpaca', 'accounts').items()
-                     if acc.get('enabled', False)],
+                    account_options if account_options else [("No Accounts Available", "none")],
                     prompt=active_prompt,
                     id="account_selector"
                 ),
@@ -59,7 +80,7 @@ class WelcomeScreen(Screen):
                 Container(
                     Button("Create New Play", variant="primary", id="create_play"),
                     Button("Fetch Option Data", variant="primary", id="option_data_fetcher"),
-                    Button("Launch Trading System", variant="success", id="start_monitor"),
+                    Button("Launch Trading System", variant=launch_variant, id="start_monitor"),
                     Button("Auto Play Creator", variant="primary", id="auto_play_creator"),
                     Button("Get Alpaca Info", variant="primary", id="get_alpaca_info"),
                     # Button("Market Data Compare", variant="primary", id="market_data_compare"),  # Temporarily commented out
@@ -69,7 +90,7 @@ class WelcomeScreen(Screen):
                 Container(
                     Button("View / Edit Current Plays", variant="primary", id="view_plays"),
                     Button("Upkeep and Status", variant="primary", id="system_status"),
-                    Button("Configuration", variant="primary", id="configuration"),
+                    Button("Configuration", variant=config_variant, id="configuration"),
                     Button("Open Chart", variant="primary", id="open_chart"),
                     Button("Trade Logger", variant="primary", id="trade_logger"),
                     Button("Manage Service", variant="warning", id="manage_service"),
@@ -87,6 +108,15 @@ class WelcomeScreen(Screen):
         # Update the connection status (and update periodically every 60 seconds)
         await self.update_connection_status()
         self.set_interval(60, lambda: self.call_later(self.update_connection_status))
+        
+        # Check if settings were just created using the global flag
+        if settings_just_created:
+            self.notify(
+                "Welcome to GoldFlipper! Your settings file has been created. Please configure your settings before launching the trading system.",
+                title="New Configuration Created",
+                timeout=10,
+                severity="information"
+            )
 
     async def update_connection_status(self) -> None:
         """
@@ -383,16 +413,49 @@ class WelcomeScreen(Screen):
             self.notify(f"Error: {str(e)}", severity="error")
 
     def run_configuration(self):
+        """
+        Launch the configuration tool to edit settings.yaml.
+        """
+        from goldflipper.tools.configuration import open_settings
+        import importlib
+        import sys
+        
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            tools_dir = os.path.join(current_dir, "tools")
-            if os.name == 'nt':
-                cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'configuration.py']
-                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:
-                subprocess.Popen(['gnome-terminal', '--', 'python', 'configuration.py'], cwd=tools_dir)
+            # Check if this was the first run with a newly created settings file
+            was_first_run = settings_just_created
+            
+            # Launch the configuration editor
+            config_result = open_settings()
+            
+            if config_result:
+                # Reload the config module to pick up changes
+                importlib.reload(sys.modules['goldflipper.config.config'])
+                
+                # If this was the first configuration, update the button colors
+                if was_first_run:
+                    # Reset the settings created flag to avoid showing notifications again
+                    reset_settings_created_flag()
+                    
+                    # Find and update the Launch Trading System button
+                    launch_button = self.query_one("#start_monitor", Button)
+                    launch_button.variant = "success"
+                    
+                    # Find and update the Configuration button
+                    config_button = self.query_one("#configuration", Button)
+                    config_button.variant = "primary"
+                    
+                    self.notify(
+                        "Configuration completed! You're ready to launch the trading system.",
+                        title="Setup Complete",
+                        timeout=5,
+                        severity="success"
+                    )
+            
+            # Always refresh the UI to show latest account information
+            self.refresh_status_in_welcome()
+            
         except Exception as e:
-            self.notify(f"Error: {str(e)}", severity="error")
+            self.notify(f"Error launching configuration tool: {e}", severity="error")
 
     def run_auto_play_creator(self):
         try:

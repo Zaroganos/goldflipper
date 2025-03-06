@@ -15,9 +15,37 @@ The Config class handles:
 import os
 import yaml
 import logging
+import shutil
+
+# Flag to track if settings file was just created
+settings_just_created = False
+
+def reset_settings_created_flag():
+    """Reset the settings_just_created flag after successful configuration."""
+    global settings_just_created
+    settings_just_created = False
 
 def load_config():
+    global settings_just_created
     config_path = os.path.join(os.path.dirname(__file__), 'settings.yaml')
+    
+    # Check if settings.yaml exists, if not, create it from template
+    if not os.path.exists(config_path):
+        template_path = os.path.join(os.path.dirname(__file__), 'settings_template.yaml')
+        
+        if not os.path.exists(template_path):
+            raise FileNotFoundError(f"Neither settings.yaml nor template file found at {template_path}")
+            
+        try:
+            # Copy the template to settings.yaml
+            shutil.copy2(template_path, config_path)
+            settings_just_created = True
+            logging.info(f"Created new settings file from template at {config_path}")
+            print(f"\nCreated new settings file from template at {config_path}")
+            print(f"Please review and update the settings with your API keys and preferences.")
+        except Exception as e:
+            raise IOError(f"Error creating settings file from template: {e}")
+    
     try:
         with open(config_path, 'r') as f:
             return yaml.safe_load(f)
