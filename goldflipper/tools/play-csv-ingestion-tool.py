@@ -65,13 +65,13 @@ PUTS_TP = {
     "tp_stock_price": 15,
     "tp_premium_pct": 16,
     "tp_stock_pct": 17,
-    "tp_order_type": 19  # "Order Type" column for sell side (shared between TP and SL)
+    "tp_order_type": 18  # "Order Type" column for sell side (shared between TP and SL)
 }
 PUTS_SL = {
     "sl_stock_price": 20,
     "sl_premium_pct": 21,
     "sl_stock_pct": 22,
-    "sl_order_type": 19  # Same as TP - using the shared sell side order type
+    "sl_order_type": 18  # Same as TP - using the shared sell side order type
 }
 
 # --- Utility Functions ---
