@@ -120,4 +120,4 @@ python goldflipper/run.py
 
 ## License
 
-This project is copyright Iliya Yaroshevskiy. All rights reserved.
+Copyright (c) 2025 Iliya Yaroshevskiy. All Rights Reserved.
