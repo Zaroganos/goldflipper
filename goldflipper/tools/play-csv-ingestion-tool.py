@@ -286,6 +286,18 @@ def parse_order_type(cell_value):
         return 'limit at last'
     return 'limit at last'  # Default fallback
 
+def clean_ticker_symbol(symbol):
+    """
+    Clean a ticker symbol by removing leading '$' and converting to uppercase.
+    
+    Args:
+        symbol (str): The ticker symbol to clean
+        
+    Returns:
+        str: The cleaned ticker symbol
+    """
+    return symbol.strip().lstrip('$').upper()
+
 # --- Core Processing Function ---
 
 def create_play_from_data(section, data_row, section_headers, section_range_start, strike_rel_index, row_num):
@@ -312,6 +324,8 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     symbol_value = get_cell(mapping["symbol"])
     if not symbol_value:
         errors.append(f"Row {row_num} ({section}): Missing symbol.")
+    else:
+        symbol_value = clean_ticker_symbol(symbol_value)
 
     expiration_value = get_cell(mapping["expiration_date"])
     if not expiration_value:

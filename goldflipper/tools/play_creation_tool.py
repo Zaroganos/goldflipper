@@ -67,6 +67,18 @@ def sanitize_filename(name):
     sanitized = re.sub(r'[^\w\-]', '_', name)
     return sanitized
 
+def clean_ticker_symbol(symbol):
+    """
+    Clean a ticker symbol by removing leading '$' and converting to uppercase.
+    
+    Args:
+        symbol (str): The ticker symbol to clean
+        
+    Returns:
+        str: The cleaned ticker symbol
+    """
+    return symbol.strip().lstrip('$').upper()
+
 def create_option_contract_symbol(symbol, expiration_date, strike_price, trade_type):
     """
     Generate the option contract symbol based on user inputs.
@@ -92,8 +104,11 @@ def create_option_contract_symbol(symbol, expiration_date, strike_price, trade_t
     # Format as an 8-digit number with leading zeros
     padded_strike = f"{strike_tenths_cents:08d}"
 
+    # Clean the symbol
+    cleaned_symbol = clean_ticker_symbol(symbol)
+
     # Assemble the final option contract symbol
-    final_symbol = f"{symbol.upper()}{formatted_date}{option_type}{padded_strike}"
+    final_symbol = f"{cleaned_symbol}{formatted_date}{option_type}{padded_strike}"
 
     return final_symbol
 
@@ -312,12 +327,13 @@ class PlayBuilder:
     
     def build_base_play(self):
         """Collect and validate basic play information."""
-        self.play['symbol'] = get_input(
-            "Enter the ticker symbol (e.g., SPY): ",
+        raw_symbol = get_input(
+            "Enter the ticker symbol (e.g., SPY or $SPY): ",
             str,
             validation=lambda x: len(x) > 0,
             error_message="Ticker symbol cannot be empty."
-        ).upper()
+        )
+        self.play['symbol'] = clean_ticker_symbol(raw_symbol)
 
         self.play['trade_type'] = get_input(
             "Enter the trade type (CALL or PUT): ",
