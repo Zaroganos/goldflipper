@@ -32,11 +32,6 @@
 # ===== END GETTING STARTED =====
 
 # Display Configuration Instructions:
-# --------------------------------------------------
-# \/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\\/\<<<<<<<<<<<
-# SIMPLE STOOPID INSTRUCTIONS: SIMPLY COMMENT OUT THE COLUMNS YOU DON'T WANT TO SEE !!!<<<<<<<<<<<<
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^<<<<<<<<<<<<
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^<<<<<<<<<<<<
 # To enable/disable columns in the option chain display:
 # 1. Under market_data.option_chain_display.default_columns:
 #    - Add or remove column names to show/hide basic option data
