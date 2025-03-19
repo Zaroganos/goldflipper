@@ -13,7 +13,7 @@ setup(
     long_description=long_description,  # Long description from README.md
     long_description_content_type="text/markdown",  # The format of the long description
     url='https://github.com/Zaroganos/goldflipper',
-    license='Proprietary; copyright Iliya Yaroshevskiy; all rights reserved.',  # License under which the package is distributed
+    license='Proprietary. Copyright Iliya Yaroshevskiy. All rights reserved.',  # License under which the package is distributed
 
     # Package structure
     packages=find_packages(),  # Automatically discover and include all packages and sub-packages
@@ -75,6 +75,6 @@ setup(
     project_urls={
         'Bug Reports': 'https://github.com/Zaroganos/goldflipper/issues',
         'Source': 'https://github.com/Zaroganos/goldflipper',
-        'Documentation': 'https://github.com/Zaroganos/goldflipper/wiki',
+#        'Documentation': 'https://github.com/Zaroganos/goldflipper/wiki',
     },
 )
