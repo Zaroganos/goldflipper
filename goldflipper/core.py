@@ -171,20 +171,23 @@ def get_stock_price(symbol: str) -> Optional[float]:
     market_data = get_market_data_manager()  # Use singleton instance
     cache_key = f"stock_price:{symbol}"
     cached = market_data.cache.get(cache_key)
-    # START DEBUG - Remove after testing
+    '''START DEBUG - Remove after testing
     if cached:
         logging.debug(f"CACHE HIT: Stock price for {symbol}")
         display.info(f"CACHE HIT: Stock price for {symbol}")
     else:
         logging.debug(f"CACHE MISS: Fetching stock price for {symbol}")
         display.info(f"CACHE MISS: Fetching stock price for {symbol}")
-    # END DEBUG
+    END DEBUG'''
     if cached:
         return cached
         
     try:
         price = market_data.get_stock_price(symbol)
         if price is not None:
+            # Convert to float if it's a pandas Series
+            if hasattr(price, 'item'):
+                price = float(price.item())
             logging.info(f"Got fresh stock price for {symbol}: ${price:.2f}")
             return price
             
@@ -248,6 +251,12 @@ def calculate_and_store_premium_levels(play, current_premium):
 
 def calculate_and_store_price_levels(play, entry_stock_price):
     """Calculate and store TP/SL stock price levels in the play data."""
+    # Convert entry_stock_price to float if it's a Series
+    if hasattr(entry_stock_price, 'item'):
+        entry_stock_price = float(entry_stock_price.item())
+    else:
+        entry_stock_price = float(entry_stock_price)
+        
     # Store entry stock price
     play['entry_point']['entry_stock_price'] = entry_stock_price
     
@@ -276,10 +285,12 @@ def calculate_and_store_price_levels(play, entry_stock_price):
             play['stop_loss']['contingency_SL_stock_price_target'] = entry_stock_price * (1 + contingency_sl_pct)
 
 class UUIDEncoder(json.JSONEncoder):
-    """Custom JSON encoder to handle UUID objects."""
+    """Custom JSON encoder to handle UUID objects and pandas Series."""
     def default(self, obj):
         if isinstance(obj, UUID):
             return str(obj)
+        if hasattr(obj, 'item'):  # Handle pandas Series/numpy values
+            return obj.item()
         return json.JSONEncoder.default(self, obj)
 
 def save_play(play, play_file):
