@@ -48,6 +48,7 @@ setup(
         'psutil>=5.9.0',  # System monitoring library
         'nest-asyncio>=1.5.0', # Asynchronous library
         'pywin32',
+        'tkinterdnd2>=0.3.0',  # For drag and drop support in the setup dialog
         # Add other dependencies from your project here
     ],
 
