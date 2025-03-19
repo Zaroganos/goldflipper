@@ -5,16 +5,15 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    # Basic package information
-    name='goldflipper',  # The name of your package
-    version='0.1.2',  # Initial version number (follow semantic versioning)
-    author='Yaroshevskiy, Iliya',  # Replace with your name
-    author_email='purpleafmanagement@gmail.com',  # Replace with your email
-    description='A Python package for algorithmic trading using Alpaca.',
+    name='goldflipper',
+    version='0.1.2',
+    author='Yaroshevskiy, Iliya',
+    author_email='purpleafmanagement@gmail.com',
+    description='A Python program for semi-autonomous options trading on Alpaca.',
     long_description=long_description,  # Long description from README.md
     long_description_content_type="text/markdown",  # The format of the long description
-    url='https://github.com/Zaroganos/goldflipper',  # URL to the project homepage
-    license='Proprietary. Copyright Iliya Yaroshevskiy. All rights reserved.',  # License under which the package is distributed
+    url='https://github.com/Zaroganos/goldflipper',
+    license='Proprietary; copyright Iliya Yaroshevskiy; all rights reserved.',  # License under which the package is distributed
 
     # Package structure
     packages=find_packages(),  # Automatically discover and include all packages and sub-packages
@@ -25,19 +24,19 @@ setup(
     # Package data to include within the package itself
     package_data={
         'goldflipper': [
-            'tools/PlayTemplate',  # Include PlayTemplate in the tools directory
+            'tools/PlayTemplate',  # Include Play Template in the tools directory
             'plays/*.json',  # Include all JSON files in the plays directory
             'config/*.py',  # Include all Python files in the config directory
         ],
     },
 
-    # Specify the Python version compatibility
+    # Python version compatibility
     python_requires='>=3.9',
 
-    # Dependencies required for your package
+    # Dependencies required
     install_requires=[
         'alpaca-py>=0.8.0', # Alpaca trading API v2
-        'yfinance==0.2.37', # Yahoo Finance API for market data !! KEEP AT THIS VERSION !! latest version is not working
+        'yfinance==0.2.37', # Yahoo Finance API for market data !! KEEP AT THIS VERSION !! latest version is not working (fix in progress)
         'pandas>=2.0.0',  # Data analysis and manipulation library
         'numpy>=1.24.0',  # Numerical computing library
         'matplotlib>=3.7.0',  # Data visualization library
@@ -49,7 +48,6 @@ setup(
         'nest-asyncio>=1.5.0', # Asynchronous library
         'pywin32',
         'tkinterdnd2>=0.3.0',  # For drag and drop support in the setup dialog
-        # Add other dependencies from your project here
     ],
 
     # Entry points to create command-line tools or scripts
@@ -59,14 +57,13 @@ setup(
         ],
     },
 
-    # Additional metadata for package indexing and classification
     classifiers=[
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: Proprietary. Copyright Iliya Yaroshevskiy. All rights reserved.',
         'Operating System :: OS Independent',
-        'Development Status :: 4 - Beta',  # Project is in the beta stage
-        'Intended Audience :: Developers',
-        'Intended Audience :: Financial and Insurance Industry',
+        'Development Status :: 4 - Beta',
+        'Intended Audience :: Internal Use Only',
+        'Intended Audience :: Retail and Institutional Options Traders',
         'Topic :: Software Development :: Libraries :: Python Modules',
         'Topic :: Office/Business :: Financial :: Investment',
     ],
