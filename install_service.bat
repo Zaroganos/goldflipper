@@ -19,18 +19,22 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Installing required dependencies...
-python -m pip install pywin32
+echo Checking Poetry installation...
+poetry --version 2>nul
 if errorlevel 1 (
-    echo Error installing dependencies
-    pause
-    exit /b 1
+    echo Installing Poetry...
+    python -m pip install poetry
+    if errorlevel 1 (
+        echo Error installing Poetry
+        pause
+        exit /b 1
+    )
 )
 
-echo Installing GoldFlipper package in development mode...
-python -m pip install -e .
+echo Installing project dependencies...
+poetry install
 if errorlevel 1 (
-    echo Error installing GoldFlipper package
+    echo Error installing dependencies
     pause
     exit /b 1
 )
@@ -40,7 +44,7 @@ mkdir "%ProgramData%\GoldFlipper\logs" 2>nul
 icacls "%ProgramData%\GoldFlipper" /grant "Users":(OI)(CI)F /T
 
 echo Installing GoldFlipper Trading Service...
-python -m goldflipper.run --startup auto install
+poetry run python -m goldflipper.run --startup auto install
 if errorlevel 1 (
     echo Error installing service
     pause

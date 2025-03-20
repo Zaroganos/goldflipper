@@ -562,3 +562,10 @@ csv_ingestor:
   backup:
     keep_originals: true      # Keep original CSV files after processing
     backup_dir: "ingestor_backups"  # Directory to store CSV backups
+
+####################################################################################################
+# System Settings
+####################################################################################################
+system:
+  console:
+    visible: false  # Whether to show the Streamlit server console window

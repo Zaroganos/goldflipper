@@ -358,9 +358,9 @@ chart_viewer:
       ma_period: 20
   display:
     style: "charles"  # Options: charles, classic, yahoo, etc.
-    candle_up_color: "green"
-    candle_down_color: "red"
-    background_color: "white"
+    candle_up_color: "#00FF00"  # Green
+    candle_down_color: "#FF0000"  # Red
+    background_color: "#FFFFFF"  # White
     grid: true
     grid_alpha: 0.2
     figure_size: [12, 8]  # [width, height] in inches
@@ -539,3 +539,10 @@ csv_ingestor:
   backup:
     keep_originals: true      # Keep original CSV files after processing
     backup_dir: "ingestor_backups"  # Directory to store CSV backups
+
+####################################################################################################
+# System Settings
+####################################################################################################
+system:
+  console:
+    visible: true  # Whether to show the Streamlit server console window

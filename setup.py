@@ -1,3 +1,7 @@
+'''
+THIS HAS BEEN DEPRECATED. USING POETRY INSTEAD
+'''
+
 from setuptools import setup, find_packages
 
 # Load the README file as the long description
@@ -27,18 +31,22 @@ setup(
             'tools/PlayTemplate',  # Include Play Template in the tools directory
             'plays/*.json',  # Include all JSON files in the plays directory
             'config/*.py',  # Include all Python files in the config directory
+            'config/*.yaml',
+            'web/*.py',
+            'web/pages/*.py',
+            'web/components/*.py',
         ],
     },
 
     # Python version compatibility
-    python_requires='>=3.9',
+    python_requires='>=3.8',
 
     # Dependencies required
     install_requires=[
-        'alpaca-py>=0.8.0', # Alpaca trading API v2
-        'yfinance==0.2.37', # Yahoo Finance API for market data !! KEEP AT THIS VERSION !! latest version is not working (fix in progress)
-        'pandas>=2.0.0',  # Data analysis and manipulation library
-        'numpy>=1.24.0',  # Numerical computing library
+        'alpaca-py>=0.8.0', # Alpaca trading API v2 -- Latest available version is recommended
+        'yfinance>=0.2.37', # Yahoo Finance API for market data (Fixed compatibility issues with latest version)
+        'pandas>=2.2.0',  # Data analysis and manipulation library
+        'numpy>=1.26.0',  # Numerical computing library
         'matplotlib>=3.7.0',  # Data visualization library
         'seaborn>=0.12.0',  # Data visualization library
         'scipy>=1.10.0',  # Scientific computing library
@@ -48,12 +56,17 @@ setup(
         'nest-asyncio>=1.5.0', # Asynchronous library
         'pywin32',
         'tkinterdnd2>=0.3.0',  # For drag and drop support in the setup dialog
+        'streamlit>=1.32.0',
+        'plotly>=5.18.0',
+        'python-dotenv>=1.0.0',
+        'pyyaml>=6.0.1',
     ],
 
     # Entry points to create command-line tools or scripts
     entry_points={
         'console_scripts': [
             'goldflipper=goldflipper.run:main',  # Assumes `main` function is in `run.py`
+            'goldflipper-web=goldflipper.web.app:main',
         ],
     },
 
