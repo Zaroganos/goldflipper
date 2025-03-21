@@ -12,6 +12,7 @@ Goldflipper is an algorithmic trading system developed using Python. It utilizes
 ## Project Structure
 
 The project is organized into the following directories:
+(Simplified for short length, see the code to discover the full content.)
 
 ```
 goldflipper/
