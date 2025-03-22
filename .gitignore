@@ -39,6 +39,7 @@ logs/
 goldflipper/config/settings.yaml
 # to goldflipper/config/config.py, but make sure the it is somehow initialized separately and the user enters the keys???
 # The user's entered credentials also should be encrypted somehow so they are not stored in plaintext.
+# What is the below? to be removed??
 config/config.py
 .env
 

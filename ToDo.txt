@@ -23,7 +23,7 @@ Place new tasks on top.
       3. [ ] Add type hints to improve IDE support
       4. [ ] Update package structure if needed
 
-- [ ] Implement mysql database
+- [ ] Implement a database, perhaps DuckDB is best at this stage
 - [ ] Implement threading
 - [ ] Implement locking
 
@@ -141,3 +141,45 @@ Place new tasks on top.
       4. ✓ Add price reference validation in core functions
       5. ✓ Update logging to show price reference used
       6. ✓ Maintain backward compatibility for existing plays
+
+
+- [ ] Implementation of DuckDB database and migration to usage from current workflow      
+-- Main Plays table
+CREATE TABLE plays (
+    play_id UUID PRIMARY KEY,
+    play_name VARCHAR,
+    symbol VARCHAR,
+    trade_type VARCHAR,
+    strike_price DECIMAL,
+    expiration_date DATE,
+    contracts INTEGER,
+    status VARCHAR,
+    play_class VARCHAR,
+    creation_date TIMESTAMP,
+    -- Other play fields...
+);
+
+-- Play Status History
+CREATE TABLE play_status_history (
+    history_id UUID PRIMARY KEY,
+    play_id UUID REFERENCES plays(play_id),
+    status VARCHAR,
+    order_id VARCHAR,
+    order_status VARCHAR,
+    position_exists BOOLEAN,
+    timestamp TIMESTAMP
+);
+
+-- Trade Logs
+CREATE TABLE trade_logs (
+    trade_id UUID PRIMARY KEY,
+    play_id UUID REFERENCES plays(play_id),
+    datetime_open TIMESTAMP,
+    datetime_close TIMESTAMP,
+    price_open DECIMAL,
+    price_close DECIMAL,
+    premium_open DECIMAL,
+    premium_close DECIMAL,
+    profit_loss DECIMAL,
+    profit_loss_pct DECIMAL
+);
