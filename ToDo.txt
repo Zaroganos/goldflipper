@@ -144,42 +144,75 @@ Place new tasks on top.
 
 
 - [ ] Implementation of DuckDB database and migration to usage from current workflow      
--- Main Plays table
-CREATE TABLE plays (
-    play_id UUID PRIMARY KEY,
-    play_name VARCHAR,
-    symbol VARCHAR,
-    trade_type VARCHAR,
-    strike_price DECIMAL,
-    expiration_date DATE,
-    contracts INTEGER,
-    status VARCHAR,
-    play_class VARCHAR,
-    creation_date TIMESTAMP,
-    -- Other play fields...
-);
+-- Core Tables (Initial Implementation)
+1. [ ] Plays table
+2. [ ] Play Status History table
+3. [ ] Trade Logs table
 
--- Play Status History
-CREATE TABLE play_status_history (
-    history_id UUID PRIMARY KEY,
-    play_id UUID REFERENCES plays(play_id),
-    status VARCHAR,
-    order_id VARCHAR,
-    order_status VARCHAR,
-    position_exists BOOLEAN,
-    timestamp TIMESTAMP
-);
+-- Extended Database Implementation
+1. [ ] Trading Strategy Management:
+   - Create trading_strategies table
+   - Implement strategy versioning
+   - Add strategy validation
+   - Migrate existing strategy files
 
--- Trade Logs
-CREATE TABLE trade_logs (
-    trade_id UUID PRIMARY KEY,
-    play_id UUID REFERENCES plays(play_id),
-    datetime_open TIMESTAMP,
-    datetime_close TIMESTAMP,
-    price_open DECIMAL,
-    price_close DECIMAL,
-    premium_open DECIMAL,
-    premium_close DECIMAL,
-    profit_loss DECIMAL,
-    profit_loss_pct DECIMAL
-);
+2. [ ] Service State Management:
+   - Create service_backups table
+   - Implement backup rotation
+   - Add state validation
+   - Migrate existing state files
+
+3. [ ] Enhanced Logging System:
+   - Create log_entries table
+   - Implement structured logging
+   - Add trace ID system
+   - Migrate existing logs
+
+4. [ ] Configuration Management:
+   - Create config_templates table
+   - Implement schema validation
+   - Add version tracking
+   - Migrate YAML configs
+
+5. [ ] System Monitoring:
+   - Create watchdog_events table
+   - Implement event tracking
+   - Add resolution system
+   - Set up monitoring dashboards
+
+6. [ ] Chart Management:
+   - Create chart_configurations table
+   - Implement user preferences
+   - Add indicator management
+   - Migrate existing chart settings
+
+7. [ ] Tool State Management:
+   - Create tool_states table
+   - Implement state persistence
+   - Add configuration management
+   - Migrate existing tool states
+
+-- Database UI Implementation (Streamlit)
+1. [ ] Create Database Overview Page:
+   - Add table structure visualization
+   - Implement data browsers
+   - Add query interface
+   - Create monitoring dashboard
+
+2. [ ] Add Data Management Features:
+   - Implement backup interface
+   - Add data export tools
+   - Create migration utilities
+   - Add validation tools
+
+3. [ ] Create Monitoring Interface:
+   - Add performance metrics
+   - Implement query analysis
+   - Create health dashboard
+   - Add alert configuration
+
+4. [ ] Implement Administration Tools:
+   - Add user management
+   - Create backup interface
+   - Implement maintenance tools
+   - Add configuration editor

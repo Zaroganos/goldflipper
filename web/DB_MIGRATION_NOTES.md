@@ -50,7 +50,7 @@ Migration from file-based storage to DuckDB for improved reliability, performanc
 - [ ] Repository Layer:
   1. Implement PlayRepository
   2. Create TradeLogRepository
-  3. Add StatusHistoryRepository
+  3. Add PlayStatusHistoryRepository
   4. Create query methods
   5. Implement caching
   6. Add bulk operations
@@ -172,6 +172,95 @@ CREATE TABLE trade_logs (
     profit_loss_pct DECIMAL(10,2)
 );
 
+-- Trading Strategy Management
+CREATE TABLE trading_strategies (
+    strategy_id UUID PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    description TEXT,
+    parameters JSON,
+    creator VARCHAR,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- Service State Management
+CREATE TABLE service_backups (
+    backup_id UUID PRIMARY KEY,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    service_name VARCHAR NOT NULL,
+    state_data JSON,
+    backup_type VARCHAR NOT NULL,
+    is_valid BOOLEAN DEFAULT TRUE,
+    meta_data JSON
+);
+
+-- Enhanced Logging
+CREATE TABLE log_entries (
+    log_id UUID PRIMARY KEY,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    level VARCHAR NOT NULL,
+    component VARCHAR NOT NULL,
+    message TEXT NOT NULL,
+    meta_data JSON,
+    trace_id UUID,
+    CONSTRAINT valid_level CHECK (level IN ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'))
+);
+
+-- Configuration Templates
+CREATE TABLE config_templates (
+    template_id UUID PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    description TEXT,
+    default_values JSON,
+    schema JSON,
+    version VARCHAR,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- System Monitoring
+CREATE TABLE watchdog_events (
+    event_id UUID PRIMARY KEY,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    component VARCHAR NOT NULL,
+    event_type VARCHAR NOT NULL,
+    details JSON,
+    resolution TEXT,
+    is_resolved BOOLEAN DEFAULT FALSE
+);
+
+-- Chart Management
+CREATE TABLE chart_configurations (
+    config_id UUID PRIMARY KEY,
+    user_id UUID,
+    chart_type VARCHAR NOT NULL,
+    settings JSON,
+    indicators JSON,
+    last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_default BOOLEAN DEFAULT FALSE
+);
+
+-- Tool State Management
+CREATE TABLE tool_states (
+    tool_id UUID PRIMARY KEY,
+    tool_name VARCHAR NOT NULL,
+    last_state JSON,
+    settings JSON,
+    last_run TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- Analytics table
+CREATE TABLE analytics (
+    analytics_id UUID PRIMARY KEY,
+    category VARCHAR NOT NULL,
+    metric VARCHAR NOT NULL,
+    value FLOAT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    meta_data JSON
+);
+
 -- Indexes
 
 CREATE INDEX idx_plays_status ON plays(status);
@@ -179,6 +268,14 @@ CREATE INDEX idx_plays_symbol ON plays(symbol);
 CREATE INDEX idx_plays_expiration ON plays(expiration_date);
 CREATE INDEX idx_status_history_play ON play_status_history(play_id);
 CREATE INDEX idx_trade_logs_play ON trade_logs(play_id);
+
+-- Additional Indexes
+CREATE INDEX idx_strategies_active ON trading_strategies(is_active);
+CREATE INDEX idx_log_entries_component ON log_entries(component, timestamp);
+CREATE INDEX idx_log_entries_level ON log_entries(level, timestamp);
+CREATE INDEX idx_watchdog_unresolved ON watchdog_events(is_resolved, timestamp);
+CREATE INDEX idx_chart_configs_user ON chart_configurations(user_id, chart_type);
+CREATE INDEX idx_tool_states_active ON tool_states(tool_name, is_active);
 ```
 
 ### Migration Strategy

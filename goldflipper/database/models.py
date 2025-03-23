@@ -23,6 +23,11 @@ Model Structure
    - Tracks profit/loss
    - Stores Greeks at entry
 
+4. TradingStrategy
+   - Represents a trading strategy configuration
+   - Contains strategy parameters and metadata
+   - Tracks strategy versions and usage
+
 Implementation Details
 -------------------
 The models use SQLAlchemy's declarative base system and include:
@@ -38,7 +43,7 @@ from typing import Optional, Dict, Any
 from uuid import UUID, uuid4
 from sqlalchemy import (
     Column, String, Integer, Float, DateTime, 
-    Boolean, ForeignKey, JSON, CheckConstraint, Index, UniqueConstraint
+    Boolean, ForeignKey, JSON, CheckConstraint, Index, UniqueConstraint, Text
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import UUID as SQLUUID
@@ -83,13 +88,14 @@ class Play(Base):
         entry_point (dict): Entry conditions and parameters
         take_profit (dict): Take profit parameters
         stop_loss (dict): Stop loss parameters
-        strategy (str): Trading strategy name
+        strategy_id (UUID): Reference to the trading strategy
         creator (str): Who/what created the play
         last_modified (datetime): Last modification timestamp
         
     Relationships:
         status_history: List of status changes
         trade_logs: List of trade executions
+        trading_strategy: Associated trading strategy
     """
     
     __tablename__ = 'plays'
@@ -108,13 +114,14 @@ class Play(Base):
     entry_point = Column(JSON)
     take_profit = Column(JSON)
     stop_loss = Column(JSON)
-    strategy = Column(String)
+    strategy_id = Column(SQLUUID, ForeignKey('trading_strategies.strategy_id'))
     creator = Column(String)
     last_modified = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     status_history = relationship("PlayStatusHistory", back_populates="play")
     trade_logs = relationship("TradeLog", back_populates="play")
+    trading_strategy = relationship("TradingStrategy", back_populates="plays")
     
     # Constraints
     __table_args__ = (
@@ -149,7 +156,7 @@ class Play(Base):
             'entry_point': self.entry_point,
             'take_profit': self.take_profit,
             'stop_loss': self.stop_loss,
-            'strategy': self.strategy,
+            'strategy_id': str(self.strategy_id) if self.strategy_id else None,
             'creator': self.creator,
             'last_modified': self.last_modified.isoformat() if self.last_modified else None
         }
@@ -528,7 +535,7 @@ class Analytics(Base):
         metric (str): Metric name
         value (float): Metric value
         timestamp (datetime): Measurement timestamp
-        metadata (JSON): Additional context and metadata
+        meta_data (JSON): Additional context and metadata
     """
     __tablename__ = 'analytics'
     
@@ -537,24 +544,96 @@ class Analytics(Base):
     metric = Column(String, nullable=False)
     value = Column(Float)
     timestamp = Column(DateTime, default=datetime.utcnow)
-    metadata = Column(JSON)
+    meta_data = Column(JSON)
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert model to dictionary."""
+        """Convert the model to a dictionary."""
         return {
             'id': str(self.id),
             'category': self.category,
             'metric': self.metric,
             'value': self.value,
-            'timestamp': self.timestamp.isoformat(),
-            'metadata': self.metadata
+            'timestamp': self.timestamp.isoformat() if self.timestamp else None,
+            'meta_data': self.meta_data
         }
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Analytics':
-        """Create model from dictionary."""
+        """Create a model instance from a dictionary."""
         if 'id' in data:
             data['id'] = UUID(data['id'])
-        if 'timestamp' in data and isinstance(data['timestamp'], str):
+        if 'timestamp' in data and data['timestamp']:
             data['timestamp'] = datetime.fromisoformat(data['timestamp'])
+        return cls(**data)
+
+class TradingStrategy(Base):
+    """
+    Model representing a trading strategy configuration.
+    
+    This model stores trading strategy definitions, including parameters,
+    validation rules, and metadata for strategy versioning and tracking.
+    
+    Attributes:
+        strategy_id (UUID): Unique identifier for the strategy
+        name (str): Strategy name
+        description (str): Detailed strategy description
+        parameters (dict): Strategy parameters and settings
+        creator (str): Who/what created the strategy
+        created_at (datetime): When the strategy was created
+        last_modified (datetime): Last modification timestamp
+        is_active (bool): Whether the strategy is currently active
+        
+    Relationships:
+        plays: List of plays using this strategy
+    """
+    
+    __tablename__ = 'trading_strategies'
+    
+    strategy_id = Column(SQLUUID, primary_key=True, default=uuid4)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    parameters = Column(JSON)
+    creator = Column(String)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_modified = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    
+    # Relationships
+    plays = relationship("Play", back_populates="trading_strategy")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert the model to a dictionary.
+        
+        Returns:
+            dict: Dictionary representation of the strategy
+        """
+        return {
+            'strategy_id': str(self.strategy_id),
+            'name': self.name,
+            'description': self.description,
+            'parameters': self.parameters,
+            'creator': self.creator,
+            'created_at': self.created_at.isoformat(),
+            'last_modified': self.last_modified.isoformat() if self.last_modified else None,
+            'is_active': self.is_active
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'TradingStrategy':
+        """
+        Create a model instance from a dictionary.
+        
+        Args:
+            data (dict): Dictionary containing strategy data
+            
+        Returns:
+            TradingStrategy: New TradingStrategy instance
+        """
+        if 'strategy_id' in data:
+            data['strategy_id'] = UUID(data['strategy_id'])
+        if 'created_at' in data:
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        if 'last_modified' in data and data['last_modified']:
+            data['last_modified'] = datetime.fromisoformat(data['last_modified'])
         return cls(**data) 

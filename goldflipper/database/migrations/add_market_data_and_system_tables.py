@@ -72,12 +72,12 @@ system_state = Table(
 analytics = Table(
     'analytics',
     metadata,
-    Column('id', SQLUUID, primary_key=True),
+    Column('analytics_id', SQLUUID, primary_key=True),
     Column('category', String, nullable=False),
     Column('metric', String, nullable=False),
     Column('value', Float),
     Column('timestamp', DateTime, default=datetime.utcnow),
-    Column('metadata', JSON)
+    Column('meta_data', JSON)
 )
 
 def upgrade() -> None:

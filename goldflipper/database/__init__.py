@@ -24,6 +24,7 @@ Key Components
    - Play: Represents an options trading play
    - PlayStatusHistory: Tracks status changes of plays
    - TradeLog: Records trade execution details
+   - TradingStrategy: Defines trading strategies and parameters
 
 3. Repositories:
    - Implements repository pattern for clean data access
@@ -59,8 +60,8 @@ Dependencies
 """
 
 from .connection import get_db_connection, init_db
-from .models import Play, TradeLog, PlayStatusHistory
-from .repositories import PlayRepository, TradeLogRepository, StatusHistoryRepository
+from .models import Play, TradeLog, PlayStatusHistory, TradingStrategy
+from .repositories import PlayRepository, TradeLogRepository, PlayStatusHistoryRepository
 
 __all__ = [
     'get_db_connection',
@@ -68,7 +69,8 @@ __all__ = [
     'Play',
     'TradeLog',
     'PlayStatusHistory',
+    'TradingStrategy',
     'PlayRepository',
     'TradeLogRepository',
-    'StatusHistoryRepository',
+    'PlayStatusHistoryRepository',
 ] 
