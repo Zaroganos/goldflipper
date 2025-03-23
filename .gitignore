@@ -24,6 +24,7 @@ goldflipper/plays/temp/*
 !goldflipper/plays/expired/.gitkeep
 !goldflipper/plays/old/.gitkeep
 !goldflipper/plays/temp/.gitkeep
+
 # Python bytecode
 __pycache__/
 *.py[cod]
@@ -33,6 +34,14 @@ __pycache__/
 # Logs
 *.log
 logs/
+
+# Database files
+web/data/db/*.db
+web/data/db/*.wal
+web/data/db/temp/
+web/data/db/backups/
+*.duckdb
+*.duckdb.wal
 
 # Configurations and Secrets
 # User-specific settings file (generated from template)

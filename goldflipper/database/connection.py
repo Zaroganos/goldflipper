@@ -86,6 +86,7 @@ class DatabaseConfig:
         pool_size (int): Size of the connection pool
         pool_timeout (int): Connection timeout in seconds
         backup_dir (Path): Directory for database backups
+        temp_dir (Path): Directory for temporary files
     """
     
     def __init__(self):
@@ -104,6 +105,10 @@ class DatabaseConfig:
         self.backup_dir = data_dir / 'db' / 'backups'
         self.backup_dir.mkdir(parents=True, exist_ok=True)
         
+        # Set up temp directory
+        self.temp_dir = data_dir / 'db' / 'temp'
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        
         # Connection pool configuration
         self.pool_size = int(os.getenv('GOLDFLIPPER_DB_POOL_SIZE', '5'))
         self.pool_timeout = int(os.getenv('GOLDFLIPPER_DB_TIMEOUT', '30'))
@@ -116,7 +121,8 @@ class DatabaseConfig:
         Returns:
             str: DuckDB connection URL
         """
-        return f"duckdb:///{self.db_path}"
+        # DuckDB doesn't use URLs, but we keep this for SQLAlchemy compatibility
+        return "duckdb://"
     
     def get_backup_path(self) -> Path:
         """
@@ -156,7 +162,19 @@ def get_engine() -> Engine:
             poolclass=QueuePool,
             pool_size=config.pool_size,
             pool_timeout=config.pool_timeout,
-            connect_args={'check_same_thread': False}
+            # DuckDB specific settings for multi-process support
+            connect_args={
+                'database': str(config.db_path),
+                'config': {
+                    'custom_user_agent': 'goldflipper/0.1.2',
+                    'access_mode': 'READ_WRITE',
+                    'allow_unsigned_extensions': 'true',
+                    'threads': config.pool_size,  # Use pool size for thread count
+                    'memory_limit': '4GB',  # Reasonable default memory limit
+                    'temp_directory': str(config.temp_dir)  # Use configured temp directory
+                },
+                'read_only': False
+            }
         )
         
         # Set up engine event listeners
@@ -221,10 +239,19 @@ def init_db(force: bool = False) -> None:
     logger.info("Creating database schema")
     Base.metadata.create_all(engine)
     
-    # Optimize indexes
+    # Optimize tables using DuckDB's PRAGMA
     with get_db_connection() as session:
-        session.execute("ANALYZE")
-        logger.info("Database schema created and optimized")
+        try:
+            # Enable automatic statistics gathering
+            session.execute("SET enable_progress_bar=false;")
+            session.execute("SET enable_object_cache=true;")
+            session.execute("SET enable_external_access=true;")
+            # Force statistics collection for better query planning
+            session.execute("PRAGMA force_index_statistics;")
+            logger.info("Database schema created and optimized")
+        except Exception as e:
+            logger.error(f"Failed to optimize database: {e}")
+            # Don't raise the error since tables were created successfully
 
 def backup_database() -> Path:
     """

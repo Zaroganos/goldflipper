@@ -636,4 +636,418 @@ class TradingStrategy(Base):
             data['created_at'] = datetime.fromisoformat(data['created_at'])
         if 'last_modified' in data and data['last_modified']:
             data['last_modified'] = datetime.fromisoformat(data['last_modified'])
+        return cls(**data)
+
+class ServiceBackup(Base):
+    """
+    Service state backups and recovery points.
+    
+    This model stores service state backups for recovery purposes, including
+    backup rotation and state validation. It helps maintain system reliability
+    by providing recovery points in case of failures.
+    
+    Attributes:
+        backup_id (UUID): Unique identifier for the backup
+        service_name (str): Name of the service
+        state_data (JSON): Service state data
+        created_at (datetime): When the backup was created
+        is_valid (bool): Whether the backup is valid
+        validation_errors (JSON): Any validation errors found
+        backup_type (str): Type of backup (e.g., 'scheduled', 'manual', 'pre_update')
+        meta_data (JSON): Additional backup metadata
+        retention_days (int): How long to keep this backup
+    """
+    __tablename__ = 'service_backups'
+    
+    backup_id = Column(SQLUUID, primary_key=True, default=uuid4)
+    service_name = Column(String, nullable=False)
+    state_data = Column(JSON, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    is_valid = Column(Boolean, default=True)
+    validation_errors = Column(JSON)
+    backup_type = Column(String, nullable=False)
+    meta_data = Column(JSON)
+    retention_days = Column(Integer, default=30)
+    
+    __table_args__ = (
+        Index('idx_service_backups_service_date', 'service_name', 'created_at'),
+    )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            'backup_id': str(self.backup_id),
+            'service_name': self.service_name,
+            'state_data': self.state_data,
+            'created_at': self.created_at.isoformat(),
+            'is_valid': self.is_valid,
+            'validation_errors': self.validation_errors,
+            'backup_type': self.backup_type,
+            'meta_data': self.meta_data,
+            'retention_days': self.retention_days
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ServiceBackup':
+        """Create model from dictionary."""
+        if 'backup_id' in data:
+            data['backup_id'] = UUID(data['backup_id'])
+        if 'created_at' in data and isinstance(data['created_at'], str):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        return cls(**data)
+
+class LogEntry(Base):
+    """
+    Structured logging entries.
+    
+    This model implements a structured logging system that provides better
+    organization, searchability, and analysis capabilities compared to
+    traditional text-based logs.
+    
+    Attributes:
+        id (UUID): Unique identifier for the log entry
+        timestamp (datetime): When the log was created
+        level (str): Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        component (str): System component that generated the log
+        message (str): Log message
+        trace_id (str): Trace ID for request/operation tracking
+        meta_data (JSON): Additional context and structured data
+        source_file (str): Source file that generated the log
+        source_line (int): Line number in source file
+        stack_trace (Text): Stack trace for error logs
+    """
+    __tablename__ = 'log_entries'
+    
+    id = Column(SQLUUID, primary_key=True, default=uuid4)
+    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    level = Column(String, nullable=False)
+    component = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    trace_id = Column(String)
+    meta_data = Column(JSON)
+    source_file = Column(String)
+    source_line = Column(Integer)
+    stack_trace = Column(Text)
+    
+    __table_args__ = (
+        Index('idx_log_entries_timestamp', 'timestamp'),
+        Index('idx_log_entries_level_component', 'level', 'component'),
+        Index('idx_log_entries_trace_id', 'trace_id'),
+        CheckConstraint(
+            level.in_(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']),
+            name='valid_log_level'
+        ),
+    )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            'id': str(self.id),
+            'timestamp': self.timestamp.isoformat(),
+            'level': self.level,
+            'component': self.component,
+            'message': self.message,
+            'trace_id': self.trace_id,
+            'meta_data': self.meta_data,
+            'source_file': self.source_file,
+            'source_line': self.source_line,
+            'stack_trace': self.stack_trace
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'LogEntry':
+        """Create model from dictionary."""
+        if 'id' in data:
+            data['id'] = UUID(data['id'])
+        if 'timestamp' in data and isinstance(data['timestamp'], str):
+            data['timestamp'] = datetime.fromisoformat(data['timestamp'])
+        return cls(**data)
+
+class ConfigTemplate(Base):
+    """
+    Configuration templates and versioning.
+    
+    This model stores configuration templates and handles version tracking
+    for various system components. It enables validation of configurations
+    and maintains a history of changes.
+    
+    Attributes:
+        id (UUID): Unique identifier
+        name (str): Template name
+        category (str): Configuration category (e.g., 'trading', 'system', 'ui')
+        schema (JSON): JSON Schema for validation
+        default_values (JSON): Default configuration values
+        version (str): Template version
+        created_at (datetime): When the template was created
+        last_modified (datetime): Last modification timestamp
+        is_active (bool): Whether this template version is active
+        description (Text): Detailed template description
+        meta_data (JSON): Additional template metadata
+    """
+    __tablename__ = 'config_templates'
+    
+    id = Column(SQLUUID, primary_key=True, default=uuid4)
+    name = Column(String, nullable=False)
+    category = Column(String, nullable=False)
+    schema = Column(JSON, nullable=False)
+    default_values = Column(JSON)
+    version = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_modified = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    description = Column(Text)
+    meta_data = Column(JSON)
+    
+    __table_args__ = (
+        UniqueConstraint('name', 'version', name='unique_template_version'),
+        Index('idx_config_templates_category', 'category'),
+        Index('idx_config_templates_active', 'is_active'),
+    )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            'id': str(self.id),
+            'name': self.name,
+            'category': self.category,
+            'schema': self.schema,
+            'default_values': self.default_values,
+            'version': self.version,
+            'created_at': self.created_at.isoformat(),
+            'last_modified': self.last_modified.isoformat() if self.last_modified else None,
+            'is_active': self.is_active,
+            'description': self.description,
+            'meta_data': self.meta_data
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ConfigTemplate':
+        """Create model from dictionary."""
+        if 'id' in data:
+            data['id'] = UUID(data['id'])
+        if 'created_at' in data and isinstance(data['created_at'], str):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        if 'last_modified' in data and isinstance(data['last_modified'], str):
+            data['last_modified'] = datetime.fromisoformat(data['last_modified'])
+        return cls(**data)
+
+class WatchdogEvent(Base):
+    """
+    System monitoring watchdog events.
+    
+    This model tracks system monitoring events, including component health checks,
+    error conditions, and resolution status. It helps maintain system reliability
+    by providing a centralized way to track and respond to system events.
+    
+    Attributes:
+        id (UUID): Unique identifier
+        component (str): Component that generated the event
+        event_type (str): Type of event (e.g., 'health_check', 'error', 'warning')
+        severity (str): Event severity ('low', 'medium', 'high', 'critical')
+        message (str): Event description
+        timestamp (datetime): When the event occurred
+        resolved (bool): Whether the event has been resolved
+        resolved_at (datetime): When the event was resolved
+        resolution_notes (str): Notes about how the event was resolved
+        meta_data (JSON): Additional event context and data
+    """
+    __tablename__ = 'watchdog_events'
+    
+    id = Column(SQLUUID, primary_key=True, default=uuid4)
+    component = Column(String, nullable=False)
+    event_type = Column(String, nullable=False)
+    severity = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    resolved = Column(Boolean, default=False)
+    resolved_at = Column(DateTime)
+    resolution_notes = Column(Text)
+    meta_data = Column(JSON)
+    
+    __table_args__ = (
+        Index('idx_watchdog_events_component', 'component'),
+        Index('idx_watchdog_events_timestamp', 'timestamp'),
+        Index('idx_watchdog_events_resolved', 'resolved'),
+        CheckConstraint(
+            severity.in_(['low', 'medium', 'high', 'critical']),
+            name='valid_severity'
+        ),
+        CheckConstraint(
+            event_type.in_(['health_check', 'error', 'warning', 'info']),
+            name='valid_event_type'
+        ),
+    )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            'id': str(self.id),
+            'component': self.component,
+            'event_type': self.event_type,
+            'severity': self.severity,
+            'message': self.message,
+            'timestamp': self.timestamp.isoformat(),
+            'resolved': self.resolved,
+            'resolved_at': self.resolved_at.isoformat() if self.resolved_at else None,
+            'resolution_notes': self.resolution_notes,
+            'meta_data': self.meta_data
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'WatchdogEvent':
+        """Create model from dictionary."""
+        if 'id' in data:
+            data['id'] = UUID(data['id'])
+        if 'timestamp' in data and isinstance(data['timestamp'], str):
+            data['timestamp'] = datetime.fromisoformat(data['timestamp'])
+        if 'resolved_at' in data and isinstance(data['resolved_at'], str):
+            data['resolved_at'] = datetime.fromisoformat(data['resolved_at'])
+        return cls(**data)
+
+class ChartConfiguration(Base):
+    """
+    Chart settings and preferences.
+    
+    This model stores chart configurations, including indicator settings,
+    visual preferences, and layout options. It enables persistence of
+    user-specific chart customizations and default configurations.
+    
+    Attributes:
+        id (UUID): Unique identifier
+        name (str): Configuration name
+        chart_type (str): Type of chart (e.g., 'candlestick', 'line', 'ohlc')
+        timeframe (str): Chart timeframe (e.g., '1m', '5m', '1h', '1d')
+        indicators (JSON): Technical indicator settings
+        layout (JSON): Chart layout preferences
+        colors (JSON): Color scheme settings
+        created_at (datetime): When the configuration was created
+        last_modified (datetime): Last modification timestamp
+        is_default (bool): Whether this is a default configuration
+        creator (str): Who/what created the configuration
+        meta_data (JSON): Additional configuration data
+    """
+    __tablename__ = 'chart_configurations'
+    
+    id = Column(SQLUUID, primary_key=True, default=uuid4)
+    name = Column(String, nullable=False)
+    chart_type = Column(String, nullable=False)
+    timeframe = Column(String, nullable=False)
+    indicators = Column(JSON)
+    layout = Column(JSON)
+    colors = Column(JSON)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_modified = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_default = Column(Boolean, default=False)
+    creator = Column(String)
+    meta_data = Column(JSON)
+    
+    __table_args__ = (
+        CheckConstraint(
+            chart_type.in_(['candlestick', 'line', 'ohlc', 'area', 'bar']),
+            name='valid_chart_type'
+        ),
+        CheckConstraint(
+            timeframe.in_(['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M']),
+            name='valid_timeframe'
+        ),
+        Index('idx_chart_configurations_name', 'name'),
+        Index('idx_chart_configurations_default', 'is_default'),
+    )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            'id': str(self.id),
+            'name': self.name,
+            'chart_type': self.chart_type,
+            'timeframe': self.timeframe,
+            'indicators': self.indicators,
+            'layout': self.layout,
+            'colors': self.colors,
+            'created_at': self.created_at.isoformat(),
+            'last_modified': self.last_modified.isoformat() if self.last_modified else None,
+            'is_default': self.is_default,
+            'creator': self.creator,
+            'meta_data': self.meta_data
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ChartConfiguration':
+        """Create model from dictionary."""
+        if 'id' in data:
+            data['id'] = UUID(data['id'])
+        if 'created_at' in data and isinstance(data['created_at'], str):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        if 'last_modified' in data and isinstance(data['last_modified'], str):
+            data['last_modified'] = datetime.fromisoformat(data['last_modified'])
+        return cls(**data)
+
+class ToolState(Base):
+    """
+    Tool state and configuration management.
+    
+    This model stores state information and configurations for various tools
+    in the system, enabling state persistence across sessions and proper
+    recovery after restarts.
+    
+    Attributes:
+        id (UUID): Unique identifier
+        tool_name (str): Name of the tool
+        state (JSON): Current tool state
+        config (JSON): Tool configuration
+        last_active (datetime): When the tool was last active
+        is_enabled (bool): Whether the tool is enabled
+        error_state (JSON): Any error information
+        created_at (datetime): When the state was first created
+        last_modified (datetime): Last modification timestamp
+        version (str): Tool version this state is for
+        meta_data (JSON): Additional state metadata
+    """
+    __tablename__ = 'tool_states'
+    
+    id = Column(SQLUUID, primary_key=True, default=uuid4)
+    tool_name = Column(String, nullable=False)
+    state = Column(JSON)
+    config = Column(JSON)
+    last_active = Column(DateTime)
+    is_enabled = Column(Boolean, default=True)
+    error_state = Column(JSON)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_modified = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    version = Column(String)
+    meta_data = Column(JSON)
+    
+    __table_args__ = (
+        UniqueConstraint('tool_name', 'version', name='unique_tool_version'),
+        Index('idx_tool_states_name', 'tool_name'),
+        Index('idx_tool_states_active', 'is_enabled'),
+    )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            'id': str(self.id),
+            'tool_name': self.tool_name,
+            'state': self.state,
+            'config': self.config,
+            'last_active': self.last_active.isoformat() if self.last_active else None,
+            'is_enabled': self.is_enabled,
+            'error_state': self.error_state,
+            'created_at': self.created_at.isoformat(),
+            'last_modified': self.last_modified.isoformat() if self.last_modified else None,
+            'version': self.version,
+            'meta_data': self.meta_data
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ToolState':
+        """Create model from dictionary."""
+        if 'id' in data:
+            data['id'] = UUID(data['id'])
+        if 'last_active' in data and isinstance(data['last_active'], str):
+            data['last_active'] = datetime.fromisoformat(data['last_active'])
+        if 'created_at' in data and isinstance(data['created_at'], str):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        if 'last_modified' in data and isinstance(data['last_modified'], str):
+            data['last_modified'] = datetime.fromisoformat(data['last_modified'])
         return cls(**data) 

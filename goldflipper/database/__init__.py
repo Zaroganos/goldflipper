@@ -25,6 +25,12 @@ Key Components
    - PlayStatusHistory: Tracks status changes of plays
    - TradeLog: Records trade execution details
    - TradingStrategy: Defines trading strategies and parameters
+   - ServiceBackup: Stores service state backups
+   - LogEntry: Structured logging entries
+   - ConfigTemplate: Configuration templates and validation
+   - WatchdogEvent: System monitoring events
+   - ChartConfiguration: Chart settings and preferences
+   - ToolState: Tool state and configuration management
 
 3. Repositories:
    - Implements repository pattern for clean data access
@@ -60,8 +66,30 @@ Dependencies
 """
 
 from .connection import get_db_connection, init_db
-from .models import Play, TradeLog, PlayStatusHistory, TradingStrategy
-from .repositories import PlayRepository, TradeLogRepository, PlayStatusHistoryRepository
+from .models import (
+    Play, 
+    TradeLog, 
+    PlayStatusHistory, 
+    TradingStrategy, 
+    ServiceBackup,
+    LogEntry,
+    ConfigTemplate,
+    WatchdogEvent,
+    ChartConfiguration,
+    ToolState
+)
+from .repositories import (
+    PlayRepository, 
+    TradeLogRepository, 
+    PlayStatusHistoryRepository,
+    TradingStrategyRepository,
+    ServiceBackupRepository,
+    LogEntryRepository,
+    ConfigTemplateRepository,
+    WatchdogEventRepository,
+    ChartConfigurationRepository,
+    ToolStateRepository
+)
 
 __all__ = [
     'get_db_connection',
@@ -70,7 +98,20 @@ __all__ = [
     'TradeLog',
     'PlayStatusHistory',
     'TradingStrategy',
+    'ServiceBackup',
+    'LogEntry',
+    'ConfigTemplate',
+    'WatchdogEvent',
+    'ChartConfiguration',
+    'ToolState',
     'PlayRepository',
     'TradeLogRepository',
     'PlayStatusHistoryRepository',
+    'TradingStrategyRepository',
+    'ServiceBackupRepository',
+    'LogEntryRepository',
+    'ConfigTemplateRepository',
+    'WatchdogEventRepository',
+    'ChartConfigurationRepository',
+    'ToolStateRepository',
 ] 
