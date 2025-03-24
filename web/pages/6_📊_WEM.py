@@ -15,9 +15,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from uuid import UUID
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -25,6 +26,8 @@ sys.path.append(str(project_root))
 
 from goldflipper.database.connection import get_db_connection, init_db
 from goldflipper.database.models import WEMStock, MarketData
+from goldflipper.database.repositories import MarketDataRepository
+from goldflipper.data.market.manager import MarketDataManager
 from goldflipper.config.config import config
 
 # Page configuration
@@ -33,6 +36,12 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
+
+# Initialize market data manager
+@st.cache_resource
+def get_market_data_manager():
+    """Get or create the singleton MarketDataManager instance"""
+    return MarketDataManager()
 
 def get_wem_stocks(session: Session) -> List[Dict[str, Any]]:
     """Get all WEM stocks from database as dictionaries"""
@@ -46,11 +55,59 @@ def get_default_wem_stocks(session: Session) -> List[Dict[str, Any]]:
 
 def get_market_data(session: Session, symbol: str, days: int = 30) -> List[MarketData]:
     """Get recent market data for a symbol"""
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    return session.query(MarketData).filter(
-        MarketData.symbol == symbol,
-        MarketData.timestamp >= cutoff
-    ).order_by(MarketData.timestamp.desc()).all()
+    repo = MarketDataRepository(session)
+    end_time = datetime.utcnow()
+    start_time = end_time - timedelta(days=days)
+    return repo.get_price_history(symbol, start_time, end_time)
+
+def get_latest_market_data(session: Session, symbol: str) -> Optional[MarketData]:
+    """Get latest market data for a symbol"""
+    repo = MarketDataRepository(session)
+    return repo.get_latest_price(symbol)
+
+def update_market_data(session: Session, symbol: str) -> Optional[MarketData]:
+    """Update market data for a symbol"""
+    try:
+        manager = get_market_data_manager()
+        repo = MarketDataRepository(session)
+        
+        # Get live price from market data provider
+        price = manager.get_stock_price(symbol)
+        if price is None:
+            st.warning(f"Could not get current price for {symbol}")
+            return None
+            
+        # Create new market data entry
+        market_data = MarketData(
+            symbol=symbol,
+            timestamp=datetime.utcnow(),
+            close=price,  # Use as close since it's current price
+            source=manager.provider.__class__.__name__  # Use class name instead of attribute
+        )
+        
+        try:
+            # Get option data if available
+            option_data = manager.get_option_quote(f"{symbol}0")  # Use a dummy option to get implied vol
+            if option_data:
+                market_data.implied_volatility = option_data.get('implied_volatility', 0.0)
+                market_data.delta = option_data.get('delta', 0.0)
+                market_data.gamma = option_data.get('gamma', 0.0)
+                market_data.theta = option_data.get('theta', 0.0)
+                market_data.vega = option_data.get('vega', 0.0)
+        except Exception as e:
+            st.warning(f"Could not get options data for {symbol}: {str(e)}")
+            # Continue without options data
+        
+        # Save to database
+        session.add(market_data)
+        session.commit()
+        
+        return market_data
+        
+    except Exception as e:
+        st.error(f"Error updating market data for {symbol}: {str(e)}")
+        session.rollback()
+        return None
 
 def add_wem_stock(session: Session, symbol: str, is_default: bool = False) -> Dict[str, Any]:
     """Add a new WEM stock to database"""
@@ -101,31 +158,37 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dic
     4. Delta-based boundaries
     """
     symbol = stock_data['symbol']
-    market_data = get_market_data(session, symbol)
+    
+    # First try to get latest data from database
+    market_data = get_latest_market_data(session, symbol)
+    
+    # If no recent data or data is old, update it
+    if not market_data or (datetime.utcnow() - market_data.timestamp).total_seconds() > 300:  # 5 minutes
+        market_data = update_market_data(session, symbol)
     
     if not market_data:
         return None
     
-    # Get latest market data
-    latest = market_data[0]
-    
-    # Calculate ATM price (latest close)
-    atm_price = latest.close
+    # Get historical data for volatility calculation
+    historical_data = get_market_data(session, symbol, days=20)
     
     # Calculate historical volatility (20-day)
-    if len(market_data) >= 20:
-        closes = [d.close for d in market_data[:20]]
+    if len(historical_data) >= 20:
+        closes = [d.close for d in historical_data]
         returns = np.diff(np.log(closes)) * 100
         hist_vol = np.std(returns) * np.sqrt(252)  # Annualized
     else:
         hist_vol = 0
     
     # Use market implied volatility if available, otherwise use historical
-    iv = latest.implied_volatility if latest.implied_volatility else hist_vol
+    iv = market_data.implied_volatility if market_data.implied_volatility else hist_vol
     
     # Calculate expected move components
     weekly_factor = np.sqrt(5/252)  # Weekly time decay factor
     weekly_vol = iv * weekly_factor
+    
+    # Get current price
+    atm_price = market_data.close
     
     # Calculate straddle values
     straddle_strangle = atm_price * weekly_vol * 0.4  # Approximate straddle price
@@ -155,11 +218,13 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dic
         'delta_16_minus': delta_16_minus,
         'delta_range': delta_range,
         'delta_range_pct': delta_range_pct,
+        'last_updated': market_data.timestamp,
         'meta_data': {
             'historical_volatility': hist_vol,
             'implied_volatility': iv,
             'weekly_volatility': weekly_vol,
-            'calculation_timestamp': datetime.utcnow().isoformat()
+            'calculation_timestamp': datetime.utcnow().isoformat(),
+            'data_source': market_data.source
         }
     }
 
@@ -175,18 +240,19 @@ def create_wem_table(stocks: List[Dict[str, Any]], layout: str = 'vertical') -> 
             except (ValueError, AttributeError):
                 last_updated = None
         
+        # Store raw numeric values
         row = {
             'Symbol': stock['symbol'],
-            'ATM': f"${stock['atm_price']:.2f}" if stock.get('atm_price') else "N/A",
-            'Straddle/Strangle': f"{stock['straddle_strangle']:.3f}" if stock.get('straddle_strangle') else "N/A",
-            'WEM Spread': f"{stock['wem_spread']*100:.3f}%" if stock.get('wem_spread') else "N/A",
-            'Delta 16 (+)': f"{stock['delta_16_plus']:.2f}" if stock.get('delta_16_plus') else "N/A",
-            'Straddle 2': f"{stock['straddle_2']:.2f}" if stock.get('straddle_2') else "N/A",
-            'Straddle 1': f"{stock['straddle_1']:.2f}" if stock.get('straddle_1') else "N/A",
-            'Delta 16 (-)': f"{stock['delta_16_minus']:.2f}" if stock.get('delta_16_minus') else "N/A",
-            'Delta Range': f"{stock['delta_range']:.2f}" if stock.get('delta_range') else "N/A",
-            'Delta Range %': f"{stock['delta_range_pct']*100:.3f}%" if stock.get('delta_range_pct') else "N/A",
-            'Last Updated': last_updated.strftime('%Y-%m-%d %H:%M:%S') if last_updated else "Never"
+            'ATM': stock.get('atm_price'),
+            'Straddle/Strangle': stock.get('straddle_strangle'),
+            'WEM Spread': stock.get('wem_spread', 0) * 100 if stock.get('wem_spread') is not None else None,  # Convert to percentage
+            'Delta 16 (+)': stock.get('delta_16_plus'),
+            'Straddle 2': stock.get('straddle_2'),
+            'Straddle 1': stock.get('straddle_1'),
+            'Delta 16 (-)': stock.get('delta_16_minus'),
+            'Delta Range': stock.get('delta_range'),
+            'Delta Range %': stock.get('delta_range_pct', 0) * 100 if stock.get('delta_range_pct') is not None else None,  # Convert to percentage
+            'Last Updated': last_updated
         }
         data.append(row)
     
@@ -302,17 +368,45 @@ def main():
                             "Symbol",
                             width="small",
                         ),
+                        "ATM": st.column_config.NumberColumn(
+                            "ATM",
+                            format="$%.2f"
+                        ),
+                        "Straddle/Strangle": st.column_config.NumberColumn(
+                            "Straddle/Strangle",
+                            format="%.3f"
+                        ),
                         "WEM Spread": st.column_config.NumberColumn(
                             "WEM Spread",
-                            format="%.3f%%",
+                            format="%.3f%%"
+                        ),
+                        "Delta 16 (+)": st.column_config.NumberColumn(
+                            "Delta 16 (+)",
+                            format="%.2f"
+                        ),
+                        "Straddle 2": st.column_config.NumberColumn(
+                            "Straddle 2",
+                            format="%.2f"
+                        ),
+                        "Straddle 1": st.column_config.NumberColumn(
+                            "Straddle 1",
+                            format="%.2f"
+                        ),
+                        "Delta 16 (-)": st.column_config.NumberColumn(
+                            "Delta 16 (-)",
+                            format="%.2f"
+                        ),
+                        "Delta Range": st.column_config.NumberColumn(
+                            "Delta Range",
+                            format="%.2f"
                         ),
                         "Delta Range %": st.column_config.NumberColumn(
                             "Delta Range %",
-                            format="%.3f%%",
+                            format="%.3f%%"
                         ),
                         "Last Updated": st.column_config.DatetimeColumn(
                             "Last Updated",
-                            format="MM/DD/YY HH:mm:ss",
+                            format="MM/DD/YY HH:mm:ss"
                         ),
                     }
                 )
