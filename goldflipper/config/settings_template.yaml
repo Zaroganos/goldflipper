@@ -568,4 +568,6 @@ csv_ingestor:
 ####################################################################################################
 system:
   console:
-    visible: false  # Whether to show the Streamlit server console window
+    visible: true  # Whether to show the Streamlit server console window.
+#  Needs to be set to true at first-launch in order to skip email entry. When this is 
+#  patched in the streamlit config, can set this back to false by default.

@@ -1050,4 +1050,84 @@ class ToolState(Base):
             data['created_at'] = datetime.fromisoformat(data['created_at'])
         if 'last_modified' in data and isinstance(data['last_modified'], str):
             data['last_modified'] = datetime.fromisoformat(data['last_modified'])
+        return cls(**data)
+
+class WEMStock(Base):
+    """
+    Weekly Expected Moves (WEM) stock tracking and analysis.
+    
+    This model stores WEM-related data for tracked stocks, including
+    calculated moves, analysis notes, and tracking preferences.
+    
+    Attributes:
+        id (UUID): Unique identifier
+        symbol (str): Stock symbol
+        is_default (bool): Whether this is a default tracked stock
+        atm_price (float): Current ATM price
+        straddle_strangle (float): Straddle/Strangle value
+        wem_spread (float): WEM spread percentage
+        delta_16_plus (float): Delta 16 positive value
+        straddle_2 (float): Straddle 2 value
+        straddle_1 (float): Straddle 1 value
+        delta_16_minus (float): Delta 16 negative value
+        delta_range (float): Delta range value
+        delta_range_pct (float): Delta range percentage
+        notes (Text): Analysis notes
+        last_updated (datetime): Last update timestamp
+        meta_data (JSON): Additional data and context
+    """
+    __tablename__ = 'wem_stocks'
+    
+    id = Column(SQLUUID, primary_key=True, default=uuid4)
+    symbol = Column(String, nullable=False)
+    is_default = Column(Boolean, default=False)
+    atm_price = Column(Float)
+    straddle_strangle = Column(Float)
+    wem_spread = Column(Float)
+    delta_16_plus = Column(Float)
+    straddle_2 = Column(Float)
+    straddle_1 = Column(Float)
+    delta_16_minus = Column(Float)
+    delta_range = Column(Float)
+    delta_range_pct = Column(Float)
+    notes = Column(Text)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    meta_data = Column(JSON)
+    
+    __table_args__ = (
+        # Ensure unique symbols
+        UniqueConstraint('symbol', name='unique_wem_symbol'),
+        # Index for faster lookups
+        Index('idx_wem_symbol', 'symbol'),
+        Index('idx_wem_is_default', 'is_default'),
+        Index('idx_wem_last_updated', 'last_updated'),
+    )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the model to a dictionary."""
+        return {
+            'id': str(self.id),
+            'symbol': self.symbol,
+            'is_default': self.is_default,
+            'atm_price': self.atm_price,
+            'straddle_strangle': self.straddle_strangle,
+            'wem_spread': self.wem_spread,
+            'delta_16_plus': self.delta_16_plus,
+            'straddle_2': self.straddle_2,
+            'straddle_1': self.straddle_1,
+            'delta_16_minus': self.delta_16_minus,
+            'delta_range': self.delta_range,
+            'delta_range_pct': self.delta_range_pct,
+            'notes': self.notes,
+            'last_updated': self.last_updated.isoformat() if self.last_updated else None,
+            'meta_data': self.meta_data
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'WEMStock':
+        """Create a model instance from a dictionary."""
+        if 'id' in data:
+            data['id'] = UUID(data['id'])
+        if 'last_updated' in data and data['last_updated']:
+            data['last_updated'] = datetime.fromisoformat(data['last_updated'])
         return cls(**data) 

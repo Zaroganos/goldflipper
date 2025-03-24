@@ -91,14 +91,15 @@ def main():
         return
     
     # Create tabs for different setting categories
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "Trading Accounts",
         "Trading Parameters",
         "Market Data",
         "Chart Settings",
         "System Settings",
         "File Operations",
-        "Advanced"
+        "Advanced",
+        "WEM Settings"
     ])
     
     # Trading Accounts Tab
@@ -521,6 +522,86 @@ def main():
                     "Test Symbols (one per line)",
                     "\n".join(settings['auto_play_creator'].get('test_symbols', ['SPY', 'QQQ', 'AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'BABA', 'GME']))
                 ).split('\n')
+    
+    # WEM Settings Tab
+    with tab8:
+        st.subheader("Weekly Expected Moves (WEM) Settings")
+        
+        # Load current WEM settings
+        wem_settings = config.get('wem', {})
+        
+        # Default tracked stocks
+        if 'tracked_stocks' not in wem_settings:
+            wem_settings['tracked_stocks'] = []
+        
+        st.markdown("### Default Tracked Stocks")
+        new_stock = st.text_input("Add Default Stock Symbol")
+        if st.button("Add Default Stock") and new_stock:
+            if new_stock.upper() not in wem_settings['tracked_stocks']:
+                wem_settings['tracked_stocks'].append(new_stock.upper())
+                config.set('wem', wem_settings)
+                st.success(f"Added {new_stock.upper()} to default tracked stocks")
+                st.rerun()
+        
+        # Display current default stocks
+        if wem_settings['tracked_stocks']:
+            st.markdown("#### Current Default Stocks:")
+            for stock in wem_settings['tracked_stocks']:
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(stock)
+                with col2:
+                    if st.button("Remove", key=f"remove_default_{stock}"):
+                        wem_settings['tracked_stocks'].remove(stock)
+                        config.set('wem', wem_settings)
+                        st.success(f"Removed {stock} from default tracked stocks")
+                        st.rerun()
+        
+        # Calculation Settings
+        st.markdown("### Calculation Settings")
+        wem_settings['calculation_method'] = st.selectbox(
+            "Default Calculation Method",
+            ["standard", "advanced", "custom"],
+            index=["standard", "advanced", "custom"].index(
+                wem_settings.get('calculation_method', 'standard')
+            )
+        )
+        
+        wem_settings['update_frequency'] = st.selectbox(
+            "Default Update Frequency",
+            ["hourly", "daily", "weekly"],
+            index=["hourly", "daily", "weekly"].index(
+                wem_settings.get('update_frequency', 'daily')
+            )
+        )
+        
+        # Advanced Settings
+        with st.expander("Advanced WEM Settings"):
+            wem_settings['confidence_threshold'] = st.slider(
+                "Confidence Threshold (%)",
+                min_value=0,
+                max_value=100,
+                value=wem_settings.get('confidence_threshold', 70),
+                step=5
+            )
+            
+            wem_settings['max_stocks'] = st.number_input(
+                "Maximum Number of Tracked Stocks",
+                min_value=1,
+                max_value=100,
+                value=wem_settings.get('max_stocks', 20),
+                step=1
+            )
+            
+            wem_settings['auto_update'] = st.checkbox(
+                "Enable Automatic Updates",
+                value=wem_settings.get('auto_update', True)
+            )
+        
+        # Save WEM settings
+        if st.button("Save WEM Settings"):
+            config.set('wem', wem_settings)
+            st.success("WEM settings saved successfully!")
     
     # Save button at the bottom
     if st.button("Save Settings"):

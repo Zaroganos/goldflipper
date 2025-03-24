@@ -46,7 +46,7 @@ def main():
         st.markdown("### Navigation")
         page = st.radio(
             "Select a page",
-            ["Dashboard", "Trading", "Analysis", "Settings"],
+            ["Dashboard", "Trading", "Analysis", "WEM", "Settings"],
             index=0
         )
         
@@ -76,6 +76,8 @@ def main():
         st.write("Trading interface coming soon...")
     elif page == "Analysis":
         st.write("Analysis tools coming soon...")
+    elif page == "WEM":
+        st.switch_page("pages/6_📊_WEM.py")
     elif page == "Settings":
         st.write("Settings page coming soon...")
 
