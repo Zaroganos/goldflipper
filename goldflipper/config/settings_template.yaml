@@ -289,8 +289,72 @@ viewer:
 # Logging Configuration
 ####################################################################################################
 logging:
-  level: "INFO"                      # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-  format: "%(asctime)s - %(levelname)s - %(message)s"  # Log message format
+  # Global logging settings
+  global:
+    level: "INFO"                      # Global logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    format: "%(asctime)s - %(levelname)s - %(message)s"  # Default log message format
+    file_rotation: true                # Enable log file rotation
+    max_file_size_mb: 10              # Maximum size of each log file in MB
+    backup_count: 5                    # Number of backup files to keep
+    console_output: true              # Whether to output logs to console
+  
+  # Module-specific logging settings (overrides global settings)
+  modules:
+    wem:                              # WEM module logging settings
+      level: "INFO"
+      format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+      file: "wem.log"                 # Specific log file for WEM
+      debug_file: "wem_debug.log"     # Separate file for debug logs
+    
+    market_data:                      # Market data module logging settings
+      level: "INFO"
+      format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+      file: "market_data.log"
+      debug_file: "market_data_debug.log"
+    
+    trading:                          # Trading module logging settings
+      level: "INFO"
+      format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+      file: "trading.log"
+      debug_file: "trading_debug.log"
+    
+    database:                         # Database module logging settings
+      level: "INFO"
+      format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+      file: "database.log"
+      debug_file: "database_debug.log"
+    
+    plays:                           # Plays module logging settings
+      level: "INFO"
+      format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+      file: "plays.log"
+      debug_file: "plays_debug.log"
+
+  # Log file paths and organization
+  paths:
+    base_dir: "logs"                  # Base directory for all logs
+    archive_dir: "logs/archive"       # Directory for archived logs
+    error_dir: "logs/errors"          # Directory for error logs only
+    
+  # Error tracking settings
+  error_tracking:
+    enabled: true                     # Enable detailed error tracking
+    include_traceback: true           # Include full traceback in error logs
+    notify_critical: true             # Send notifications for critical errors
+    aggregate_similar: true           # Aggregate similar errors in reports
+    
+  # Performance logging settings
+  performance:
+    enabled: true                     # Enable performance logging
+    log_slow_operations: true         # Log operations that take longer than threshold
+    slow_operation_threshold: 1.0     # Threshold in seconds for slow operations
+    
+  # Debug mode settings
+  debug:
+    enabled: false                    # Master switch for debug mode
+    verbose: false                    # Extra verbose debug output
+    log_all_operations: false         # Log all operations (very verbose)
+    separate_debug_file: true         # Keep debug logs in separate files
 
 ####################################################################################################
 # Market Hours Settings

@@ -10,6 +10,7 @@ from .providers.alpaca_provider import AlpacaProvider
 from .cache import CycleCache
 from .errors import *
 from goldflipper.utils.display import TerminalDisplay as display
+import pandas as pd
 
 class MarketDataManager:
     """Central manager for market data operations"""
@@ -149,4 +150,27 @@ class MarketDataManager:
     def start_new_cycle(self):
         """Start a new market data cycle, clearing the cache"""
         self.logger.info("Starting new market data cycle")
-        self.cache.new_cycle() 
+        self.cache.new_cycle()
+        
+    def get_option_chain(self, symbol: str, expiration_date: Optional[str] = None) -> Dict[str, pd.DataFrame]:
+        """Get option chain data with cycle caching"""
+        try:
+            cache_key = f"option_chain:{symbol}:{expiration_date or 'nearest'}"
+            if cached_chain := self.cache.get(cache_key):
+                return cached_chain
+                
+            self.logger.info(f"Fetching option chain for {symbol}")
+            chain = self._try_providers('get_option_chain', symbol, expiration_date)
+            
+            if chain is not None:
+                self.cache.set(cache_key, chain)
+                return chain
+                
+            self.logger.error(f"Failed to get option chain for {symbol}")
+            display.error(f"Failed to get option chain for {symbol}")
+            return {'calls': pd.DataFrame(), 'puts': pd.DataFrame()}
+            
+        except Exception as e:
+            self.logger.error(f"Error getting option chain for {symbol}: {str(e)}")
+            display.error(f"Error getting option chain for {symbol}: {str(e)}")
+            return {'calls': pd.DataFrame(), 'puts': pd.DataFrame()} 

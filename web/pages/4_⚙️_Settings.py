@@ -385,40 +385,200 @@ def main():
             settings['logging'] = {}
         
         with st.expander("Logging Settings"):
-            settings['logging']['level'] = st.selectbox(
-                "Logging Level",
+            # Create tabs for different logging sections
+            log_tab1, log_tab2, log_tab3, log_tab4, log_tab5 = st.tabs([
+                "Global Settings",
+                "Module Settings",
+                "Error Tracking",
+                "Performance",
+                "Debug & Files"
+            ])
+            
+            # Global Settings Tab
+            with log_tab1:
+                st.markdown("### Global Logging Settings")
+                col1, col2 = st.columns(2)
+                with col1:
+                    settings['logging']['global'] = {
+                        'level': st.selectbox(
+                            "Global Logging Level",
                 options=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                 index=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].index(
-                    settings['logging'].get('level', 'INFO')
-                )
-            )
-            settings['logging']['format'] = st.text_input(
+                                settings['logging'].get('global', {}).get('level', 'INFO')
+                            )
+                        ),
+                        'format': st.text_input(
+                            "Log Format",
+                            value=settings['logging'].get('global', {}).get('format', '%(asctime)s - %(levelname)s - %(message)s')
+                        ),
+                        'file_rotation': st.checkbox(
+                            "Enable Log File Rotation",
+                            value=settings['logging'].get('global', {}).get('file_rotation', True)
+                        ),
+                        'console_output': st.checkbox(
+                            "Enable Console Output",
+                            value=settings['logging'].get('global', {}).get('console_output', True)
+                        )
+                    }
+                with col2:
+                    if settings['logging']['global']['file_rotation']:
+                        settings['logging']['global']['max_file_size_mb'] = st.number_input(
+                            "Max File Size (MB)",
+                            min_value=1,
+                            max_value=100,
+                            value=settings['logging'].get('global', {}).get('max_file_size_mb', 10)
+                        )
+                        settings['logging']['global']['backup_count'] = st.number_input(
+                            "Number of Backup Files",
+                            min_value=1,
+                            max_value=20,
+                            value=settings['logging'].get('global', {}).get('backup_count', 5)
+                        )
+            
+            # Module-specific Settings Tab
+            with log_tab2:
+                st.markdown("### Module-specific Settings")
+                if 'modules' not in settings['logging']:
+                    settings['logging']['modules'] = {}
+                
+                modules = ['wem', 'market_data', 'trading', 'database', 'plays']
+                for module in modules:
+                    st.markdown(f"#### {module.replace('_', ' ').title()}")
+                    if module not in settings['logging']['modules']:
+                        settings['logging']['modules'][module] = {}
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        settings['logging']['modules'][module]['level'] = st.selectbox(
+                            "Logging Level",
+                            options=['INHERIT', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                            index=['INHERIT', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].index(
+                                settings['logging']['modules'][module].get('level', 'INHERIT')
+                            ),
+                            key=f"level_{module}"
+                        )
+                        settings['logging']['modules'][module]['format'] = st.text_input(
                 "Log Format",
-                settings['logging'].get('format', '%(asctime)s - %(levelname)s - %(message)s')
-            )
-        
-        # Monitoring
-        if 'monitoring' not in settings:
-            settings['monitoring'] = {}
-        
-        with st.expander("Monitoring Settings"):
-            settings['monitoring']['polling_interval'] = st.number_input(
-                "Position Check Interval (seconds)",
-                min_value=1,
-                max_value=300,
-                value=settings['monitoring'].get('polling_interval', 30)
-            )
-            settings['monitoring']['max_retries'] = st.number_input(
-                "Maximum Retry Attempts",
-                min_value=1,
-                max_value=10,
-                value=settings['monitoring'].get('max_retries', 3)
-            )
-            settings['monitoring']['retry_delay'] = st.number_input(
-                "Retry Delay (seconds)",
-                min_value=1,
-                max_value=60,
-                value=settings['monitoring'].get('retry_delay', 2)
+                            value=settings['logging']['modules'][module].get(
+                                'format',
+                                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                            ),
+                            key=f"format_{module}"
+                        )
+                    with col2:
+                        settings['logging']['modules'][module]['file'] = st.text_input(
+                            "Log File",
+                            value=settings['logging']['modules'][module].get('file', f"{module}.log"),
+                            key=f"file_{module}"
+                        )
+                        if settings['logging']['modules'][module]['level'] == 'DEBUG':
+                            settings['logging']['modules'][module]['debug_file'] = st.text_input(
+                                "Debug Log File",
+                                value=settings['logging']['modules'][module].get('debug_file', f"{module}_debug.log"),
+                                key=f"debug_file_{module}"
+                            )
+                    st.markdown("---")
+            
+            # Error Tracking Tab
+            with log_tab3:
+                st.markdown("### Error Tracking")
+                if 'error_tracking' not in settings['logging']:
+                    settings['logging']['error_tracking'] = {}
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    settings['logging']['error_tracking']['enabled'] = st.checkbox(
+                        "Enable Detailed Error Tracking",
+                        value=settings['logging']['error_tracking'].get('enabled', True)
+                    )
+                    settings['logging']['error_tracking']['include_traceback'] = st.checkbox(
+                        "Include Full Traceback",
+                        value=settings['logging']['error_tracking'].get('include_traceback', True)
+                    )
+                with col2:
+                    settings['logging']['error_tracking']['notify_critical'] = st.checkbox(
+                        "Notify on Critical Errors",
+                        value=settings['logging']['error_tracking'].get('notify_critical', True)
+                    )
+                    settings['logging']['error_tracking']['aggregate_similar'] = st.checkbox(
+                        "Aggregate Similar Errors",
+                        value=settings['logging']['error_tracking'].get('aggregate_similar', True)
+                    )
+            
+            # Performance Tab
+            with log_tab4:
+                st.markdown("### Performance Logging")
+                if 'performance' not in settings['logging']:
+                    settings['logging']['performance'] = {}
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    settings['logging']['performance']['enabled'] = st.checkbox(
+                        "Enable Performance Logging",
+                        value=settings['logging']['performance'].get('enabled', True)
+                    )
+                    settings['logging']['performance']['log_slow_operations'] = st.checkbox(
+                        "Log Slow Operations",
+                        value=settings['logging']['performance'].get('log_slow_operations', True)
+                    )
+                with col2:
+                    if settings['logging']['performance']['log_slow_operations']:
+                        settings['logging']['performance']['slow_operation_threshold'] = st.number_input(
+                            "Slow Operation Threshold (seconds)",
+                            min_value=0.1,
+                            max_value=10.0,
+                            value=float(settings['logging']['performance'].get('slow_operation_threshold', 1.0)),
+                            step=0.1
+                        )
+            
+            # Debug & Files Tab
+            with log_tab5:
+                # Debug Mode Settings
+                st.markdown("### Debug Mode")
+                if 'debug' not in settings['logging']:
+                    settings['logging']['debug'] = {}
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    settings['logging']['debug']['enabled'] = st.checkbox(
+                        "Enable Debug Mode",
+                        value=settings['logging']['debug'].get('enabled', False)
+                    )
+                    if settings['logging']['debug']['enabled']:
+                        settings['logging']['debug']['verbose'] = st.checkbox(
+                            "Verbose Debug Output",
+                            value=settings['logging']['debug'].get('verbose', False)
+                        )
+                with col2:
+                    if settings['logging']['debug']['enabled']:
+                        settings['logging']['debug']['log_all_operations'] = st.checkbox(
+                            "Log All Operations",
+                            value=settings['logging']['debug'].get('log_all_operations', False)
+                        )
+                        settings['logging']['debug']['separate_debug_file'] = st.checkbox(
+                            "Separate Debug Log Files",
+                            value=settings['logging']['debug'].get('separate_debug_file', True)
+                        )
+                
+                # Log File Paths
+                st.markdown("### Log File Organization")
+                if 'paths' not in settings['logging']:
+                    settings['logging']['paths'] = {}
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    settings['logging']['paths']['base_dir'] = st.text_input(
+                        "Base Log Directory",
+                        value=settings['logging']['paths'].get('base_dir', 'logs')
+                    )
+                    settings['logging']['paths']['archive_dir'] = st.text_input(
+                        "Archive Directory",
+                        value=settings['logging']['paths'].get('archive_dir', 'logs/archive')
+                    )
+                with col2:
+                    settings['logging']['paths']['error_dir'] = st.text_input(
+                        "Error Log Directory",
+                        value=settings['logging']['paths'].get('error_dir', 'logs/errors')
             )
     
     # File Operations Tab
@@ -530,8 +690,21 @@ def main():
         # Load current WEM settings
         wem_settings = config.get('wem', {})
         
-        # Default tracked stocks
-        if 'tracked_stocks' not in wem_settings:
+        # Initialize WEM settings if they don't exist
+        if not wem_settings:
+            wem_settings = {
+                'tracked_stocks': [],
+                'calculation_method': 'standard',
+                'update_frequency': 'daily',
+                'confidence_threshold': 70,
+                'max_stocks': 20,
+                'auto_update': True
+            }
+            settings['wem'] = wem_settings
+            save_settings(settings)
+        
+        # Initialize default tracked stocks if not present
+        if not isinstance(wem_settings.get('tracked_stocks'), list):
             wem_settings['tracked_stocks'] = []
         
         st.markdown("### Default Tracked Stocks")
@@ -539,9 +712,12 @@ def main():
         if st.button("Add Default Stock") and new_stock:
             if new_stock.upper() not in wem_settings['tracked_stocks']:
                 wem_settings['tracked_stocks'].append(new_stock.upper())
-                config.set('wem', wem_settings)
-                st.success(f"Added {new_stock.upper()} to default tracked stocks")
-                st.rerun()
+                settings['wem'] = wem_settings
+                if save_settings(settings):
+                    st.success(f"Added {new_stock.upper()} to default tracked stocks")
+                    st.rerun()
+                else:
+                    st.error("Failed to save settings")
         
         # Display current default stocks
         if wem_settings['tracked_stocks']:
@@ -553,9 +729,12 @@ def main():
                 with col2:
                     if st.button("Remove", key=f"remove_default_{stock}"):
                         wem_settings['tracked_stocks'].remove(stock)
-                        config.set('wem', wem_settings)
-                        st.success(f"Removed {stock} from default tracked stocks")
-                        st.rerun()
+                        settings['wem'] = wem_settings
+                        if save_settings(settings):
+                            st.success(f"Removed {stock} from default tracked stocks")
+                            st.rerun()
+                        else:
+                            st.error("Failed to save settings")
         
         # Calculation Settings
         st.markdown("### Calculation Settings")
@@ -600,8 +779,11 @@ def main():
         
         # Save WEM settings
         if st.button("Save WEM Settings"):
-            config.set('wem', wem_settings)
-            st.success("WEM settings saved successfully!")
+            settings['wem'] = wem_settings
+            if save_settings(settings):
+                st.success("WEM settings saved successfully!")
+            else:
+                st.error("Failed to save settings")
     
     # Save button at the bottom
     if st.button("Save Settings"):

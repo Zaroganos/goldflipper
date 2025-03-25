@@ -73,3 +73,8 @@ dist/
 # Optional - Temporary files
 *.tmp
 *.swp
+
+# Exports directory
+/exports/
+exports/*
+# *.xlsx <-- ignore all xlsx files regardless of directory
