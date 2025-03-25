@@ -3,12 +3,16 @@ import sys
 import os
 from pathlib import Path
 import yaml
+import logging
+from datetime import datetime
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent.parent
 sys.path.append(str(project_root))
 
 from goldflipper.config.config import config
+from goldflipper.database.connection import get_db_connection
+from web.utils.settings_manager import SettingsManager
 
 # Page configuration
 st.set_page_config(
@@ -16,6 +20,9 @@ st.set_page_config(
     page_icon="⚙️",
     layout="wide"
 )
+
+# Add logging configuration
+logger = logging.getLogger(__name__)
 
 def load_settings():
     """Load current settings from YAML file"""
@@ -29,17 +36,57 @@ def load_settings():
         st.error(f"Error loading settings: {str(e)}")
         return None
 
-def save_settings(settings):
-    """Save settings to YAML file"""
+def save_settings(new_settings):
+    """Save settings to YAML file while preserving structure and comments"""
     try:
         config_dir = project_root / 'goldflipper' / 'config'
         config_dir.mkdir(exist_ok=True)
         settings_file = config_dir / 'settings.yaml'
         
+        # Load existing settings with structure
+        current_settings = {}
+        if settings_file.exists():
+            with open(settings_file, 'r') as f:
+                current_settings = yaml.safe_load(f)
+        
+        def update_nested_dict(current, new):
+            """Update nested dictionary while preserving structure"""
+            for k, v in new.items():
+                if isinstance(v, dict) and k in current and isinstance(current[k], dict):
+                    # Recursively update nested dictionaries
+                    update_nested_dict(current[k], v)
+                else:
+                    # Only update if value actually changed
+                    if k not in current or current[k] != v:
+                        logger.debug(f"Updating setting: {k} = {v}")
+                        current[k] = v
+        
+        # Update only changed values while preserving structure
+        update_nested_dict(current_settings, new_settings)
+        
+        # Read existing file to preserve comments and format
+        existing_content = ""
+        if settings_file.exists():
+            with open(settings_file, 'r') as f:
+                existing_content = f.read()
+        
+        # Write back with preserved structure
         with open(settings_file, 'w') as f:
-            yaml.dump(settings, f, default_flow_style=False)
+            if existing_content and '# ===' in existing_content:
+                # If file exists and has comments, preserve the format
+                yaml_content = yaml.dump(current_settings, default_flow_style=False)
+                # Extract header comments if they exist
+                header = existing_content[:existing_content.find('---')] if '---' in existing_content else ""
+                f.write(header + yaml_content)
+            else:
+                # New file or no special formatting to preserve
+                yaml.dump(current_settings, f, default_flow_style=False)
+        
+        logger.info("Settings saved successfully")
         return True
+        
     except Exception as e:
+        logger.error(f"Error saving settings: {str(e)}", exc_info=True)
         st.error(f"Error saving settings: {str(e)}")
         return False
 
@@ -81,717 +128,408 @@ def render_market_data_provider_settings(provider_key, provider_data):
         'websocket_symbols': websocket_symbols.split('\n') if provider_key == 'alpaca' else provider_data.get('websocket_symbols', [])
     }
 
+def direct_import(session, yaml_file_path):
+    """Import settings from YAML directly to database without using SettingsManager."""
+    try:
+        # Import text function for SQL
+        from sqlalchemy import text
+        
+        # Load the YAML file
+        logger.info(f"Direct import: Loading settings from {yaml_file_path}")
+        with open(yaml_file_path, 'r') as f:
+            yaml_settings = yaml.safe_load(f)
+        
+        if not yaml_settings:
+            logger.error("YAML file is empty or invalid")
+            return False, None
+        
+        logger.info(f"Direct import: Loaded YAML with {len(yaml_settings)} top-level keys")
+        logger.info(f"Top-level keys: {list(yaml_settings.keys())}")
+        
+        # Check if user_settings table exists
+        try:
+            # Simple check with basic SQL - doesn't rely on information schema
+            result = session.execute(text("SELECT 1 FROM user_settings LIMIT 1"))
+            result.fetchall()  # Just to consume the result
+            logger.info("User settings table exists")
+        except Exception as e:
+            # Try creating the table if it doesn't exist
+            logger.warning(f"Error checking user_settings table: {str(e)}")
+            try:
+                logger.info("Attempting to create user_settings table...")
+                session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS user_settings (
+                        id VARCHAR PRIMARY KEY,
+                        category VARCHAR NOT NULL,
+                        key VARCHAR,
+                        value VARCHAR,
+                        last_modified TIMESTAMP,
+                        UNIQUE(category, key)
+                    )
+                """))
+                session.commit()
+                logger.info("Created user_settings table")
+            except Exception as create_error:
+                logger.error(f"Failed to create user_settings table: {str(create_error)}")
+                st.error("Could not find or create the user_settings table. Please run the migration first.")
+                return False, None
+        
+        # Flatten settings manually
+        flattened = {}
+        def _flatten(settings, prefix=''):
+            for key, value in settings.items():
+                # Skip comment keys
+                if str(key).startswith('#'):
+                    continue
+                
+                # Skip None values
+                if value is None:
+                    continue
+                
+                full_key = f"{prefix}.{key}" if prefix else key
+                
+                if isinstance(value, dict):
+                    _flatten(value, full_key)
+                else:
+                    # Convert lists and other complex objects to JSON
+                    if isinstance(value, (list, dict)):
+                        import json
+                        value = json.dumps(value)
+                    elif not isinstance(value, (str, int, float, bool)):
+                        value = str(value)
+                    
+                    # Split into category and key
+                    if '.' not in full_key:
+                        category = full_key
+                        setting_key = ''
+                    else:
+                        parts = full_key.split('.')
+                        category = parts[0]
+                        setting_key = '.'.join(parts[1:])
+                    
+                    flattened[(category, setting_key)] = value
+        
+        _flatten(yaml_settings)
+        logger.info(f"Direct import: Flattened {len(flattened)} settings")
+        
+        # Show sample of flattened settings
+        sample_keys = list(flattened.keys())[:5]
+        logger.info(f"Sample flattened keys: {sample_keys}")
+        
+        # Insert settings directly to database - use simple SQL for DuckDB compatibility
+        import uuid
+        from datetime import datetime
+        import json
+        
+        # Get a new session to avoid context manager issues
+        success_count = 0
+        error_count = 0
+        
+        # Use one-by-one inserts with simple SQL
+        for (category, key), value in flattened.items():
+            try:
+                # First delete any existing setting
+                session.execute(
+                    text("DELETE FROM user_settings WHERE category = :category AND key = :key"),
+                    {"category": category, "key": key}
+                )
+                
+                # Then insert the new setting
+                session.execute(
+                    text("INSERT INTO user_settings (id, category, key, value, last_modified) VALUES (:id, :category, :key, :value, :last_modified)"),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "category": category,
+                        "key": key,
+                        "value": value,
+                        "last_modified": datetime.utcnow().isoformat()
+                    }
+                )
+                success_count += 1
+                if success_count % 10 == 0:
+                    logger.info(f"Imported {success_count} settings so far...")
+            except Exception as e:
+                logger.error(f"Error importing setting {category}.{key}: {str(e)}")
+                error_count += 1
+        
+        # Commit transaction if any settings were successful
+        if success_count > 0:
+            session.commit()
+            logger.info(f"Direct import: Inserted {success_count} settings with {error_count} errors")
+        else:
+            logger.error("No settings were successfully inserted")
+            return False, None
+        
+        # Reload settings to return
+        try:
+            logger.info("Reloading settings from database")
+            result = session.execute(text("SELECT category, key, value FROM user_settings")).fetchall()
+            logger.info(f"Retrieved {len(result)} settings from database")
+            
+            settings = {}
+            for row in result:
+                cat, key, value = row
+                if cat not in settings:
+                    settings[cat] = {}
+                
+                # Handle nested keys
+                current = settings[cat]
+                if key:  # Skip empty keys
+                    parts = key.split('.')
+                    for part in parts[:-1]:
+                        current = current.setdefault(part, {})
+                    current[parts[-1]] = value
+            
+            return True, settings
+        except Exception as e:
+            logger.error(f"Error reloading settings: {str(e)}", exc_info=True)
+            return False, None
+    
+    except Exception as e:
+        logger.error(f"Error in direct import: {str(e)}", exc_info=True)
+        st.error(f"Error in direct import: {str(e)}")
+        return False, None
+
 def main():
     st.title("GoldFlipper Settings")
     
-    # Load current settings
-    settings = load_settings()
-    if not settings:
-        st.error("Could not load settings. Please run the setup wizard first.")
-        return
-    
-    # Create tabs for different setting categories
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-        "Trading Accounts",
-        "Trading Parameters",
-        "Market Data",
-        "Chart Settings",
-        "System Settings",
-        "File Operations",
-        "Advanced",
-        "WEM Settings"
-    ])
-    
-    # Trading Accounts Tab
-    with tab1:
-        st.subheader("Trading Accounts")
+    try:
+        # First try to read settings from YAML file
+        logger.info("Reading settings directly from YAML file...")
         
-        # Display current accounts
-        if 'alpaca' in settings and 'accounts' in settings['alpaca']:
-            for name, account in settings['alpaca']['accounts'].items():
-                render_alpaca_account_settings(name, account)
+        # Try finding the settings file at different possible paths
+        possible_paths = [
+            project_root / 'goldflipper' / 'config' / 'settings.yaml',
+            project_root / 'goldflipper' / 'goldflipper' / 'config' / 'settings.yaml',
+            Path.cwd() / 'goldflipper' / 'goldflipper' / 'config' / 'settings.yaml',
+            Path.cwd() / 'goldflipper' / 'config' / 'settings.yaml'
+        ]
         
-        # Add new account
-        if st.button("Add New Account"):
-            new_account = {
-                'nickname': st.text_input("Display Name", key="new_account_nickname"),
-                'enabled': True,
-                'api_key': st.text_input("API Key", type="password", key="new_account_api_key"),
-                'secret_key': st.text_input("Secret Key", type="password", key="new_account_secret_key"),
-                'base_url': st.text_input("Base URL", key="new_account_base_url"),
-                'paper_trading': st.checkbox("Paper Trading", True, key="new_account_paper_trading")
-            }
-            if new_account['nickname'] and new_account['api_key'] and new_account['secret_key']:
-                account_name = new_account['nickname'].lower().replace(' ', '_')
-                settings['alpaca']['accounts'][account_name] = new_account
-                st.success(f"Added account: {new_account['nickname']}")
-                st.rerun()
-    
-    # Trading Parameters Tab
-    with tab2:
-        st.subheader("Trading Parameters")
+        found_path = None
+        for path in possible_paths:
+            if path.exists():
+                found_path = path
+                logger.info(f"Found settings.yaml at: {path}")
+                break
+            logger.warning(f"settings.yaml not found at: {path}")
         
-        # Options Swings Settings
-        if 'options_swings' not in settings:
-            settings['options_swings'] = {}
+        settings = {}
         
-        with st.expander("Options Swings Settings"):
-            settings['options_swings']['enabled'] = st.checkbox("Enable Options Swings", 
-                                                             settings['options_swings'].get('enabled', True))
-            
-            if settings['options_swings']['enabled']:
-                col1, col2 = st.columns(2)
-                with col1:
-                    settings['options_swings']['entry_order_types'] = st.multiselect(
-                        "Entry Order Types",
-                        options=['market', 'limit'],
-                        default=settings['options_swings'].get('entry_order_types', ['market', 'limit']),
-                        key="options_swings_entry_order_types"
-                    )
-                    settings['options_swings']['TP-SL_types'] = st.multiselect(
-                        "Take Profit/Stop Loss Types",
-                        options=['STOCK_PRICE', 'PREMIUM_PCT', 'STOCK_PRICE_PCT'],
-                        default=settings['options_swings'].get('TP-SL_types', ['STOCK_PRICE', 'PREMIUM_PCT', 'STOCK_PRICE_PCT']),
-                        key="options_swings_tp_sl_types"
-                    )
-                with col2:
-                    settings['options_swings']['expiration_days'] = st.number_input(
-                        "Default Expiration (days)",
-                        min_value=1,
-                        max_value=365,
-                        value=settings['options_swings'].get('expiration_days', 14)
-                    )
-                    settings['options_swings']['entry_buffer'] = st.number_input(
-                        "Entry Price Buffer",
-                        min_value=0.0,
-                        max_value=1.0,
-                        step=0.01,
-                        value=settings['options_swings'].get('entry_buffer', 0.05)
-                    )
-        
-        # Order Settings
-        if 'orders' not in settings:
-            settings['orders'] = {}
-        
-        with st.expander("Order Settings"):
-            settings['orders']['limit_order'] = {
-                'timeout_enabled': st.checkbox("Enable Limit Order Timeout",
-                                            settings['orders'].get('limit_order', {}).get('timeout_enabled', False)),
-                'max_duration_minutes': st.number_input(
-                    "Maximum Duration (minutes)",
-                    min_value=1,
-                    max_value=60,
-                    value=settings['orders'].get('limit_order', {}).get('max_duration_minutes', 5)
-                ),
-                'check_interval_seconds': st.number_input(
-                    "Check Interval (seconds)",
-                    min_value=1,
-                    max_value=300,
-                    value=settings['orders'].get('limit_order', {}).get('check_interval_seconds', 30)
-                )
-            }
-            
-            settings['orders']['bid_price_settings'] = {
-                'use_bid_price': st.checkbox("Use Bid Price for Orders",
-                                          settings['orders'].get('bid_price_settings', {}).get('use_bid_price', True)),
-                'entry': st.checkbox("Use Bid Price for Entry",
-                                  settings['orders'].get('bid_price_settings', {}).get('entry', True)),
-                'take_profit': st.checkbox("Use Bid Price for Take Profit",
-                                        settings['orders'].get('bid_price_settings', {}).get('take_profit', True)),
-                'stop_loss': st.checkbox("Use Bid Price for Stop Loss",
-                                      settings['orders'].get('bid_price_settings', {}).get('stop_loss', True))
-            }
-    
-    # Market Data Tab
-    with tab3:
-        st.subheader("Market Data Settings")
-        
-        # Market Hours
-        if 'market_hours' not in settings:
-            settings['market_hours'] = {}
-        
-        with st.expander("Market Hours"):
-            settings['market_hours']['enabled'] = st.checkbox("Enable Market Hours Validation",
-                                                           settings['market_hours'].get('enabled', True))
-            
-            if settings['market_hours']['enabled']:
-                col1, col2 = st.columns(2)
-                with col1:
-                    settings['market_hours']['regular_hours'] = {
-                        'start': st.text_input("Market Open (HH:MM)", 
-                                             settings['market_hours'].get('regular_hours', {}).get('start', '09:29')),
-                        'end': st.text_input("Market Close (HH:MM)", 
-                                           settings['market_hours'].get('regular_hours', {}).get('end', '16:16'))
-                    }
-                with col2:
-                    settings['market_hours']['extended_hours'] = {
-                        'enabled': st.checkbox("Enable Extended Hours",
-                                             settings['market_hours'].get('extended_hours', {}).get('enabled', False)),
-                        'pre_market_start': st.text_input("Pre-market Start (HH:MM)",
-                                                        settings['market_hours'].get('extended_hours', {}).get('pre_market_start', '04:00')),
-                        'after_market_end': st.text_input("After-market End (HH:MM)",
-                                                        settings['market_hours'].get('extended_hours', {}).get('after_market_end', '20:00'))
-                    }
-        
-        # Market Data Providers
-        if 'market_data_providers' not in settings:
-            settings['market_data_providers'] = {}
-        
-        with st.expander("Market Data Providers"):
-            settings['market_data_providers']['primary_provider'] = st.selectbox(
-                "Primary Provider",
-                options=["marketdataapp", "alpaca", "yfinance"],
-                index=["marketdataapp", "alpaca", "yfinance"].index(
-                    settings['market_data_providers'].get('primary_provider', 'marketdataapp')
-                )
-            )
-            
-            # MarketDataApp Settings
-            if 'providers' not in settings['market_data_providers']:
-                settings['market_data_providers']['providers'] = {}
-            
-            with st.subheader("MarketDataApp Settings"):
-                settings['market_data_providers']['providers']['marketdataapp'] = render_market_data_provider_settings('marketdataapp', settings['market_data_providers']['providers'].get('marketdataapp', {}))
-            
-            # Alpaca Settings
-            with st.subheader("Alpaca Settings"):
-                settings['market_data_providers']['providers']['alpaca'] = render_market_data_provider_settings('alpaca', settings['market_data_providers']['providers'].get('alpaca', {}))
-            
-            # Yahoo Finance Settings
-            with st.subheader("Yahoo Finance Settings"):
-                settings['market_data_providers']['providers']['yfinance'] = {
-                    'enabled': st.checkbox("Enable Yahoo Finance",
-                                         settings['market_data_providers']['providers'].get('yfinance', {}).get('enabled', True))
-                }
-    
-    # Chart Settings Tab
-    with tab4:
-        st.subheader("Chart Settings")
-        
-        # Chart Viewer Settings
-        if 'chart_viewer' not in settings:
-            settings['chart_viewer'] = {}
-        
-        with st.expander("Chart Display Settings"):
-            settings['chart_viewer']['display'] = {
-                'style': st.selectbox(
-                    "Chart Style",
-                    options=["charles", "classic", "yahoo"],
-                    index=["charles", "classic", "yahoo"].index(
-                        settings['chart_viewer'].get('display', {}).get('style', 'charles')
-                    )
-                ),
-                'candle_up_color': st.color_picker(
-                    "Up Candle Color",
-                    settings['chart_viewer'].get('display', {}).get('candle_up_color', '#00FF00')
-                ),
-                'candle_down_color': st.color_picker(
-                    "Down Candle Color",
-                    settings['chart_viewer'].get('display', {}).get('candle_down_color', '#FF0000')
-                ),
-                'background_color': st.color_picker(
-                    "Background Color",
-                    settings['chart_viewer'].get('display', {}).get('background_color', '#FFFFFF')
-                ),
-                'grid': st.checkbox("Show Grid",
-                                  settings['chart_viewer'].get('display', {}).get('grid', True)),
-                'grid_alpha': st.slider(
-                    "Grid Opacity",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=settings['chart_viewer'].get('display', {}).get('grid_alpha', 0.2),
-                    step=0.1
-                )
-            }
-        
-        # Technical Indicators
-        if 'indicators' not in settings:
-            settings['indicators'] = {}
-        
-        with st.expander("Technical Indicators"):
-            settings['indicators']['enabled'] = st.checkbox("Enable Technical Indicators",
-                                                         settings['indicators'].get('enabled', True))
-            
-            if settings['indicators']['enabled']:
-                # TTM Squeeze
-                with st.subheader("TTM Squeeze"):
-                    settings['indicators']['ttm_squeeze'] = {
-                        'enabled': st.checkbox("Enable TTM Squeeze",
-                                             settings['indicators'].get('ttm_squeeze', {}).get('enabled', True)),
-                        'period': st.number_input("Period",
-                                                min_value=1,
-                                                value=settings['indicators'].get('ttm_squeeze', {}).get('period', 20)),
-                        'bb_multiplier': st.number_input("Bollinger Bands Multiplier",
-                                                       min_value=0.1,
-                                                       value=settings['indicators'].get('ttm_squeeze', {}).get('bb_multiplier', 2.0),
-                                                       step=0.1),
-                        'kc_multiplier': st.number_input("Keltner Channel Multiplier",
-                                                       min_value=0.1,
-                                                       value=settings['indicators'].get('ttm_squeeze', {}).get('kc_multiplier', 1.5),
-                                                       step=0.1)
-                    }
-                
-                # EMA
-                with st.subheader("EMA"):
-                    settings['indicators']['ema'] = {
-                        'enabled': st.checkbox("Enable EMA",
-                                             settings['indicators'].get('ema', {}).get('enabled', True)),
-                        'periods': st.text_input("Periods (comma-separated)",
-                                               ",".join(map(str, settings['indicators'].get('ema', {}).get('periods', [9, 21, 55, 200])))
-                    ).split(',')
-                }
-                
-                # MACD
-                with st.subheader("MACD"):
-                    settings['indicators']['macd'] = {
-                        'enabled': st.checkbox("Enable MACD",
-                                             settings['indicators'].get('macd', {}).get('enabled', True)),
-                        'fast_period': st.number_input("Fast Period",
-                                                     min_value=1,
-                                                     value=settings['indicators'].get('macd', {}).get('fast_period', 12)),
-                        'slow_period': st.number_input("Slow Period",
-                                                     min_value=1,
-                                                     value=settings['indicators'].get('macd', {}).get('slow_period', 26)),
-                        'signal_period': st.number_input("Signal Period",
-                                                       min_value=1,
-                                                       value=settings['indicators'].get('macd', {}).get('signal_period', 9))
-                    }
-    
-    # System Settings Tab
-    with tab5:
-        st.subheader("System Settings")
-        
-        # Console Visibility
-        with st.expander("Console Settings"):
-            show_console_file = project_root / 'web' / 'show_console.txt'
-            show_console = False
-            if show_console_file.exists():
-                with open(show_console_file, 'r') as f:
-                    show_console = f.read().strip() == '1'
-            
-            new_show_console = st.checkbox(
-                "Show Console Window",
-                value=show_console,
-                help="Toggle the visibility of the Streamlit server console window. Changes take effect after restarting the application."
-            )
-            
-            if new_show_console != show_console:
-                with open(show_console_file, 'w') as f:
-                    f.write('1' if new_show_console else '0')
-                st.info("Console visibility setting saved. Please restart the application for changes to take effect.")
-        
-        # Logging
-        if 'logging' not in settings:
-            settings['logging'] = {}
-        
-        with st.expander("Logging Settings"):
-            # Create tabs for different logging sections
-            log_tab1, log_tab2, log_tab3, log_tab4, log_tab5 = st.tabs([
-                "Global Settings",
-                "Module Settings",
-                "Error Tracking",
-                "Performance",
-                "Debug & Files"
-            ])
-            
-            # Global Settings Tab
-            with log_tab1:
-                st.markdown("### Global Logging Settings")
-                col1, col2 = st.columns(2)
-                with col1:
-                    settings['logging']['global'] = {
-                        'level': st.selectbox(
-                            "Global Logging Level",
-                options=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-                index=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].index(
-                                settings['logging'].get('global', {}).get('level', 'INFO')
-                            )
-                        ),
-                        'format': st.text_input(
-                            "Log Format",
-                            value=settings['logging'].get('global', {}).get('format', '%(asctime)s - %(levelname)s - %(message)s')
-                        ),
-                        'file_rotation': st.checkbox(
-                            "Enable Log File Rotation",
-                            value=settings['logging'].get('global', {}).get('file_rotation', True)
-                        ),
-                        'console_output': st.checkbox(
-                            "Enable Console Output",
-                            value=settings['logging'].get('global', {}).get('console_output', True)
-                        )
-                    }
-                with col2:
-                    if settings['logging']['global']['file_rotation']:
-                        settings['logging']['global']['max_file_size_mb'] = st.number_input(
-                            "Max File Size (MB)",
-                            min_value=1,
-                            max_value=100,
-                            value=settings['logging'].get('global', {}).get('max_file_size_mb', 10)
-                        )
-                        settings['logging']['global']['backup_count'] = st.number_input(
-                            "Number of Backup Files",
-                            min_value=1,
-                            max_value=20,
-                            value=settings['logging'].get('global', {}).get('backup_count', 5)
-                        )
-            
-            # Module-specific Settings Tab
-            with log_tab2:
-                st.markdown("### Module-specific Settings")
-                if 'modules' not in settings['logging']:
-                    settings['logging']['modules'] = {}
-                
-                modules = ['wem', 'market_data', 'trading', 'database', 'plays']
-                for module in modules:
-                    st.markdown(f"#### {module.replace('_', ' ').title()}")
-                    if module not in settings['logging']['modules']:
-                        settings['logging']['modules'][module] = {}
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        settings['logging']['modules'][module]['level'] = st.selectbox(
-                            "Logging Level",
-                            options=['INHERIT', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-                            index=['INHERIT', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].index(
-                                settings['logging']['modules'][module].get('level', 'INHERIT')
-                            ),
-                            key=f"level_{module}"
-                        )
-                        settings['logging']['modules'][module]['format'] = st.text_input(
-                "Log Format",
-                            value=settings['logging']['modules'][module].get(
-                                'format',
-                                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-                            ),
-                            key=f"format_{module}"
-                        )
-                    with col2:
-                        settings['logging']['modules'][module]['file'] = st.text_input(
-                            "Log File",
-                            value=settings['logging']['modules'][module].get('file', f"{module}.log"),
-                            key=f"file_{module}"
-                        )
-                        if settings['logging']['modules'][module]['level'] == 'DEBUG':
-                            settings['logging']['modules'][module]['debug_file'] = st.text_input(
-                                "Debug Log File",
-                                value=settings['logging']['modules'][module].get('debug_file', f"{module}_debug.log"),
-                                key=f"debug_file_{module}"
-                            )
-                    st.markdown("---")
-            
-            # Error Tracking Tab
-            with log_tab3:
-                st.markdown("### Error Tracking")
-                if 'error_tracking' not in settings['logging']:
-                    settings['logging']['error_tracking'] = {}
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    settings['logging']['error_tracking']['enabled'] = st.checkbox(
-                        "Enable Detailed Error Tracking",
-                        value=settings['logging']['error_tracking'].get('enabled', True)
-                    )
-                    settings['logging']['error_tracking']['include_traceback'] = st.checkbox(
-                        "Include Full Traceback",
-                        value=settings['logging']['error_tracking'].get('include_traceback', True)
-                    )
-                with col2:
-                    settings['logging']['error_tracking']['notify_critical'] = st.checkbox(
-                        "Notify on Critical Errors",
-                        value=settings['logging']['error_tracking'].get('notify_critical', True)
-                    )
-                    settings['logging']['error_tracking']['aggregate_similar'] = st.checkbox(
-                        "Aggregate Similar Errors",
-                        value=settings['logging']['error_tracking'].get('aggregate_similar', True)
-                    )
-            
-            # Performance Tab
-            with log_tab4:
-                st.markdown("### Performance Logging")
-                if 'performance' not in settings['logging']:
-                    settings['logging']['performance'] = {}
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    settings['logging']['performance']['enabled'] = st.checkbox(
-                        "Enable Performance Logging",
-                        value=settings['logging']['performance'].get('enabled', True)
-                    )
-                    settings['logging']['performance']['log_slow_operations'] = st.checkbox(
-                        "Log Slow Operations",
-                        value=settings['logging']['performance'].get('log_slow_operations', True)
-                    )
-                with col2:
-                    if settings['logging']['performance']['log_slow_operations']:
-                        settings['logging']['performance']['slow_operation_threshold'] = st.number_input(
-                            "Slow Operation Threshold (seconds)",
-                            min_value=0.1,
-                            max_value=10.0,
-                            value=float(settings['logging']['performance'].get('slow_operation_threshold', 1.0)),
-                            step=0.1
-                        )
-            
-            # Debug & Files Tab
-            with log_tab5:
-                # Debug Mode Settings
-                st.markdown("### Debug Mode")
-                if 'debug' not in settings['logging']:
-                    settings['logging']['debug'] = {}
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    settings['logging']['debug']['enabled'] = st.checkbox(
-                        "Enable Debug Mode",
-                        value=settings['logging']['debug'].get('enabled', False)
-                    )
-                    if settings['logging']['debug']['enabled']:
-                        settings['logging']['debug']['verbose'] = st.checkbox(
-                            "Verbose Debug Output",
-                            value=settings['logging']['debug'].get('verbose', False)
-                        )
-                with col2:
-                    if settings['logging']['debug']['enabled']:
-                        settings['logging']['debug']['log_all_operations'] = st.checkbox(
-                            "Log All Operations",
-                            value=settings['logging']['debug'].get('log_all_operations', False)
-                        )
-                        settings['logging']['debug']['separate_debug_file'] = st.checkbox(
-                            "Separate Debug Log Files",
-                            value=settings['logging']['debug'].get('separate_debug_file', True)
-                        )
-                
-                # Log File Paths
-                st.markdown("### Log File Organization")
-                if 'paths' not in settings['logging']:
-                    settings['logging']['paths'] = {}
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    settings['logging']['paths']['base_dir'] = st.text_input(
-                        "Base Log Directory",
-                        value=settings['logging']['paths'].get('base_dir', 'logs')
-                    )
-                    settings['logging']['paths']['archive_dir'] = st.text_input(
-                        "Archive Directory",
-                        value=settings['logging']['paths'].get('archive_dir', 'logs/archive')
-                    )
-                with col2:
-                    settings['logging']['paths']['error_dir'] = st.text_input(
-                        "Error Log Directory",
-                        value=settings['logging']['paths'].get('error_dir', 'logs/errors')
-            )
-    
-    # File Operations Tab
-    with tab6:
-        st.subheader("File Operations")
-        
-        # File Paths
-        if 'file_paths' not in settings:
-            settings['file_paths'] = {}
-        
-        with st.expander("File Paths"):
-            for key, value in settings['file_paths'].items():
-                settings['file_paths'][key] = st.text_input(
-                    key.replace('_', ' ').title(),
-                    value,
-                    key=f"file_path_{key}"
-                )
-        
-        # CSV Ingestor
-        if 'csv_ingestor' not in settings:
-            settings['csv_ingestor'] = {}
-        
-        with st.expander("CSV Ingestor Settings"):
-            settings['csv_ingestor']['open_after_creation'] = st.checkbox(
-                "Open Files After Creation",
-                settings['csv_ingestor'].get('open_after_creation', False)
-            )
-            settings['csv_ingestor']['default_viewer'] = st.selectbox(
-                "Default Viewer",
-                options=["code", "explorer", "none"],
-                index=["code", "explorer", "none"].index(
-                    settings['csv_ingestor'].get('default_viewer', 'code')
-                )
-            )
-            settings['csv_ingestor']['validation'] = {
-                'enabled': st.checkbox(
-                    "Enable Validation",
-                    settings['csv_ingestor'].get('validation', {}).get('enabled', True)
-                ),
-                'strict_mode': st.checkbox(
-                    "Strict Mode",
-                    settings['csv_ingestor'].get('validation', {}).get('strict_mode', False)
-                )
-            }
-            settings['csv_ingestor']['backup'] = {
-                'keep_originals': st.checkbox(
-                    "Keep Original Files",
-                    settings['csv_ingestor'].get('backup', {}).get('keep_originals', True)
-                ),
-                'backup_dir': st.text_input(
-                    "Backup Directory",
-                    settings['csv_ingestor'].get('backup', {}).get('backup_dir', 'ingestor_backups')
-                )
-            }
-    
-    # Advanced Tab
-    with tab7:
-        st.subheader("Advanced Settings")
-        
-        # Auto Play Creator
-        if 'auto_play_creator' not in settings:
-            settings['auto_play_creator'] = {}
-        
-        with st.expander("Auto Play Creator"):
-            settings['auto_play_creator']['enabled'] = st.checkbox(
-                "Enable Auto Play Creator",
-                settings['auto_play_creator'].get('enabled', True)
-            )
-            
-            if settings['auto_play_creator']['enabled']:
-                col1, col2 = st.columns(2)
-                with col1:
-                    settings['auto_play_creator']['order_types'] = st.multiselect(
-                        "Order Types",
-                        options=['market', 'limit'],
-                        default=settings['auto_play_creator'].get('order_types', ['market', 'limit']),
-                        key="auto_play_creator_order_types"
-                    )
-                    settings['auto_play_creator']['TP-SL_types'] = st.multiselect(
-                        "Take Profit/Stop Loss Types",
-                        options=['STOCK_PRICE', 'PREMIUM_PCT', 'STOCK_PRICE_PCT'],
-                        default=settings['auto_play_creator'].get('TP-SL_types', ['STOCK_PRICE', 'PREMIUM_PCT', 'STOCK_PRICE_PCT']),
-                        key="auto_play_creator_tp_sl_types"
-                    )
-                with col2:
-                    settings['auto_play_creator']['expiration_days'] = st.number_input(
-                        "Default Expiration (days)",
-                        min_value=1,
-                        max_value=365,
-                        value=settings['auto_play_creator'].get('expiration_days', 7)
-                    )
-                    settings['auto_play_creator']['entry_buffer'] = st.number_input(
-                        "Entry Price Buffer",
-                        min_value=0.0,
-                        max_value=1.0,
-                        step=0.01,
-                        value=settings['auto_play_creator'].get('entry_buffer', 0.50)
-                    )
-                
-                settings['auto_play_creator']['test_symbols'] = st.text_area(
-                    "Test Symbols (one per line)",
-                    "\n".join(settings['auto_play_creator'].get('test_symbols', ['SPY', 'QQQ', 'AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'BABA', 'GME']))
-                ).split('\n')
-    
-    # WEM Settings Tab
-    with tab8:
-        st.subheader("Weekly Expected Moves (WEM) Settings")
-        
-        # Load current WEM settings
-        wem_settings = config.get('wem', {})
-        
-        # Initialize WEM settings if they don't exist
-        if not wem_settings:
-            wem_settings = {
-                'tracked_stocks': [],
-                'calculation_method': 'standard',
-                'update_frequency': 'daily',
-                'confidence_threshold': 70,
-                'max_stocks': 20,
-                'auto_update': True
-            }
-            settings['wem'] = wem_settings
-            save_settings(settings)
-        
-        # Initialize default tracked stocks if not present
-        if not isinstance(wem_settings.get('tracked_stocks'), list):
-            wem_settings['tracked_stocks'] = []
-        
-        st.markdown("### Default Tracked Stocks")
-        new_stock = st.text_input("Add Default Stock Symbol")
-        if st.button("Add Default Stock") and new_stock:
-            if new_stock.upper() not in wem_settings['tracked_stocks']:
-                wem_settings['tracked_stocks'].append(new_stock.upper())
-                settings['wem'] = wem_settings
-                if save_settings(settings):
-                    st.success(f"Added {new_stock.upper()} to default tracked stocks")
-                    st.rerun()
-                else:
-                    st.error("Failed to save settings")
-        
-        # Display current default stocks
-        if wem_settings['tracked_stocks']:
-            st.markdown("#### Current Default Stocks:")
-            for stock in wem_settings['tracked_stocks']:
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(stock)
-                with col2:
-                    if st.button("Remove", key=f"remove_default_{stock}"):
-                        wem_settings['tracked_stocks'].remove(stock)
-                        settings['wem'] = wem_settings
-                        if save_settings(settings):
-                            st.success(f"Removed {stock} from default tracked stocks")
-                            st.rerun()
-                        else:
-                            st.error("Failed to save settings")
-        
-        # Calculation Settings
-        st.markdown("### Calculation Settings")
-        wem_settings['calculation_method'] = st.selectbox(
-            "Default Calculation Method",
-            ["standard", "advanced", "custom"],
-            index=["standard", "advanced", "custom"].index(
-                wem_settings.get('calculation_method', 'standard')
-            )
-        )
-        
-        wem_settings['update_frequency'] = st.selectbox(
-            "Default Update Frequency",
-            ["hourly", "daily", "weekly"],
-            index=["hourly", "daily", "weekly"].index(
-                wem_settings.get('update_frequency', 'daily')
-            )
-        )
-        
-        # Advanced Settings
-        with st.expander("Advanced WEM Settings"):
-            wem_settings['confidence_threshold'] = st.slider(
-                "Confidence Threshold (%)",
-                min_value=0,
-                max_value=100,
-                value=wem_settings.get('confidence_threshold', 70),
-                step=5
-            )
-            
-            wem_settings['max_stocks'] = st.number_input(
-                "Maximum Number of Tracked Stocks",
-                min_value=1,
-                max_value=100,
-                value=wem_settings.get('max_stocks', 20),
-                step=1
-            )
-            
-            wem_settings['auto_update'] = st.checkbox(
-                "Enable Automatic Updates",
-                value=wem_settings.get('auto_update', True)
-            )
-        
-        # Save WEM settings
-        if st.button("Save WEM Settings"):
-            settings['wem'] = wem_settings
-            if save_settings(settings):
-                st.success("WEM settings saved successfully!")
-            else:
-                st.error("Failed to save settings")
-    
-    # Save button at the bottom
-    if st.button("Save Settings"):
-        if save_settings(settings):
-            st.success("Settings saved successfully!")
-            st.balloons()
+        if found_path:
+            try:
+                logger.info(f"Reading YAML file: {found_path}")
+                with open(found_path, 'r') as f:
+                    yaml_settings = yaml.safe_load(f)
+                    if yaml_settings:
+                        logger.info(f"Successfully loaded settings from YAML with {len(yaml_settings)} top-level keys")
+                        settings = yaml_settings
+                        st.success(f"Successfully loaded settings from: {found_path}")
+                    else:
+                        logger.error("YAML file is empty or invalid")
+                        st.error("Settings file is empty or invalid. Using default settings.")
+                        settings = {}
+            except Exception as e:
+                logger.error(f"Error reading settings from YAML: {str(e)}")
+                st.error(f"Error reading settings: {str(e)}")
+                settings = {}
         else:
-            st.error("Failed to save settings. Please try again.")
+            st.error("Could not find settings.yaml in any expected location.")
+            settings = {}
+        
+        # Now try to connect to database (if we need it later)
+        try:
+            logger.info("Initializing database connection...")
+            db = get_db_connection()
+            
+            # Import and initialize settings manager
+            from goldflipper.database.migrations.add_settings_schema import upgrade
+            
+            # Initialize settings manager
+            settings_manager = SettingsManager(db)
+            
+            # Check if we should try to run the migration
+            if st.sidebar.button("Initialize Database"):
+                with st.spinner("Creating database schema..."):
+                    try:
+                        # Create tables manually first
+                        from sqlalchemy import text
+                        logger.info("Creating tables manually...")
+                        
+                        # Create settings_schema table
+                        db.execute(text("""
+                            CREATE TABLE IF NOT EXISTS settings_schema (
+                                id VARCHAR PRIMARY KEY,
+                                category VARCHAR UNIQUE NOT NULL,
+                                schema VARCHAR,
+                                ui_schema VARCHAR,
+                                last_modified TIMESTAMP
+                            )
+                        """))
+                        
+                        # Create user_settings table
+                        db.execute(text("""
+                            CREATE TABLE IF NOT EXISTS user_settings (
+                                id VARCHAR PRIMARY KEY,
+                                category VARCHAR NOT NULL,
+                                key VARCHAR,
+                                value VARCHAR,
+                                last_modified TIMESTAMP,
+                                UNIQUE(category, key)
+                            )
+                        """))
+                        db.commit()
+                        
+                        # Run migration
+                        logger.info("Running migration...")
+                        upgrade()
+                        
+                        # Check if database has settings
+                        db_settings = settings_manager.get_settings()
+                        if not db_settings and settings:
+                            # Import from YAML
+                            logger.info("Importing settings from YAML to database...")
+                            if settings_manager.update_settings(settings):
+                                st.success("Successfully imported settings to database!")
+                            else:
+                                st.error("Failed to import settings to database.")
+                        
+                        st.success("Database initialized successfully!")
+                    except Exception as e:
+                        logger.error(f"Error initializing database: {str(e)}")
+                        st.error(f"Error initializing database: {str(e)}")
+            
+            # Add button to import settings from YAML to database
+            if st.sidebar.button("Import Settings to Database"):
+                if settings:
+                    with st.spinner("Importing settings..."):
+                        if settings_manager.update_settings(settings):
+                            st.success("Successfully imported settings to database!")
+                        else:
+                            st.error("Failed to import settings to database.")
+                else:
+                    st.error("No settings to import.")
+        except Exception as e:
+            logger.error(f"Error connecting to database: {str(e)}")
+            st.sidebar.error(f"Database connection error: {str(e)}")
+            # Continue with YAML settings only
+        
+        # Create tabs for different setting categories
+        st.write("## Settings")
+        tabs = st.tabs(["Logging", "Market Data", "Trading", "System"])
+
+        # Logging Settings Tab
+        with tabs[0]:
+            st.write("### Logging Settings")
+            
+            # Global Settings
+            st.write("#### Global Settings")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Log Level
+                current_level = settings.get('logging', {}).get('global', {}).get('level', 'INFO')
+                new_level = st.selectbox(
+                    "Log Level",
+                    ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                    index=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].index(current_level)
+                )
+                
+                # Log Format
+                current_format = settings.get('logging', {}).get('global', {}).get('format', '%(asctime)s - %(levelname)s - %(message)s')
+                new_format = st.text_input("Log Format", value=current_format)
+            
+            with col2:
+                # File Rotation
+                current_rotation = settings.get('logging', {}).get('global', {}).get('file_rotation', True)
+                new_rotation = st.checkbox("Enable File Rotation", value=current_rotation)
+                
+                # Console Output
+                current_console = settings.get('logging', {}).get('global', {}).get('console_output', True)
+                new_console = st.checkbox("Enable Console Output", value=current_console)
+            
+            # Module Settings
+            st.write("#### Module Settings")
+            modules = ['wem', 'market_data', 'trading', 'database', 'plays']
+            for module in modules:
+                with st.expander(f"{module.replace('_', ' ').title()} Module"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Module Log Level
+                        current_level = settings.get('logging', {}).get('modules', {}).get(module, {}).get('level', 'INHERIT')
+                        new_level = st.selectbox(
+                            f"{module} Log Level",
+                            ['INHERIT', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                            index=['INHERIT', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].index(current_level),
+                            key=f"{module}_level"
+                        )
+                    
+                    with col2:
+                        # Module Log Format
+                        current_format = settings.get('logging', {}).get('modules', {}).get(module, {}).get('format', '')
+                        new_format = st.text_input(f"{module} Log Format", value=current_format, key=f"{module}_format")
+                        
+                        # Module Log File
+                        current_file = settings.get('logging', {}).get('modules', {}).get(module, {}).get('file', '')
+                        new_file = st.text_input(f"{module} Log File", value=current_file, key=f"{module}_file")
+
+        # Market Data Tab
+        with tabs[1]:
+            st.write("### Market Data Settings")
+            st.info("Market Data settings coming soon...")
+
+        # Trading Tab
+        with tabs[2]:
+            st.write("### Trading Settings")
+            st.info("Trading settings coming soon...")
+
+        # System Tab
+        with tabs[3]:
+            st.write("### System Settings")
+            st.info("System settings coming soon...")
+
+        # Save button at the bottom
+        if st.button("Save Settings"):
+            # Generate updated settings
+            updated_settings = {
+                'logging': {
+                    'global': {
+                        'level': new_level,
+                        'format': new_format,
+                        'file_rotation': new_rotation,
+                        'console_output': new_console
+                    },
+                    'modules': {}
+                }
+            }
+            
+            # Update module settings
+            for module in modules:
+                module_level = st.session_state.get(f"{module}_level")
+                module_format = st.session_state.get(f"{module}_format")
+                module_file = st.session_state.get(f"{module}_file")
+                
+                if module_level or module_format or module_file:
+                    updated_settings['logging']['modules'][module] = {}
+                    
+                    if module_level:
+                        updated_settings['logging']['modules'][module]['level'] = module_level
+                    if module_format:
+                        updated_settings['logging']['modules'][module]['format'] = module_format
+                    if module_file:
+                        updated_settings['logging']['modules'][module]['file'] = module_file
+            
+            # Save to YAML
+            if save_settings(updated_settings):
+                st.success("Settings saved successfully!")
+                st.balloons()
+            else:
+                st.error("Failed to save settings. Please try again.")
+
+    except Exception as e:
+        st.error(f"Error initializing settings: {str(e)}")
+        logger.error(f"Error in main function: {str(e)}", exc_info=True)
+        return
 
 if __name__ == "__main__":
     main() 
