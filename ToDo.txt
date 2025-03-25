@@ -1,7 +1,23 @@
 This is a list of tasks to do and features to implement for the goldflipper project.
 Place new tasks on top.
 
-- [x] Implement Poetry + PyInstaller packaging workflow:
+- [x] Implement settings management in Streamlit UI:
+      1. ✓ Create Settings page in Streamlit UI
+      2. ✓ Add YAML file loading and parsing
+      3. ✓ Implement settings display and editing interface
+      4. ✓ Add save functionality for settings changes
+      5. [ ] Complete database integration for settings storage
+      6. [ ] Implement settings schema validation
+
+- [~] Implement DuckDB integration for settings:
+      1. ✓ Create database migration for settings schema
+      2. ✓ Add settings_schema and user_settings tables
+      3. ✓ Implement SettingsManager class for DB interaction
+      4. ✓ Add YAML import/export functionality
+      5. [ ] Fix remaining DuckDB compatibility issues
+      6. [ ] Complete transaction handling and error recovery
+
+- [ ] Implement Poetry + PyInstaller packaging workflow:
       1. ✓ Set up Poetry environment and configuration
       2. ✓ Create pyproject.toml with all dependencies
       3. ✓ Configure VS Code for Poetry environment
@@ -23,44 +39,41 @@ Place new tasks on top.
       3. [ ] Add type hints to improve IDE support
       4. [ ] Update package structure if needed
 
-- [ ] Implement a database, perhaps DuckDB is best at this stage
 - [ ] Implement threading
 - [ ] Implement locking
 
-- [ ] Implement Poetry + PyInstaller packaging workflow
-
 - [ ] Migrate UI to Streamlit for better performance and maintainability:
-      1. Set up Streamlit project structure:
-         - Create web/ directory with app.py and pages/
-         - Set up components/ directory for reusable UI elements
-         - Configure proper imports and dependencies
-         - Add requirements.txt for Streamlit and dependencies
+      1. ✓ Set up Streamlit project structure:
+         - ✓ Create web/ directory with app.py and pages/
+         - ✓ Set up components/ directory for reusable UI elements
+         - ✓ Configure proper imports and dependencies
+         - ✓ Add requirements.txt for Streamlit and dependencies
       
-      2. Implement core dashboard:
-         - Create main dashboard layout
-         - Add account selection and status indicators
-         - Implement quick action buttons
-         - Add real-time status updates
-         - Integrate with existing core functionality
+      2. [ ] Implement core dashboard:
+         - [ ] Create main dashboard layout
+         - [ ] Add account selection and status indicators
+         - [ ] Implement quick action buttons
+         - [ ] Add real-time status updates
+         - [ ] Integrate with existing core functionality
       
-      3. Migrate individual features:
-         - Play creation and management
-         - Trade logging and analysis
-         - Market data visualization
-         - Configuration management
-         - Chart viewing
+      3. [ ] Migrate individual features:
+         - [ ] Play creation and management
+         - [ ] Trade logging and analysis
+         - [ ] Market data visualization
+         - ✓ Configuration management
+         - [ ] Chart viewing
       
-      4. Testing and validation:
-         - Add unit tests for new components
-         - Implement integration tests
-         - Perform performance testing
-         - Conduct user acceptance testing
+      4. [ ] Testing and validation:
+         - [ ] Add unit tests for new components
+         - [ ] Implement integration tests
+         - [ ] Perform performance testing
+         - [ ] Conduct user acceptance testing
       
-      5. Deployment and transition:
-         - Create deployment scripts
-         - Add documentation for new UI
-         - Plan user transition strategy
-         - Keep old UI as fallback during transition
+      5. [ ] Deployment and transition:
+         - [ ] Create deployment scripts
+         - [ ] Add documentation for new UI
+         - [ ] Plan user transition strategy
+         - [ ] Keep old UI as fallback during transition
 
 - [?] Fix the problem with plays whose limit order is not filled and expires at the end of the day:
       1. ✓ Implement atomic file operations for all play file writes
@@ -143,7 +156,7 @@ Place new tasks on top.
       6. ✓ Maintain backward compatibility for existing plays
 
 
-- [ ] Implementation of DuckDB database and migration to usage from current workflow      
+- [~] Implementation of DuckDB database and migration to usage from current workflow      
 -- Core Tables (Initial Implementation)
 1. [ ] Plays table
 2. [ ] Play Status History table
@@ -168,11 +181,13 @@ Place new tasks on top.
    - Add trace ID system
    - Migrate existing logs
 
-4. [ ] Configuration Management:
-   - Create config_templates table
-   - Implement schema validation
-   - Add version tracking
-   - Migrate YAML configs
+4. [~] Configuration Management:
+   - ✓ Create settings_schema table
+   - ✓ Create user_settings table
+   - ✓ Implement YAML-to-DB migration
+   - [ ] Add schema validation
+   - [ ] Implement complete DB-to-YAML sync
+   - [ ] Fix DuckDB compatibility issues
 
 5. [ ] System Monitoring:
    - Create watchdog_events table
@@ -211,8 +226,8 @@ Place new tasks on top.
    - Create health dashboard
    - Add alert configuration
 
-4. [ ] Implement Administration Tools:
-   - Add user management
-   - Create backup interface
-   - Implement maintenance tools
-   - Add configuration editor
+4. [~] Implement Administration Tools:
+   - [ ] Add user management
+   - [ ] Create backup interface 
+   - [ ] Implement maintenance tools
+   - ✓ Add settings configuration editor

@@ -60,7 +60,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Generator, Optional
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import QueuePool
@@ -237,21 +237,43 @@ def init_db(force: bool = False) -> None:
         Base.metadata.drop_all(engine)
     
     logger.info("Creating database schema")
+    
+    # Execute direct SQL instead of relying on SQLAlchemy reflection
+    # This ensures tables match exactly what's defined in the models
+    if force:
+        # For each table defined in the models
+        for table in Base.metadata.sorted_tables:
+            try:
+                # Check if table exists
+                exists = engine.dialect.has_table(engine, table.name)
+                
+                # If it exists, drop it first
+                if exists:
+                    logger.info(f"Dropping table {table.name}")
+                    table.drop(engine)
+                
+                # Create the table fresh
+                logger.info(f"Creating table {table.name}")
+                table.create(engine)
+            except Exception as e:
+                logger.error(f"Error recreating {table.name}: {str(e)}")
+                # Continue with next table
+    
+    # Standard table creation (will skip existing tables)
     Base.metadata.create_all(engine)
     
     # Optimize tables using DuckDB's PRAGMA
     with get_db_connection() as session:
         try:
             # Enable automatic statistics gathering
-            session.execute("SET enable_progress_bar=false;")
-            session.execute("SET enable_object_cache=true;")
-            session.execute("SET enable_external_access=true;")
+            session.execute(text("SET enable_progress_bar=false;"))
+            session.execute(text("SET enable_object_cache=true;"))
+            session.execute(text("SET enable_external_access=true;"))
             # Force statistics collection for better query planning
-            session.execute("PRAGMA force_index_statistics;")
-            logger.info("Database schema created and optimized")
+            session.execute(text("PRAGMA force_index_statistics;"))
         except Exception as e:
-            logger.error(f"Failed to optimize database: {e}")
-            # Don't raise the error since tables were created successfully
+            logger.error(f"Failed to optimize database: {str(e)}")
+            # This is non-fatal, continue
 
 def backup_database() -> Path:
     """

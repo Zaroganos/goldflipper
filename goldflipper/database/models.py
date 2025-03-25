@@ -1064,6 +1064,7 @@ class WEMStock(Base):
         symbol (str): Stock symbol
         is_default (bool): Whether this is a default tracked stock
         atm_price (float): Current ATM price
+        wem (float): Weekly expected move value
         straddle_strangle (float): Straddle/Strangle value
         wem_spread (float): WEM spread percentage
         delta_16_plus (float): Delta 16 positive value
@@ -1082,6 +1083,9 @@ class WEMStock(Base):
     symbol = Column(String, nullable=False)
     is_default = Column(Boolean, default=False)
     atm_price = Column(Float)
+    # Using a computed column for WEM - calculated from straddle_strangle
+    # This won't be stored in the database but will be computed when accessed
+    wem = None  # This will be populated in the to_dict method
     straddle_strangle = Column(Float)
     wem_spread = Column(Float)
     delta_16_plus = Column(Float)
@@ -1104,12 +1108,27 @@ class WEMStock(Base):
     )
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert the model to a dictionary."""
+        """
+        Convert the model to a dictionary.
+        
+        Returns:
+            dict: Dictionary representation of the WEM stock
+        """
+        # Calculate WEM value if straddle_strangle is available
+        wem_value = None
+        if self.straddle_strangle is not None:
+            wem_value = self.straddle_strangle / 2
+        
+        # Check for WEM in meta_data as fallback
+        if wem_value is None and self.meta_data and isinstance(self.meta_data, dict):
+            wem_value = self.meta_data.get('calculated_wem')
+        
         return {
             'id': str(self.id),
             'symbol': self.symbol,
             'is_default': self.is_default,
             'atm_price': self.atm_price,
+            'wem': wem_value,  # Use calculated WEM
             'straddle_strangle': self.straddle_strangle,
             'wem_spread': self.wem_spread,
             'delta_16_plus': self.delta_16_plus,
