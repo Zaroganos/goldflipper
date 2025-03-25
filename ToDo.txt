@@ -1,6 +1,13 @@
 This is a list of tasks to do and features to implement for the goldflipper project.
 Place new tasks on top.
 
+- [✓] Fix WEM Streamlit module:
+      1. ✓ Fix WEM calculation and display in both vertical and horizontal layouts
+      2. ✓ Implement proper database integration with computed WEM values
+      3. ✓ Improve UI with better filtering and metric selection
+      4. ✓ Add data export functionality for CSV and Excel formats
+      5. ✓ Enhance error handling and logging throughout
+
 - [x] Implement settings management in Streamlit UI:
       1. ✓ Create Settings page in Streamlit UI
       2. ✓ Add YAML file loading and parsing
@@ -61,6 +68,7 @@ Place new tasks on top.
          - [ ] Trade logging and analysis
          - [ ] Market data visualization
          - ✓ Configuration management
+         - ✓ Weekly Expected Moves (WEM) analysis
          - [ ] Chart viewing
       
       4. [ ] Testing and validation:
