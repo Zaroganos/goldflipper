@@ -91,6 +91,21 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Add custom CSS for wider dropdowns
+st.markdown("""
+<style>
+    div[data-testid="stMultiSelect"] {
+        min-width: 300px;
+    }
+    div[data-testid="stMultiSelect"] > div {
+        min-width: 300px;
+    }
+    div.stMultiSelect > div[data-baseweb="select"] > div {
+        min-width: 300px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Initialize market data manager
 @st.cache_resource
 def get_market_data_manager():
@@ -663,8 +678,10 @@ def main():
             "Metrics to Display",
             options=display_metrics,
             default=default_metrics,
-            help="Select which metrics to display in the table"
+            help="Select which metrics to display in the table. You can reorder metrics by selecting/deselecting them."
         )
+        
+        st.caption("💡 Tip: You can reorder columns by selecting/deselecting them in the desired order.")
         
         # For vertical layout, ensure symbol is always included
         if layout == 'vertical' and 'symbol' not in selected_metrics:
