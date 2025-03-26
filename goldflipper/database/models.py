@@ -1065,7 +1065,9 @@ class WEMStock(Base):
         is_default (bool): Whether this is a default tracked stock
         atm_price (float): Current ATM price
         wem (float): Weekly expected move value
-        straddle_strangle (float): Straddle/Strangle value
+        straddle (float): ATM straddle value (ATM call + ATM put)
+        strangle (float): OTM strangle value (OTM call + OTM put)
+        straddle_strangle (float): Combined straddle/strangle value
         wem_spread (float): WEM spread percentage
         delta_16_plus (float): Delta 16 positive value
         straddle_2 (float): Straddle 2 value
@@ -1086,6 +1088,9 @@ class WEMStock(Base):
     # Using a computed column for WEM - calculated from straddle_strangle
     # This won't be stored in the database but will be computed when accessed
     wem = None  # This will be populated in the to_dict method
+    # Straddle and strangle are computed values, not stored in database
+    straddle = None
+    strangle = None
     straddle_strangle = Column(Float)
     wem_spread = Column(Float)
     delta_16_plus = Column(Float)
@@ -1116,12 +1121,39 @@ class WEMStock(Base):
         """
         # Calculate WEM value if straddle_strangle is available
         wem_value = None
+        straddle_value = None
+        strangle_value = None
+        
         if self.straddle_strangle is not None:
             wem_value = self.straddle_strangle / 2
+            
+        # Try to get straddle and strangle from meta_data
+        if self.meta_data and isinstance(self.meta_data, dict):
+            # Get WEM from meta_data as fallback if not calculated above
+            if wem_value is None:
+                wem_value = self.meta_data.get('calculated_wem')
+                
+            # Get straddle value
+            if self.meta_data.get('atm_call_mid') is not None and self.meta_data.get('atm_put_mid') is not None:
+                straddle_value = self.meta_data.get('atm_call_mid') + self.meta_data.get('atm_put_mid')
+            
+            # Get strangle value
+            if self.meta_data.get('otm_call_mid') is not None and self.meta_data.get('otm_put_mid') is not None:
+                strangle_value = self.meta_data.get('otm_call_mid') + self.meta_data.get('otm_put_mid')
         
-        # Check for WEM in meta_data as fallback
-        if wem_value is None and self.meta_data and isinstance(self.meta_data, dict):
-            wem_value = self.meta_data.get('calculated_wem')
+        # If we have straddle_2 but not straddle, use it as an approximation
+        if straddle_value is None and self.straddle_2 is not None:
+            straddle_value = self.straddle_2
+            
+        # If we have straddle_1 but not strangle, use it as an approximation
+        if strangle_value is None and self.straddle_1 is not None:
+            strangle_value = self.straddle_1
+            
+        # Last resort: if we have straddle_strangle but not individual values,
+        # estimate based on typical ratios (can adjust these based on observation)
+        if straddle_value is None and strangle_value is None and self.straddle_strangle is not None:
+            straddle_value = self.straddle_strangle * 0.55  # Straddle is typically larger
+            strangle_value = self.straddle_strangle * 0.45  # Strangle is typically smaller
         
         return {
             'id': str(self.id),
@@ -1129,6 +1161,8 @@ class WEMStock(Base):
             'is_default': self.is_default,
             'atm_price': self.atm_price,
             'wem': wem_value,  # Use calculated WEM
+            'straddle': straddle_value,  # Add straddle
+            'strangle': strangle_value,  # Add strangle
             'straddle_strangle': self.straddle_strangle,
             'wem_spread': self.wem_spread,
             'delta_16_plus': self.delta_16_plus,

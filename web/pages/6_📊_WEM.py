@@ -271,7 +271,7 @@ def update_wem_stock(session: Session, stock_data: Dict[str, Any]) -> bool:
     if not symbol:
         logger.error("No symbol provided for WEM stock update")
         return False
-
+            
     logger.info(f"Updating WEM stock: {symbol}")
     
     try:
@@ -283,25 +283,25 @@ def update_wem_stock(session: Session, stock_data: Dict[str, Any]) -> bool:
             wem_stock = WEMStock(symbol=symbol)
             session.add(wem_stock)
         
-        # Handle the 'wem' attribute specially due to database schema issues
-        # If 'wem' exists in stock_data and the WEMStock object has this attribute
-        if 'wem' in stock_data:
-            wem_value = stock_data.pop('wem')  # Remove from dict to avoid SQLAlchemy errors
-            
-            # If 'meta_data' exists, update it with the calculated WEM
-            if not hasattr(wem_stock, 'wem'):
-                logger.warning(f"WEM column not found in database for {symbol}, storing in meta_data")
+        # Initialize meta_data if it doesn't exist
+        if not wem_stock.meta_data:
+            wem_stock.meta_data = {}
+        
+        # Handle computed fields that might not exist in the database schema
+        computed_fields = ['wem', 'straddle', 'strangle']
+        
+        # Process each computed field
+        for field in computed_fields:
+            if field in stock_data:
+                field_value = stock_data.pop(field)  # Remove from dict to avoid SQLAlchemy errors
                 
-                # Initialize meta_data if it doesn't exist
-                if not wem_stock.meta_data:
-                    wem_stock.meta_data = {}
-                
-                # Update meta_data with the calculated WEM value
+                # Store in meta_data as a fallback
                 if isinstance(wem_stock.meta_data, dict):
-                    wem_stock.meta_data['calculated_wem'] = wem_value
-            else:
-                # If the column exists, set it directly
-                wem_stock.wem = wem_value
+                    wem_stock.meta_data[f'calculated_{field}'] = field_value
+                
+                # Also try to set the attribute directly if it exists
+                if hasattr(wem_stock, field) and not isinstance(getattr(wem_stock, field), type(None)):
+                    setattr(wem_stock, field, field_value)
         
         # Update other attributes
         for key, value in stock_data.items():
@@ -319,7 +319,7 @@ def update_wem_stock(session: Session, stock_data: Dict[str, Any]) -> bool:
 
 def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Calculate the expected move for a stock based on options data.
+    Calculate the expected move for a stock based on real options data.
     
     Args:
         session: Database session
@@ -336,49 +336,140 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dic
     logger.info(f"Calculating expected move for {symbol}")
     
     try:
-        # Get market data for the stock
-        logger.debug(f"Fetching options data for {symbol}")
+        # First try to get latest data from database
+        logger.debug(f"Attempting to get latest market data for {symbol}")
+        market_data = get_latest_market_data(session, symbol)
         
-        # TODO: Replace with actual API call to get options data
-        # For now, we'll simulate the data
-        # In a real implementation, you would call your options data provider here
+        # If no recent data or data is old, update it
+        if not market_data or (datetime.utcnow() - market_data.timestamp).total_seconds() > 300:  # 5 minutes
+            logger.info(f"Market data for {symbol} is old or missing, updating...")
+            market_data = update_market_data(session, symbol)
         
-        # Simulated ATM price
-        atm_price = random.uniform(50, 500)
+        if not market_data:
+            logger.error(f"No market data available for {symbol}")
+            return None
         
-        # Calculate straddle and strangle levels using mid prices for ATM and OTM options
-        straddle_level = atm_price * random.uniform(0.05, 0.10)  # 5-10% of price
-        strangle_level = atm_price * random.uniform(0.03, 0.08)  # 3-8% of price
+        # Get current price
+        atm_price = market_data.close
+        logger.info(f"Current price for {symbol}: ${atm_price:.2f}")
         
-        # Calculate WEM as the average of straddle and strangle levels
+        # Get option chain from market data provider
+        manager = get_market_data_manager()
+        if not manager:
+            logger.error(f"No market data manager available for {symbol}")
+            return None
+        
+        logger.info(f"Fetching option chain for {symbol}")
+        chain = manager.get_option_chain(symbol)
+        
+        if not chain or not isinstance(chain, dict) or 'calls' not in chain or 'puts' not in chain:
+            logger.error(f"Invalid option chain data for {symbol}")
+            return None
+        
+        calls = chain['calls']
+        puts = chain['puts']
+        
+        if calls.empty or puts.empty:
+            logger.error(f"Empty option chain data for {symbol}")
+            return None
+            
+        # Find ATM options (closest strike to current price)
+        logger.debug(f"Finding ATM options at price {atm_price}")
+        
+        # Get closest strike to current price
+        all_strikes = sorted(set(calls['strike'].tolist() + puts['strike'].tolist()))
+        atm_strike = min(all_strikes, key=lambda x: abs(float(x) - atm_price))
+        logger.info(f"Selected ATM strike: {atm_strike}")
+        
+        # Get ATM call and put
+        atm_calls = calls[calls['strike'] == atm_strike]
+        atm_puts = puts[puts['strike'] == atm_strike]
+        
+        if atm_calls.empty or atm_puts.empty:
+            logger.error(f"No ATM options found for {symbol} at strike {atm_strike}")
+            return None
+        
+        atm_call = atm_calls.iloc[0]
+        atm_put = atm_puts.iloc[0]
+        
+        # Calculate ATM straddle mid price
+        atm_call_mid = (float(atm_call['bid']) + float(atm_call['ask'])) / 2
+        atm_put_mid = (float(atm_put['bid']) + float(atm_put['ask'])) / 2
+        straddle_level = atm_call_mid + atm_put_mid
+        
+        # Find OTM options at approximately 16 delta
+        logger.debug(f"Finding OTM options at ~16 delta")
+        
+        # Get OTM calls (higher strikes)
+        otm_calls = calls[calls['strike'] > atm_strike].copy()
+        if not otm_calls.empty and 'delta' in otm_calls.columns:
+            # Convert to numeric and handle NaN
+            otm_calls['delta'] = pd.to_numeric(otm_calls['delta'], errors='coerce')
+            # Calculate distance from target delta
+            otm_calls['delta_diff'] = (otm_calls['delta'] - 0.16).abs()
+            # Get closest to 16 delta
+            otm_call = otm_calls.nsmallest(1, 'delta_diff').iloc[0]
+        else:
+            # Fallback: use first OTM call
+            otm_call = calls[calls['strike'] > atm_strike].iloc[0] if not calls[calls['strike'] > atm_strike].empty else None
+            
+        # Get OTM puts (lower strikes)
+        otm_puts = puts[puts['strike'] < atm_strike].copy()
+        if not otm_puts.empty and 'delta' in otm_puts.columns:
+            # For puts, delta is negative, so we need absolute value
+            otm_puts['delta'] = pd.to_numeric(otm_puts['delta'], errors='coerce')
+            # Delta closer to -0.16
+            otm_puts['delta_diff'] = (otm_puts['delta'] + 0.16).abs()  # Add because put deltas are negative
+            # Get closest to -16 delta
+            otm_put = otm_puts.nsmallest(1, 'delta_diff').iloc[0]
+        else:
+            # Fallback: use first OTM put
+            otm_put = puts[puts['strike'] < atm_strike].iloc[0] if not puts[puts['strike'] < atm_strike].empty else None
+            
+        if otm_call is None or otm_put is None:
+            logger.error(f"Could not find suitable OTM options for {symbol}")
+            return None
+                
+        # Calculate OTM strangle mid price
+        otm_call_mid = (float(otm_call['bid']) + float(otm_call['ask'])) / 2
+        otm_put_mid = (float(otm_put['bid']) + float(otm_put['ask'])) / 2
+        strangle_level = otm_call_mid + otm_put_mid
+        
+        # Calculate straddle/strangle combined value
         straddle_strangle = (straddle_level + strangle_level) / 2
-        wem = straddle_strangle / 2  # WEM is half of the combined straddle/strangle value
         
-        # Calculate WEM spread as percentage of ATM price
+        # Calculate WEM as half of straddle/strangle
+        wem = straddle_strangle / 2
+        
+        # Calculate WEM spread as percentage of price
         wem_spread = wem / atm_price
         
-        # Additional metrics
-        delta_16_plus = atm_price + (atm_price * random.uniform(0.05, 0.15))
-        delta_16_minus = atm_price - (atm_price * random.uniform(0.05, 0.15))
+        # Calculate price levels
+        delta_16_plus = float(otm_call['strike'])
+        delta_16_minus = float(otm_put['strike'])
         delta_range = delta_16_plus - delta_16_minus
         delta_range_pct = delta_range / atm_price
         
         # Log calculated values for debugging
         logger.debug(f"{symbol} ATM price: ${atm_price:.2f}")
-        logger.debug(f"{symbol} ATM Call Mid: ${straddle_level/2:.2f}")
-        logger.debug(f"{symbol} ATM Put Mid: ${straddle_level/2:.2f}")
+        logger.debug(f"{symbol} ATM Call Mid: ${atm_call_mid:.2f}")
+        logger.debug(f"{symbol} ATM Put Mid: ${atm_put_mid:.2f}")
         logger.debug(f"{symbol} Straddle level: ${straddle_level:.2f}")
+        logger.debug(f"{symbol} OTM Call Mid: ${otm_call_mid:.2f}")
+        logger.debug(f"{symbol} OTM Put Mid: ${otm_put_mid:.2f}")
         logger.debug(f"{symbol} Strangle level: ${strangle_level:.2f}")
         logger.debug(f"{symbol} Combined Straddle/Strangle: ${straddle_strangle:.2f}")
         logger.debug(f"{symbol} WEM: ${wem:.2f}")
-        logger.debug(f"{symbol} WEM spread: {wem_spread:.2%}")
+        logger.debug(f"{symbol} WEM spread: {wem_spread:.4f}")
         logger.debug(f"{symbol} Expected range: ${atm_price-wem:.2f} to ${atm_price+wem:.2f}")
         
-        # Return the calculated values
+        # Return the calculated values with real market data
         result = {
             'atm_price': float(atm_price),
             'straddle_strangle': float(straddle_strangle),
-            'wem': float(wem),  # Explicitly save the WEM value
+            'straddle': float(straddle_level),
+            'strangle': float(strangle_level),
+            'wem': float(wem),
             'wem_spread': float(wem_spread),
             'delta_16_plus': float(delta_16_plus),
             'straddle_2': float(straddle_level),
@@ -387,22 +478,31 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dic
             'delta_range': float(delta_range),
             'delta_range_pct': float(delta_range_pct),
             'meta_data': {
-                'calculation_timestamp': datetime.now().isoformat(),
-                'calculation_method': 'simulated',  # Replace with actual method
-                'data_source': 'random',  # Replace with actual source
-                'atm_call_mid': float(straddle_level/2),
-                'atm_put_mid': float(straddle_level/2),
-                'calculated_wem': float(wem)  # Store WEM in meta_data as fallback
+                'calculation_timestamp': datetime.utcnow().isoformat(),
+                'calculation_method': 'market_data',
+                'data_source': market_data.source,
+                'atm_call_mid': float(atm_call_mid),
+                'atm_put_mid': float(atm_put_mid),
+                'otm_call_mid': float(otm_call_mid),
+                'otm_put_mid': float(otm_put_mid),
+                'atm_strike': float(atm_strike),
+                'otm_call_strike': float(otm_call['strike']),
+                'otm_put_strike': float(otm_put['strike']),
+                'atm_call_delta': float(atm_call['delta']) if 'delta' in atm_call else None,
+                'atm_put_delta': float(atm_put['delta']) if 'delta' in atm_put else None,
+                'otm_call_delta': float(otm_call['delta']) if 'delta' in otm_call else None,
+                'otm_put_delta': float(otm_put['delta']) if 'delta' in otm_put else None,
+                'calculated_wem': float(wem)
             }
         }
         
-        logger.info(f"Successfully calculated expected move for {symbol}")
+        logger.info(f"Successfully calculated expected move for {symbol} using real market data")
         return result
     except Exception as e:
         logger.error(f"Error calculating expected move for {symbol}: {str(e)}", exc_info=True)
         return None
 
-def create_wem_table(stocks, layout="horizontal", metrics=None):
+def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
     """
     Creates an interactive table for displaying WEM data.
     
@@ -410,6 +510,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None):
         stocks: List of stock dictionaries with WEM data
         layout: 'horizontal' or 'vertical' layout
         metrics: List of metrics to display
+        sig_figs: Number of significant figures to display
         
     Returns:
         dict: Dictionary with the table data and column configuration
@@ -430,6 +531,15 @@ def create_wem_table(stocks, layout="horizontal", metrics=None):
     if 'last_updated' in df.columns and df['last_updated'].dtype == 'object':
         df['last_updated'] = pd.to_datetime(df['last_updated'])
         df['last_updated'] = df['last_updated'].dt.strftime('%Y-%m-%d %H:%M')
+    
+    # Format numeric columns with specified significant figures
+    numeric_cols = df.select_dtypes(include=['float', 'int']).columns
+    for col in numeric_cols:
+        if col in ['wem_spread', 'delta_range_pct']:
+            # Format percentage values with percent sign
+            df[col] = df[col].apply(lambda x: f"{x*100:.{sig_figs-2}f}%" if pd.notnull(x) else x)
+        else:
+            df[col] = df[col].apply(lambda x: round(x, sig_figs-1) if pd.notnull(x) else x)
     
     # Ensure there's a WEM value for each stock - calculate if missing
     if 'straddle_strangle' in df.columns:
@@ -457,6 +567,24 @@ def create_wem_table(stocks, layout="horizontal", metrics=None):
     # Filter columns
     df = df[metrics]
     
+    # Dictionary to map column names to prettier display names
+    column_display_names = {
+        'symbol': 'Symbol',
+        'atm_price': 'ATM Price',
+        'wem': 'WEM',
+        'straddle': 'Straddle',
+        'strangle': 'Strangle',
+        'straddle_strangle': 'Straddle/Strangle',
+        'wem_spread': 'WEM Spread %',
+        'delta_16_plus': 'Delta 16+',
+        'straddle_2': 'Straddle 2',
+        'straddle_1': 'Straddle 1',
+        'delta_16_minus': 'Delta 16-',
+        'delta_range': 'Delta Range',
+        'delta_range_pct': 'Delta Range %',
+        'last_updated': 'Last Updated'
+    }
+    
     # Configure the display based on layout
     columns = []
     
@@ -475,6 +603,9 @@ def create_wem_table(stocks, layout="horizontal", metrics=None):
         # Filter rows that match our valid metrics
         df = df.loc[valid_metrics]
         
+        # Rename index with pretty names
+        df.index = [column_display_names.get(idx, idx.replace('_', ' ').title()) for idx in df.index]
+        
         # Configure columns - each stock symbol is a column
         stock_symbols = original_df['symbol'].tolist()
         for symbol in stock_symbols:
@@ -484,13 +615,32 @@ def create_wem_table(stocks, layout="horizontal", metrics=None):
                 "width": 120
             })
     else:  # vertical layout
-        # Configure columns - each metric is a column
+        # Configure columns - each metric is a column with proper formatting
         for metric in metrics:
+            display_name = column_display_names.get(metric, metric.replace('_', ' ').title())
             column_width = 150 if metric in ['symbol', 'last_updated'] else 120
+            
+            # Determine column type and format for display
+            column_type = "text"
+            column_format = None
+            
+            if metric == 'atm_price':
+                column_type = "number"
+                column_format = "$.4f"
+            elif metric in ['wem', 'straddle', 'strangle', 'straddle_strangle', 'delta_range', 'straddle_1', 'straddle_2', 'delta_16_plus', 'delta_16_minus']:
+                column_type = "number" 
+                column_format = "%.4f"
+            elif metric in ['wem_spread', 'delta_range_pct']:
+                # For percentage columns, we've already formatted them as strings with % sign
+                column_type = "text"  # Changed from "number" to "text" to preserve % sign
+                column_format = None  # No format needed since we've already formatted the values
+            
             columns.append({
                 "field": metric,
-                "headerName": metric.replace('_', ' ').title(),
-                "width": column_width
+                "headerName": display_name,
+                "width": column_width,
+                "type": column_type,
+                "format": column_format
             })
     
     logger.info(f"Created table with {df.shape[0]} rows, {df.shape[1]} columns")
@@ -647,6 +797,16 @@ def main():
         # Display options
         st.subheader("Display Options")
         
+        # Add significant figures setting
+        sig_figs = st.slider(
+            "Significant Figures",
+            min_value=2,
+            max_value=8,
+            value=4,
+            step=1,
+            help="Number of significant figures to display for numeric values"
+        )
+        
         layout = st.radio(
             "Table Layout",
             options=["horizontal", "vertical"],
@@ -658,7 +818,7 @@ def main():
         all_metrics = [
             'symbol', 'atm_price', 'wem', 'wem_spread',
             'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-            'delta_range', 'delta_range_pct', 'straddle_strangle', 'last_updated'
+            'delta_range', 'delta_range_pct', 'straddle', 'strangle', 'straddle_strangle', 'last_updated'
         ]
         
         # For horizontal layout, filter out 'symbol' from selectable metrics
@@ -699,75 +859,73 @@ def main():
         # Initialize wem_df as None so we can check if it exists before export
         wem_df = None
         
-        # Main content setup - Get data within context manager
-        try:
-            # Get WEM stocks from database within a context manager
-            with get_db_connection() as db_session:
-                # Get WEM stocks from database
-                date_start, date_end = date_range
-                date_end = datetime.combine(date_end, datetime.max.time())  # End of the selected day
+    # Main content setup - Get data within context manager
+    try:
+        # Get WEM stocks from database within a context manager
+        with get_db_connection() as db_session:
+            # Get WEM stocks from database
+            date_start, date_end = date_range
+            date_end = datetime.combine(date_end, datetime.max.time())  # End of the selected day
+            
+            # Add a day to include the end date in the range
+            date_end += timedelta(days=1)
+            
+            wem_stocks = get_wem_stocks(
+                db_session, 
+                from_date=date_start,
+                to_date=date_end,
+                symbols=symbols
+            )
+            
+            if not wem_stocks:
+                st.warning("No WEM data found. Please update the data first.")
+            else:
+                # Convert to list of dictionaries
+                stocks_data = wem_stocks  # Already a list of dictionaries
                 
-                # Add a day to include the end date in the range
-                date_end += timedelta(days=1)
-                
-                wem_stocks = get_wem_stocks(
-                    db_session, 
-                    from_date=date_start,
-                    to_date=date_end,
-                    symbols=symbols
-                )
-                
-                if not wem_stocks:
-                    st.warning("No WEM data found. Please update the data first.")
-                else:
-                    # Convert to list of dictionaries
-                    stocks_data = wem_stocks  # Already a list of dictionaries
-                    
-                    # Create WEM table
-                    wem_df = create_wem_table(stocks_data, layout=layout, metrics=selected_metrics)
-                    
-        except Exception as e:
-            st.error(f"Error loading data: {str(e)}")
-            logger.exception("Error getting WEM data")
-            wem_df = None
-        
-        if st.button("Export Data") and wem_df is not None:
-            with st.spinner("Preparing export..."):
-                try:
-                    # Get the current timestamp for the filename
-                    timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M")
-                    
-                    if export_format == "CSV":
-                        # Export to CSV
-                        csv_path = f"./data/exports/{timestamp}_export.csv"
-                        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-                        
-                        wem_df['df'].to_csv(csv_path)
-                        st.success(f"Data exported to {csv_path}")
-                        
-                    else:  # Excel
-                        # Export to Excel
-                        excel_path = f"./data/exports/{timestamp}_export.xlsx"
-                        os.makedirs(os.path.dirname(excel_path), exist_ok=True)
-                        
-                        with pd.ExcelWriter(excel_path) as writer:
-                            # Write WEM data
-                            wem_df['df'].to_excel(writer, sheet_name='WEM Data')
-                            
-                            # Write notes to second sheet
-                            notes_df = pd.DataFrame({
-                                "Note": ["Generated by Goldflipper WEM Module", 
-                                         f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                                         f"Symbols: {', '.join(symbols) if symbols else 'All'}"]
-                            })
-                            notes_df.to_excel(writer, sheet_name='Notes', index=False)
-                        
-                        st.success(f"Data exported to {excel_path}")
-                    
-                except Exception as e:
-                    st.error(f"Export failed: {str(e)}")
-                    logger.exception("Export error")
+                # Create WEM table
+                wem_df = create_wem_table(stocks_data, layout=layout, metrics=selected_metrics, sig_figs=sig_figs)
+    except Exception as e:
+        st.error(f"Error loading data: {str(e)}")
+        logger.exception("Error getting WEM data")
+        wem_df = None
     
+    if st.button("Export Data") and wem_df is not None:
+        with st.spinner("Preparing export..."):
+            try:
+                # Get the current timestamp for the filename
+                timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M")
+                
+                if export_format == "CSV":
+                    # Export to CSV
+                    csv_path = f"./data/exports/{timestamp}_export.csv"
+                    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+                    
+                    wem_df['df'].to_csv(csv_path)
+                    st.success(f"Data exported to {csv_path}")
+                    
+                else:  # Excel
+                    # Export to Excel
+                    excel_path = f"./data/exports/{timestamp}_export.xlsx"
+                    os.makedirs(os.path.dirname(excel_path), exist_ok=True)
+                    
+                    with pd.ExcelWriter(excel_path) as writer:
+                        # Write WEM data
+                        wem_df['df'].to_excel(writer, sheet_name='WEM Data')
+                        
+                        # Write notes to second sheet
+                        notes_df = pd.DataFrame({
+                            "Note": ["Generated by Goldflipper WEM Module", 
+                                     f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                                     f"Symbols: {', '.join(symbols) if symbols else 'All'}"]
+                        })
+                        notes_df.to_excel(writer, sheet_name='Notes', index=False)
+                    
+                    st.success(f"Data exported to {excel_path}")
+            except Exception as e:
+                st.error(f"Export failed: {str(e)}")
+                logger.exception("Export error")
+
     # Display the table if data is available
     if 'wem_df' in locals() and wem_df is not None:
         # Display the table
@@ -806,10 +964,18 @@ def main():
                 wem_df['df'],
                 use_container_width=True,
                 hide_index=False,  # Show index for horizontal layout
+                height=800,  # Add height parameter to allow table to expand vertically
                 column_config={
-                    col["field"]: st.column_config.Column(
-                        col["headerName"],
-                        width=col["width"]
+                    col["field"]: (
+                        st.column_config.NumberColumn(
+                            col["headerName"],
+                            width=col["width"],
+                            format=col["format"]
+                        ) if col.get("type") == "number" else
+                        st.column_config.Column(
+                            col["headerName"],
+                            width=col["width"]
+                        )
                     ) for col in wem_df['columns']
                 }
             )

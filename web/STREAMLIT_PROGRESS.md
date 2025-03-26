@@ -10,14 +10,20 @@
    - Added flexible metric selection with reordering capability
    - Added responsive table styling with proper headers and formatting
 
-2. **Database Integration**
+2. **Market Data Integration**
+   - Implemented real-time options data fetching from market data providers
+   - Added ATM straddle calculation using actual mid prices
+   - Implemented OTM strangle calculation with ~16 delta options
+   - Calculated WEM values using real market pricing instead of simulations
+
+3. **Database Integration**
    - Implemented computed property approach for WEM value calculation
    - Enhanced database model to handle missing column gracefully
    - Added proper date range and symbol filtering
    - Implemented stock management (adding/viewing stocks)
 
-3. **Data Processing**
-   - Created robust calculation for WEM values based on straddle/strangle data
+4. **Data Processing**
+   - Created robust calculation for WEM values based on real market data
    - Added automatic data refresh with on-demand updates
    - Implemented data export to CSV and Excel formats
    - Enhanced error handling and validation throughout

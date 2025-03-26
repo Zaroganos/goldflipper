@@ -1,6 +1,13 @@
 This is a list of tasks to do and features to implement for the goldflipper project.
 Place new tasks on top.
 
+- [✓] Fix WEM calculation to use real market data:
+      1. ✓ Replace simulated random data with actual options market data
+      2. ✓ Implement proper ATM straddle calculation using real mid prices
+      3. ✓ Add OTM strangle calculation with 16-delta options
+      4. ✓ Calculate proper WEM values based on real market pricing
+      5. ✓ Add comprehensive logging and error handling
+
 - [✓] Fix WEM Streamlit module:
       1. ✓ Fix WEM calculation and display in both vertical and horizontal layouts
       2. ✓ Implement proper database integration with computed WEM values
