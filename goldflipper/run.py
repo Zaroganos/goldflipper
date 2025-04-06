@@ -152,6 +152,7 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
                     self.watchdog.update_heartbeat()
                     monitor_plays_continuously()
                     self.watchdog.update_heartbeat()
+                    
                     polling_interval = config.get('monitoring', 'polling_interval', default=30) * 1000  # Convert to milliseconds
                     win32event.WaitForSingleObject(self.stop_event, polling_interval)
                 except Exception as e:
@@ -210,7 +211,7 @@ def run_trading_system(console_mode=False):
                     display.info(f"Cycle {cycle_count} started")
                 watchdog.update_heartbeat()
                 
-                # Remove the thread creation and use direct call
+                # Call monitor_plays_continuously to execute a full monitoring cycle
                 try:
                     monitor_plays_continuously()
                 except Exception as e:
@@ -218,7 +219,7 @@ def run_trading_system(console_mode=False):
                     logging.error(error_msg)
                     if console_mode:
                         display.error(error_msg)
-
+                
                 # Keep the heartbeat update but without the inner loop
                 polling_interval = config.get('monitoring', 'polling_interval', default=30)
                 time.sleep(polling_interval)

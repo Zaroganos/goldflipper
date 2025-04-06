@@ -1690,6 +1690,10 @@ def monitor_plays_continuously():
     plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plays'))
     market_data = get_market_data_manager()  # Initialize market data manager
     
+    # Import the JSON fixer
+    from goldflipper.utils.json_fixer import PlayFileFixer
+    json_fixer = PlayFileFixer()
+    
     display.info(f"Monitoring plays directory: {plays_dir}")
     logging.info(f"Monitoring plays directory: {plays_dir}")
 
@@ -1794,15 +1798,40 @@ def monitor_plays_continuously():
 
             display.header("Cycle complete. Waiting for next cycle...")
             logging.info("Cycle complete. Waiting for next cycle")
+            
+            # Run JSON fixer after the cycle completes but before the sleep
+            # Use a small delay to ensure all file operations from the cycle are complete
+            json_fix_delay = 3  # seconds to wait before running JSON fixer
+            polling_interval = config.get('monitoring', 'polling_interval', default=30)
+            
+            if json_fix_delay < polling_interval:  # Only run if there's enough time before next cycle
+                time.sleep(json_fix_delay)  # Short delay before running the fixer
+                
+                try:
+                    fixed_count = json_fixer.check_and_fix_all_plays()
+                    if fixed_count > 0:
+                        logging.info(f"JSON fixer repaired {fixed_count} corrupted play files")
+                        display.info(f"JSON fixer repaired {fixed_count} corrupted play files")
+                except Exception as e:
+                    error_msg = f"Error in JSON fixer: {str(e)}"
+                    logging.error(error_msg)
+                    display.error(error_msg)
+                    
+                # Adjust remaining sleep time
+                remaining_sleep = max(0, polling_interval - json_fix_delay)
+                time.sleep(remaining_sleep)
+            else:
+                # Full polling interval if no time for JSON fixer
+                time.sleep(polling_interval)
 
         except Exception as e:
             error_msg = f"An error occurred during play monitoring: {e}"
             display.error(error_msg)
             logging.error(error_msg)
 
-        # Read the polling_interval from settings.yaml under the monitoring section.
-        polling_interval = config.get('monitoring', 'polling_interval', default=30)
-        time.sleep(polling_interval)  # Wait for the configured interval before the next cycle
+            # Read the polling_interval from settings.yaml under the monitoring section.
+            polling_interval = config.get('monitoring', 'polling_interval', default=30)
+            time.sleep(polling_interval)  # Wait for the configured interval before the next cycle
 
 # ==================================================
 # 8. ANCILLARY FUNCTIONS
