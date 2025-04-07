@@ -74,8 +74,8 @@ pip install -r requirements.txt
 ```
 
 3. Configure your API keys:
-   - Modify the config/config.py file with your Alpaca API keys
-   - Set up your trading parameters in the configuration files
+   - Modify the settings.yaml file with your Alpaca API keys and market data provider API keys
+   - Set up your trading and operating parameters as well
 
 ### Running the System
 
