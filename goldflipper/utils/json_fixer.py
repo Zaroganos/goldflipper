@@ -83,6 +83,16 @@ class PlayFileFixer:
             "play_class": play_class
         }
     
+    def _is_cut_off_at_entry_premium(self, content):
+        """Check if file appears to be cut off right after entry_premium field."""
+        # Pattern for files cut off after entry_premium: null}}
+        if '"entry_premium": null}}' in content and content.strip().endswith('}}'):
+            line_count = len(content.strip().split('\n'))
+            # If the file is very short (around 8 lines) and ends with entry_premium
+            if line_count <= 10:
+                return True
+        return False
+    
     def _is_corrupted(self, file_path):
         """Check if a play file appears to be corrupted."""
         try:
@@ -103,6 +113,11 @@ class PlayFileFixer:
             if re.search(r'"[^"]+"\s*:\s*$', content):
                 self.logger.warning(f"File {file_path} appears to be cut off mid-attribute")
                 return True
+            
+            # Check for the new pattern: cut off after entry_premium field
+            if self._is_cut_off_at_entry_premium(content):
+                self.logger.warning(f"File {file_path} appears to be cut off after entry_premium field")
+                return True
                 
             # Check for imbalanced braces
             open_count = content.count('{')
@@ -110,6 +125,15 @@ class PlayFileFixer:
             if open_count != close_count:
                 self.logger.warning(f"File {file_path} has imbalanced braces: {open_count} opening vs {close_count} closing")
                 return True
+                
+            # Check for "integrity" field - if exists and false, file was previously corrupted and might need checking
+            try:
+                data = json.loads(content)
+                if "integrity" in data and data["integrity"] is False:
+                    self.logger.warning(f"File {file_path} has integrity flag set to false")
+                    # Don't mark as corrupted if syntax is valid, just log the warning
+            except:
+                pass
                 
             # Try to parse JSON to see if it's valid
             json.loads(content)
@@ -131,6 +155,7 @@ class PlayFileFixer:
             
             # Extract play info even from corrupted content
             play_info = self._extract_play_info(content)
+            was_corrupted = True  # Tracks if the file was corrupted and needed fixing
             
             # Get template key
             template_key = f"{play_info.get('trade_type', 'UNKNOWN')}_{play_info.get('play_class', 'SIMPLE')}"
@@ -151,19 +176,73 @@ class PlayFileFixer:
                     missing_braces = open_braces - close_braces
                     # Add proper number of closing braces at the end
                     modified_content += ''.join(['}'] * missing_braces)
+                
+                try:    
+                    # Try to parse the repaired JSON to validate it
+                    repaired_json = json.loads(modified_content)
                     
-                # Try to parse the repaired JSON to validate it
-                json.loads(modified_content)
-                
-                # Write the repaired content back to the file
-                with open(file_path, 'w') as f:
-                    f.write(modified_content)
-                
-                self.fix_count += 1
-                self.logger.info(f"Successfully repaired file {file_path} (added null for cut-off attribute and balanced braces)")
-                return True
+                    # Add integrity field
+                    repaired_json["integrity"] = False
+                    
+                    # Write the repaired content back to the file
+                    with open(file_path, 'w') as f:
+                        json.dump(repaired_json, f, indent=4)
+                    
+                    self.fix_count += 1
+                    self.logger.info(f"Successfully repaired file {file_path} (added null for cut-off attribute and balanced braces)")
+                    return True
+                except Exception as e:
+                    self.logger.error(f"Error validating repaired JSON: {str(e)}")
+                    return False
             
-            # Case 2: Handle special case for null premium_atClose
+            # Case 2: Handle special case for cut off after entry_premium
+            if self._is_cut_off_at_entry_premium(content):
+                self.logger.info(f"Fixing file cut off after entry_premium: {file_path}")
+                
+                try:
+                    # Parse the partial JSON 
+                    partial_json = json.loads(content)
+                    
+                    # Get a template structure if available
+                    template = None
+                    if template_key in self.reference_templates:
+                        template = self.reference_templates[template_key]
+                    
+                    # Add the integrity field
+                    partial_json["integrity"] = False
+                    
+                    # Add minimum required fields if missing
+                    if "play_class" not in partial_json and template:
+                        partial_json["play_class"] = template.get("play_class", "SIMPLE")
+                        
+                    if "strike_price" not in partial_json:
+                        partial_json["strike_price"] = "0.0"  # Default placeholder
+                    
+                    if "expiration_date" not in partial_json:
+                        partial_json["expiration_date"] = "01/01/2099"  # Default placeholder
+                        
+                    # Add a placeholder status section if missing
+                    if "status" not in partial_json:
+                        partial_json["status"] = {
+                            "play_status": "NEW",
+                            "order_id": None,
+                            "order_status": None,
+                            "position_exists": False
+                        }
+                    
+                    # Write the repaired JSON to the file
+                    with open(file_path, 'w') as f:
+                        json.dump(partial_json, f, indent=4)
+                    
+                    self.fix_count += 1
+                    self.logger.info(f"Successfully repaired file cut off after entry_premium: {file_path}")
+                    return True
+                    
+                except Exception as e:
+                    self.logger.error(f"Error repairing file cut off after entry_premium: {str(e)}")
+                    return False
+            
+            # Case 3: Handle special case for null premium_atClose
             if '"premium_atClose": null' in content:
                 # Check for common JSON structure issues
                 try:
@@ -171,40 +250,53 @@ class PlayFileFixer:
                     if 'null}}' in content and content.count('{') < content.count('}'):
                         self.logger.info(f"Fixing null premium_atClose format in {file_path}")
                         # Remove extra closing brace
-                        content = content.replace('null}}', 'null}')
+                        modified_content = content.replace('null}}', 'null}')
                         
-                    # Try to parse the fixed content
-                    json.loads(content)
-                    
-                    # Write the repaired content back to the file
-                    with open(file_path, 'w') as f:
-                        f.write(content)
-                    
-                    self.fix_count += 1
-                    self.logger.info(f"Successfully repaired premium_atClose format in {file_path}")
-                    return True
+                        # Try to parse the fixed content
+                        repaired_json = json.loads(modified_content)
+                        
+                        # Add integrity field
+                        repaired_json["integrity"] = False
+                        
+                        # Write the repaired content back to the file
+                        with open(file_path, 'w') as f:
+                            json.dump(repaired_json, f, indent=4)
+                        
+                        self.fix_count += 1
+                        self.logger.info(f"Successfully repaired premium_atClose format in {file_path}")
+                        return True
+                    else:
+                        # Just validate content if no specific issue found
+                        repaired_json = json.loads(content)
+                        was_corrupted = False  # No corruption detected
                 except Exception as e:
                     self.logger.error(f"Repair attempt failed for {file_path}: {str(e)}")
+                    return False
             
-            # Case 3: Last resort - basic JSON structure repair
+            # Case 4: Last resort - basic JSON structure repair
             try:
                 # Try to at least make it valid JSON by balancing braces
                 open_braces = content.count('{')
                 close_braces = content.count('}')
+                
                 if open_braces > close_braces:
                     missing_braces = open_braces - close_braces
                     modified_content = content + ''.join(['}'] * missing_braces)
                     
                     # Try to parse
-                    json.loads(modified_content)
+                    repaired_json = json.loads(modified_content)
+                    
+                    # Add integrity field
+                    repaired_json["integrity"] = False
                     
                     # Write the repaired content back to the file
                     with open(file_path, 'w') as f:
-                        f.write(modified_content)
+                        json.dump(repaired_json, f, indent=4)
                     
                     self.fix_count += 1
                     self.logger.info(f"Basic repair successful for {file_path} (balanced braces)")
                     return True
+                    
                 elif open_braces < close_braces:
                     # Too many closing braces - this is harder to fix safely
                     # Just remove trailing braces as a simple fix
@@ -213,17 +305,20 @@ class PlayFileFixer:
                         modified_content = content[:-extra_braces]
                         
                         # Try to parse
-                        json.loads(modified_content)
+                        repaired_json = json.loads(modified_content)
+                        
+                        # Add integrity field
+                        repaired_json["integrity"] = False
                         
                         # Write the repaired content
                         with open(file_path, 'w') as f:
-                            f.write(modified_content)
+                            json.dump(repaired_json, f, indent=4)
                             
                         self.fix_count += 1
                         self.logger.info(f"Basic repair successful for {file_path} (removed extra braces)")
                         return True
-            except:
-                pass
+            except Exception as e:
+                self.logger.error(f"Last resort repair failed: {str(e)}")
                 
             self.logger.warning(f"File {file_path} is corrupted but couldn't be repaired automatically")
             return False
