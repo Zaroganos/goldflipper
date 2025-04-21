@@ -142,16 +142,29 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
             if not success:
                 raise Exception("System initialization failed")
             
-            # Start watchdog
-            self.watchdog = WatchdogManager()
-            self.watchdog.start_monitoring()
+            # Start watchdog only if enabled in config
+            watchdog_enabled = config.get('watchdog', 'enabled', default=False)
+            watchdog_check_interval = config.get('watchdog', 'check_interval', default=30)
+            
+            if watchdog_enabled:
+                # Start watchdog
+                self.watchdog = WatchdogManager(check_interval=watchdog_check_interval)
+                self.watchdog.start_monitoring()
+                logging.info("Watchdog monitoring started in service mode")
+            else:
+                logging.info("Watchdog system is disabled in configuration")
+                self.watchdog = None
             
             # Start main application loop
             while self.running:
                 try:
-                    self.watchdog.update_heartbeat()
+                    if self.watchdog:
+                        self.watchdog.update_heartbeat()
+                    
                     monitor_plays_continuously()
-                    self.watchdog.update_heartbeat()
+                    
+                    if self.watchdog:
+                        self.watchdog.update_heartbeat()
                     
                     polling_interval = config.get('monitoring', 'polling_interval', default=30) * 1000  # Convert to milliseconds
                     win32event.WaitForSingleObject(self.stop_event, polling_interval)
@@ -184,17 +197,34 @@ def run_trading_system(console_mode=False):
         if console_mode:
             display.info("Initializing WatchdogManager")
 
-        watchdog = WatchdogManager()
+        # Check if watchdog is enabled in config
+        watchdog_enabled = config.get('watchdog', 'enabled', default=False)
+        watchdog_check_interval = config.get('watchdog', 'check_interval', default=30)
+        watchdog_warning = config.get('watchdog', 'warning', default="EXPERIMENTAL: The watchdog system is experimental.")
         
-        logging.info("Starting watchdog monitoring")    
-        if console_mode:
-            display.info("Starting watchdog monitoring")
+        # Initialize watchdog only if enabled
+        watchdog = None
+        if watchdog_enabled:
+            logging.info("Watchdog system is enabled")
+            if console_mode:
+                display.warning(f"Watchdog Warning: {watchdog_warning}")
+                display.info("Watchdog system is enabled")
+            
+            watchdog = WatchdogManager(check_interval=watchdog_check_interval)
+            
+            logging.info("Starting watchdog monitoring")    
+            if console_mode:
+                display.info("Starting watchdog monitoring")
 
-        watchdog.start_monitoring()
-        watchdog.update_heartbeat()
-        if console_mode:
-            display.info("Initial heartbeat set")
-        logging.info("Initial heartbeat set")
+            watchdog.start_monitoring()
+            watchdog.update_heartbeat()
+            if console_mode:
+                display.info("Initial heartbeat set")
+            logging.info("Initial heartbeat set")
+        else:
+            logging.info("Watchdog system is disabled in configuration")
+            if console_mode:
+                display.info("Watchdog system is disabled in configuration")
         
         state_dir = Path(__file__).parent / 'state'
         state_dir.mkdir(exist_ok=True)
@@ -209,7 +239,10 @@ def run_trading_system(console_mode=False):
                 logging.info(f"Starting cycle {cycle_count}")
                 if console_mode:
                     display.info(f"Cycle {cycle_count} started")
-                watchdog.update_heartbeat()
+                
+                # Only update heartbeat if watchdog is enabled
+                if watchdog:
+                    watchdog.update_heartbeat()
                 
                 # Call monitor_plays_continuously to execute a full monitoring cycle
                 try:
@@ -223,7 +256,10 @@ def run_trading_system(console_mode=False):
                 # Keep the heartbeat update but without the inner loop
                 polling_interval = config.get('monitoring', 'polling_interval', default=30)
                 time.sleep(polling_interval)
-                watchdog.update_heartbeat()
+                
+                # Only update heartbeat if watchdog is enabled
+                if watchdog:
+                    watchdog.update_heartbeat()
                 
                 if console_mode:
                     display.info(f"Cycle {cycle_count} completed")
@@ -238,8 +274,12 @@ def run_trading_system(console_mode=False):
                 logging.error(error_msg)
                 if console_mode:
                     display.error(error_msg)
-                watchdog.update_heartbeat()
-                logging.info("Heartbeat updated after error")
+                
+                # Only update heartbeat if watchdog is enabled
+                if watchdog:
+                    watchdog.update_heartbeat()
+                    logging.info("Heartbeat updated after error")
+                
                 time.sleep(10)
         
     except Exception as e:

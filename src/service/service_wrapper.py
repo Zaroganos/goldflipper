@@ -84,14 +84,28 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
             self.logger.info("Initializing main service components")
             from goldflipper.watchdog.watchdog_manager import WatchdogManager
             from goldflipper.core import monitor_plays_continuously
+            from goldflipper.config.config import config
 
-            watchdog = WatchdogManager()
+            # Check if watchdog is enabled in config
+            watchdog_enabled = config.get('watchdog', 'enabled', default=False)
+            watchdog_check_interval = config.get('watchdog', 'check_interval', default=30)
+            
+            watchdog = None
+            if watchdog_enabled:
+                self.logger.info("Watchdog system is enabled")
+                watchdog = WatchdogManager(check_interval=watchdog_check_interval)
+                watchdog.start_monitoring()
+            else:
+                self.logger.info("Watchdog system is disabled in configuration")
             
             self.logger.info("Starting main service loop")
             while self.running:
                 try:
-                    watchdog.start_monitoring()
+                    if watchdog:
+                        watchdog.update_heartbeat()
+                    
                     monitor_plays_continuously()
+                    
                     win32event.WaitForSingleObject(self.stop_event, 30000)
                 except Exception as e:
                     error_msg = f"Error in main loop: {str(e)}\n{traceback.format_exc()}"
