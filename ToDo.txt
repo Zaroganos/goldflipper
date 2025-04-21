@@ -9,7 +9,7 @@ This is a list of things to do for the goldflipper project.
       6. ✓ Maintain backward compatibility for existing plays
 
       
-- [ ] Fix the problem with plays whose limit order is not filled and expires at the end of the day:
+- [?] Fix the problem with plays whose limit order is not filled and expires at the end of the day:
       1. ~~Implement atomic file operations for all play file writes~~ (Implemented in handle_end_of_day_pending_plays)
       2. ~~Add file backups before critical operations~~ (Implemented via save_play validation)
       3. ~~Add validation checks before saving play data~~ (Added load_play validation)
@@ -29,4 +29,57 @@ This is a list of things to do for the goldflipper project.
       5. Add version checking and auto-update capability
       6. Create installation scripts for each platform
       7. Set up proper logging paths for installed version
+      8. Integrate PyInstaller packaging to create standalone executables and test on target platforms
+
+
+- [ ] Implement service functionality and resilience features:
+      1. Set up Windows Service / Linux Systemd service:
+         - Create service configuration files
+         - Implement proper service lifecycle hooks (start, stop, pause, resume)
+         - Configure service dependencies (network, filesystem)
+         - Set up appropriate user permissions and security context
+      
+      2. Add automatic restart capabilities:
+         - Implement watchdog functionality to monitor program health
+         - Set up crash detection and reporting
+         - Configure automatic restart on failure
+         - Add exponential backoff for restart attempts
+      
+      3. Implement state recovery mechanisms:
+         - Add periodic state snapshots
+         - Implement transaction logging
+         - Create state recovery procedures
+         - Add consistency checks for recovered state
+      
+      4. Add system integration features:
+         - Configure startup with operating system
+         - Set up proper logging to system log (Windows Event Log / syslog)
+         - Implement health monitoring endpoints
+         - Add administrative control interface
+      
+      5. Implement graceful shutdown handling:
+         - Add proper cleanup procedures
+         - Implement state preservation
+         - Handle in-progress operations
+         - Add shutdown notification system
+
+      6. Create monitoring and alerting system:
+         - Set up health metrics collection
+         - Implement alert triggers for critical conditions
+         - Add remote monitoring capability
+         - Create status dashboard
+
+-- Service Management Enhancements --
+
+- Added a "Manage Service" button to the GoldFlipper TUI (goldflipper_tui.py).
+  - This button now presents a confirmation dialog with centered text.
+  - The dialog clearly warns that administrative privileges are required and that changes (install/uninstall) will not take effect until a system reboot.
+
+- For service installation:
+  - The elevated process installs the service and automatically starts it (via a PowerShell command that executes "python -m goldflipper.run --mode install" followed by "net start GoldFlipperService").
+
+- For service uninstallation:
+  - The elevated process stops the running service before uninstalling it (via a PowerShell command that executes "net stop GoldFlipperService" followed by "python -m goldflipper.run --mode remove").
+
+- These changes improve user clarity and ensure that service state actions are performed safely and with the proper permissions.
 

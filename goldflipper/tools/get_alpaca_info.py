@@ -142,22 +142,23 @@ def get_all_positions() -> Optional[Dict[str, Dict[str, Any]]]:
         return None
 
 def test_alpaca_connection():
-    """Test the connection to Alpaca API"""
+    """Test the connection to Alpaca API and return debug info."""
+    from goldflipper.alpaca_client import get_alpaca_client
+    from goldflipper.config.config import config
     client = get_alpaca_client()
+    active_account = config.get('alpaca', 'active_account')
+    account_nickname = config.get('alpaca', 'accounts')[active_account].get(
+        'nickname', active_account.replace('_', ' ').title()
+    )
+    
+    debug_message = f"[DEBUG] test_alpaca_connection() using active_account: '{active_account}'\n"
     try:
-        # Get active account nickname for display
-        active_account = config.get('alpaca', 'active_account')
-        account_nickname = config.get('alpaca', 'accounts')[active_account].get('nickname', 
-                                   active_account.replace('_', ' ').title())
-        
         account = client.get_account()
-        display.success(f"Successfully connected to Alpaca API using {account_nickname}")
-        display.info(f"Account Status: {account.status}")
-        display.info(f"Buying Power: ${float(account.buying_power):.2f}")
-        return True
+        debug_message += f"[DEBUG] Returned account.status: {account.status}, buying power: {account.buying_power}"
+        return True, debug_message
     except Exception as e:
-        display.error(f"Failed to connect to Alpaca API: {str(e)}")
-        return False
+        debug_message += f"[DEBUG] test_alpaca_connection() failed with error: {str(e)}"
+        return False, debug_message
 
 def main():
     """Main function to test the Alpaca info retrieval functions"""

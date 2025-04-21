@@ -248,10 +248,10 @@ def edit_play_field(play_data, field, filepath):
 
         # Get order type for take profit
         play_data['take_profit']['order_type'] = get_input(
-            "\nEnter order type (market/limit at bid/limit at last): ",
+            "\nEnter order type (market/limit at bid/limit at last/limit at ask/limit at mid): ",
             str,
-            validation=lambda x: x.lower() in ['market', 'limit at bid', 'limit at last'],
-            error_message="Please enter 'market', 'limit at bid', or 'limit at last'"
+            validation=lambda x: x.lower() in ['market', 'limit at bid', 'limit at last', 'limit at ask', 'limit at mid'],
+            error_message="Please enter 'market', 'limit at bid', 'limit at last', 'limit at ask', or 'limit at mid'"
         ).lower()
 
     elif field == 'stop_loss':
@@ -385,17 +385,17 @@ def edit_play_field(play_data, field, filepath):
             play_data['stop_loss']['order_type'] = 'market'
         elif sl_type == 'LIMIT':
             play_data['stop_loss']['order_type'] = get_input(
-                "\nEnter order type (limit at bid/limit at last): ",
+                "\nEnter order type (limit at bid/limit at last/limit at ask/limit at mid): ",
                 str,
-                validation=lambda x: x.lower() in ['limit at bid', 'limit at last'],
-                error_message="Please enter 'limit at bid' or 'limit at last'"
+                validation=lambda x: x.lower() in ['limit at bid', 'limit at last', 'limit at ask', 'limit at mid'],
+                error_message="Please enter 'limit at bid', 'limit at last', 'limit at ask', or 'limit at mid'"
             ).lower()
         else:  # CONTINGENCY
             limit_type = get_input(
-                "\nEnter limit order type for primary stop loss (limit at bid/limit at last): ",
+                "\nEnter limit order type for primary stop loss (limit at bid/limit at last/limit at ask/limit at mid): ",
                 str,
-                validation=lambda x: x.lower() in ['limit at bid', 'limit at last'],
-                error_message="Please enter 'limit at bid' or 'limit at last'"
+                validation=lambda x: x.lower() in ['limit at bid', 'limit at last', 'limit at ask', 'limit at mid'],
+                error_message="Please enter 'limit at bid', 'limit at last', 'limit at ask', or 'limit at mid'"
             ).lower()
             play_data['stop_loss']['order_type'] = [limit_type, 'market']
 
@@ -549,12 +549,15 @@ def display_plays_list(plays, source_folder, current_play_filename):
         print(f"{idx}. {play['filename']}")
     return filtered_plays
 
-def select_plays_from_list(plays):
+def select_plays_from_list(plays, prompt=None):
     """Let user select multiple plays from displayed list, preventing duplicates"""
     selected = []
+    default_prompt = "\nEnter play number to add (or press Enter to finish): "
+    input_prompt = prompt if prompt else default_prompt
+    
     while True:
         choice = get_input(
-            "\nEnter play number to add (or press Enter to finish): ",
+            input_prompt,
             type_cast=str,
             optional=True
         )
@@ -627,10 +630,14 @@ def edit_conditional_plays(play_data, filepath):
             print("OCO play will be cancelled when this play executes")
             new_plays = [p for p in all_plays if p['folder'] == 'new']
             available = display_plays_list(new_plays, 'new', current_filename)
-            selected = select_single_play(available)
+            selected = select_plays_from_list(available, 
+                prompt="\nEnter play number to add as OCO trigger (or press Enter to finish): ")
+            
             if selected:
-                play_data['conditional_plays']['OCO_trigger'] = selected
-                print("\nOCO trigger updated successfully")
+                for play in selected:
+                    if play not in play_data['conditional_plays'].get('OCO_triggers', []):
+                        play_data['conditional_plays']['OCO_triggers'].append(play)
+                print("\nOCO triggers updated successfully")
                 
         elif choice == 2:
             print("\n=== Edit OTO Trigger ===")
@@ -648,11 +655,14 @@ def edit_conditional_plays(play_data, filepath):
     else:
         print("\nError: Failed to save changes")
 
-def select_single_play(plays):
+def select_single_play(plays, prompt=None):
     """Let user select a single play from the list"""
+    default_prompt = "\nEnter play number to select (or press Enter to cancel): "
+    input_prompt = prompt if prompt else default_prompt
+    
     while True:
         choice = get_input(
-            "\nEnter play number to select (or press Enter to cancel): ",
+            input_prompt,
             type_cast=str,
             optional=True
         )
@@ -710,7 +720,8 @@ def edit_oco_trigger(play_data, filepath):
         print("\nSelect new OCO trigger play:")
         new_plays = [p for p in get_all_plays() if p['folder'] == 'new']
         available = display_plays_list(new_plays, 'new', current_filename)
-        selected = select_plays_from_list(available)
+        selected = select_plays_from_list(available, 
+            prompt="\nEnter play number to add as OCO trigger (or press Enter to finish): ")
         
         if selected:
             for play in selected:
@@ -724,7 +735,10 @@ def edit_oco_trigger(play_data, filepath):
             for i, trigger in enumerate(current_triggers, 1):
                 print(f"{i}. {trigger}")
                 
-            to_remove = select_plays_from_list(current_triggers)
+            # Convert string list to dictionary list for select_plays_from_list
+            trigger_dicts = [{'filename': t} for t in current_triggers]
+            to_remove = select_plays_from_list(trigger_dicts, 
+                prompt="\nEnter play number to remove (or press Enter to finish): ")
             if to_remove:
                 play_data['conditional_plays']['OCO_triggers'] = [
                     t for t in current_triggers if t not in to_remove
@@ -775,17 +789,29 @@ def edit_oto_trigger(play_data, filepath):
         print("\nSelect new OTO trigger play:")
         temp_plays = [p for p in get_all_plays() if p['folder'] == 'temp']
         available = display_plays_list(temp_plays, 'temp', current_filename)
-        selected = select_single_play(available)
+        selected = select_single_play(available, 
+            prompt="\nEnter play number to add as OTO trigger (or press Enter to cancel): ")
         if selected:
-            play_data['conditional_plays']['OTO_trigger'] = selected
+            play_data['conditional_plays']['OTO_triggers'] = [selected]
             print("\nOTO trigger updated successfully")
             
     elif choice == 2:
-        if current_trigger:
-            play_data['conditional_plays']['OTO_trigger'] = None
-            print("\nOTO trigger removed")
+        if current_triggers:
+            print("\nSelect triggers to remove:")
+            for i, trigger in enumerate(current_triggers, 1):
+                print(f"{i}. {trigger}")
+                
+            # Convert string list to dictionary list for select_plays_from_list
+            trigger_dicts = [{'filename': t} for t in current_triggers]
+            to_remove = select_plays_from_list(trigger_dicts, 
+                prompt="\nEnter play number to remove (or press Enter to finish): ")
+            if to_remove:
+                play_data['conditional_plays']['OTO_triggers'] = [
+                    t for t in current_triggers if t not in to_remove
+                ]
+                print("\nSelected triggers removed")
         else:
-            print("\nNo OTO trigger to remove")
+            print("\nNo OTO triggers to remove")
 
 def update_play_class(play_data):
     """Auto-adjust play class based on conditional plays configuration"""

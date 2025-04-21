@@ -1,15 +1,37 @@
 # ==================================================
-# GoldFlipper Configuration File
+# Goldflipper Configuration File - TEMPLATE
 # ==================================================
-# This YAML file contains all configurable settings for the GoldFlipper trading system.
+# This YAML file contains all configurable settings for the Goldflipper trading system.
 # All paths are relative to the project root directory unless specified as absolute.
+#
+# ===== GETTING STARTED FOR NEW USERS =====
+#
+# IMPORTANT SETUP INSTRUCTIONS:
+# 1. Save this file as "settings.yaml" in the same directory
+# 2. Replace all placeholder values (marked with YOUR_*) with your actual values
+# 3. Review all settings and adjust according to your preferences
+# 4. Save the file when done
+#
+# REQUIRED CHANGES:
+# - Alpaca API Keys: You must obtain API keys from Alpaca (https://app.alpaca.markets)
+#   and replace the placeholders in the alpaca.accounts section
+# - MarketDataApp API Key: If you plan to use MarketDataApp as a data provider,
+#   replace the placeholder in market_data_providers.providers.marketdataapp.api_key
+#
+# CONFIGURATION SECTIONS:
+# - Alpaca API Settings: API keys and account configuration for Alpaca trading
+# - Strategy Settings: Configure options trading strategies
+# - Market Data Settings: Configure data sources and display options
+# - Order Settings: Configure order execution parameters
+# - File Operations: Configure file paths for play management
+# - Logging Configuration: Configure logging behavior
+# - Market Hours Settings: Configure market hours validation
+#
+# For detailed documentation on all settings, please refer to the GoldFlipper documentation.
+#
+# ===== END GETTING STARTED =====
 
 # Display Configuration Instructions:
-# --------------------------------------------------
-# \/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\\/\<<<<<<<<<<<
-# SIMPLE STOOPID INSTRUCTIONS: SIMPLY COMMENT OUT THE COLUMNS YOU DON'T WANT TO SEE !!!<<<<<<<<<<<<
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^<<<<<<<<<<<<
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^<<<<<<<<<<<<
 # To enable/disable columns in the option chain display:
 # 1. Under market_data.option_chain_display.default_columns:
 #    - Add or remove column names to show/hide basic option data
@@ -37,34 +59,36 @@
 ####################################################################################################
 # Alpaca API Settings
 ####################################################################################################
+# IMPORTANT: You must replace the placeholder API keys with your own Alpaca API credentials
+# Get your API keys from: https://app.alpaca.markets/paper/dashboard/overview
 alpaca:
   accounts:
     live:
-      enabled: false
+      enabled: false  # Set to true only when you're ready for live trading with real money
       nickname: "Live Trading"
-      api_key: 'YOUR_LIVE_API_KEY'
-      secret_key: 'YOUR_LIVE_SECRET_KEY'
+      api_key: 'YOUR_LIVE_API_KEY'  # Replace with your live API key
+      secret_key: 'YOUR_LIVE_SECRET_KEY'  # Replace with your live secret key
       base_url: 'https://api.alpaca.markets'
     paper_1:
       enabled: true
-      nickname: "Profitability Testing"
-      api_key: 'PKWL1UL2EALOU1UZ8BAT'
-      secret_key: 'i4zk7Fb0tfrLvIx3qz5gzgxiaOcqvKgPzkVFrAZX'
+      nickname: "Paper 1"
+      api_key: 'YOUR_PAPER_API_KEY_1'  # Replace with your paper trading API key
+      secret_key: 'YOUR_PAPER_SECRET_KEY_1'  # Replace with your paper trading secret key
       base_url: 'https://paper-api.alpaca.markets/v2'
     paper_2:
       enabled: true
-      nickname: "Staging"
-      api_key: 'PKOJ0UK4PBFQDVG2GO0L'
-      secret_key: 'IOvqTO6fsbaoDtjUkNe3MgyzMu8M7KWOzlaXxhjm'
+      nickname: "Paper 2"
+      api_key: 'YOUR_PAPER_API_KEY_2'  # Replace with your paper trading API key (optional)
+      secret_key: 'YOUR_PAPER_SECRET_KEY_2'  # Replace with your paper trading secret key (optional)
       base_url: 'https://paper-api.alpaca.markets/v2'
     paper_3:
       enabled: true
-      nickname: "Dev Testing"
-      api_key: 'PKU6AQTC1VE3NPN18FD7'
-      secret_key: 'Cimoq51fX5gvFXkCNLB1ir8AIbpAXzhTAyhGo7ze'
+      nickname: "Paper 3"
+      api_key: 'YOUR_PAPER_API_KEY_3'  # Replace with your paper trading API key (optional)
+      secret_key: 'YOUR_PAPER_SECRET_KEY_3'  # Replace with your paper trading secret key (optional)
       base_url: 'https://paper-api.alpaca.markets/v2'
   default_account: 'paper_1'  # Specify which account to use by default
-  active_account: 'paper_2'  # Specify which account is currently active
+  active_account: 'paper_1'  # Specify which account is currently active
 
 
   
@@ -121,9 +145,8 @@ options_swings:
 spreads:
   enabled: false
 
-
 ####################################################################################################
-# Trading Parameters
+# Trading Parameters * NOT USED, CONSIDER REMOVING *
 ####################################################################################################
 trading:
   default_symbol: 'SPY'              # Default trading symbol
@@ -170,7 +193,7 @@ market_data:
 #        - parmicharma
 
 ####################################################################################################
-# Technical Indicators settings
+# Technical Indicators settings *CURRENTLY AVAILABLE BUT NOT USED*
 ####################################################################################################
 indicators:
   enabled: true
@@ -202,12 +225,12 @@ entry_strategy:
   buffer: 0.25                       # Price buffer for entry points (default is ±$0.05). ENABLED.
 
 ####################################################################################################
-# Position Management
+# Play Management (Position Management) *USED*
 ####################################################################################################
 monitoring:
   max_retries: 3                     # Maximum retry attempts for operations
   retry_delay: 2                     # Delay between retries (seconds)
-  polling_interval: 30               # Time between position checks (seconds)
+  polling_interval: 30               # Time between play / position checks (seconds); CYCLE TIME
 
 ####################################################################################################
 # Order Settings
@@ -379,14 +402,14 @@ market_data_providers:
       cache:
         enabled: true
         max_age: 300  # 5 minutes
-      api_key: "NFQ0ZFEzQWlMNWFPZHItVktIRURCa3pYV0R1TlRHM0JraThud1RyTm1QRT0"
+      api_key: "YOUR_MARKETDATAAPP_API_KEY"  # Replace with your MarketDataApp API key
       rate_limiting:
         enabled: true
         max_requests: 45  # Keep below 50 for safety
         window_seconds: 60
         
     yfinance:
-      enabled: true  # Disabled by default, use as fallback
+      enabled: true  # Yahoo Finance doesn't require API keys
       cache:
         enabled: true
         max_age: 300
@@ -526,3 +549,16 @@ market_data_display:
         price: 2
         greeks: 4
         percentage: 2
+
+####################################################################################################
+# CSV Ingestor Settings -- so far only open_after_creation is used. (more settings may be added later)
+####################################################################################################
+csv_ingestor:
+  open_after_creation: false  # Whether to automatically open created JSON files
+  default_viewer: "code"      # Options: "code" (VSCode), "explorer" (File Explorer), "none"
+  validation:
+    enabled: true             # Enable CSV validation before processing
+    strict_mode: false        # Reject files with any validation errors if true
+  backup:
+    keep_originals: true      # Keep original CSV files after processing
+    backup_dir: "ingestor_backups"  # Directory to store CSV backups

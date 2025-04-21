@@ -1,0 +1,4 @@
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Calls,,,,,,,,,,,,,,,,,,,,,,,,,, Puts,,,,,,,,,,,,,,,,,,,,,,
+Option Parameters,,,,,,,Strike Price,,,,Buy Conditions,,,,Sell Conditions ,,,,,,,,,,Option Parameters,,,,,,,Strike Price,,,,Buy Conditions,,,,Sell Conditions ,,,,,,,,
+#,Date (Coded),Ticket ,Expiration (Contract),GTD,OCO,,ITM,ATM ,OTM,,Share Price (Buy),Order Type,# of Con,,Share Price (TP),Prem %,Stock %,# of Con,Order Type,Share Price (SL),Prem %,Stock %,# of con,,#,Date,Ticket,Expiration (Contract),GTD,OCO,,ITM,ATM ,OTM,,Share Price (Buy),Order Type,# of Con,,Share Price (TP),Prem %,Stock %,Order Type,# of con,Share Price (SL),Prem %,Stock %,# of con

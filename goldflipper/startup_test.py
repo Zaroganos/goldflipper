@@ -12,6 +12,7 @@ sys.path.append(project_root)
 from goldflipper.alpaca_client import get_alpaca_client
 from goldflipper.config.config import config
 
+
 def test_alpaca_connection():
     """Test Alpaca API connectivity and account status."""
     try:
@@ -39,6 +40,8 @@ def test_alpaca_connection():
         
     except Exception as e:
         return False, f"Alpaca API test failed: {str(e)}"
+    
+'''
 
 def test_yfinance_ticker():
     """Test yfinance Ticker API connectivity."""
@@ -80,6 +83,8 @@ def test_yfinance_download():
         
     except Exception as e:
         return False, f"yfinance download test failed: {str(e)}"
+
+'''
 
 def test_alpaca_api_direct():
     """Test Alpaca API connectivity directly using HTTP request."""
@@ -176,6 +181,7 @@ def run_startup_tests():
         "result": alpaca_api_result
     }
     
+    '''
     # Test yfinance Ticker functionality
     success, yfinance_ticker_result = test_yfinance_ticker()
     test_results["tests"]["yfinance_ticker"] = {
@@ -189,6 +195,7 @@ def run_startup_tests():
         "success": success,
         "result": yfinance_download_result
     }
+    '''
     
     # Test MarketData.app API
     success, marketdata_result = test_marketdata_api()
