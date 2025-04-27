@@ -68,7 +68,7 @@ alpaca:
       nickname: "Live Trading"
       api_key: 'YOUR_LIVE_API_KEY'  # Replace with your live API key
       secret_key: 'YOUR_LIVE_SECRET_KEY'  # Replace with your live secret key
-      base_url: 'https://api.alpaca.markets'
+      base_url: 'https://api.alpaca.markets/v2'
     paper_1:
       enabled: true
       nickname: "Paper 1"
