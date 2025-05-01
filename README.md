@@ -2,16 +2,15 @@
 Goldflipper Trading System
 
 ## Goldflipper v1 set to Public on Github temporarily
-This repository is set to public temporarily. Though the code is accesible, use is permitted on a case-by-case basis only. For more information please get in touch by dm. Otherwise, please note that no support is promised or available, and requests of any kind will be addressed at my discretion. 
-Though the code is public at this time, you are not permitted to make any use of it without express written permission from myself.
+Although this repository is public and the code is accesible, use explicitly permitted according to the author's moral rights is granted on a case-by-case basis only. For more information please get in touch with the author directly. Otherwise, please note that technical support is neither promised nor available, and bug fix and feature requests of any kind will be addressed solely at the author's discretion. 
 
 ## Introduction
 
-Goldflipper is an algorithmic trading system developed using Python. It utilizes a modular, event-driven architecture to automate trading strategies, with a particular focus on options swing trading. The system is designed for scalability, maintainability, and reliability, integrating with Alpaca Markets for live trading.
+Goldflipper v1 is a rules-based semi-autonomous trading system developed in Python. It utilizes a modular, event-driven architecture to automate trading strategy execution, with a current focus on level 2 options trading. The system is designed for customizability, modularity, and offers a feature-rich parameter selection that enables functionality not seen in any other program of its kind. Goldflipper v1 integrates with the Alpaca Markets API for live trading, and has API integrations with market data providers as well in order to provide a modular and reliable trading experience with fallbacks for reliability.
 
 ## Project Structure
 
-The project is organized into the following directories:
+The project is roughly organized into the following directories:
 (Simplified for short length, see the code to discover the full content.)
 
 ```
@@ -57,7 +56,7 @@ goldflipper/
 Before you start, ensure you have the following installed on your system:
 
 - Python 3.8 or higher
-- An Alpaca trading account with API access
+- An Alpaca Markets account
 - Required Python libraries listed in requirements.txt
 
 ### Installation
@@ -85,9 +84,9 @@ The system can be launched in several ways:
    - Double-click the Goldflipper desktop shortcut
 
 2. Using the batch files:
-   - `launch_goldflipper.bat` - Launches the main application
+   - `launch_goldflipper.bat` - Launches the main application (default)
    - `run_console.bat` - Launches in console mode
-   - `install_service.bat` - Installs the system as a Windows service
+   - `install_service.bat` - Installs the system as a Windows service (experimental)
 
 3. Direct Python execution:
 ```bash
@@ -121,4 +120,4 @@ python goldflipper/run.py
 
 ## License
 
-Copyright (c) 2025 Iliya Yaroshevskiy. All Rights Reserved.
+Copyright (c) 2024-2025 Iliya Yaroshevskiy. All Rights Reserved.
