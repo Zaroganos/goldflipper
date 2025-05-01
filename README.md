@@ -11,7 +11,7 @@ Goldflipper v1 is a rules-based semi-autonomous trading system developed in Pyth
 ## Project Structure
 
 The project is roughly organized into the following directories:
-(Simplified for short length, see the code to discover the full content.)
+(Simplified for brevity, access the codebase to discover the full content.)
 
 ```
 goldflipper/
