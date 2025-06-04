@@ -433,7 +433,7 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
         stock_price = get_cell(base_idx[f"{prefix}_stock_price"])
         if stock_price and stock_price != 'N/A':
             converted = safe_convert_float(stock_price, f"{condition_type} stock price", row_num, errors)
-            if converted: condition["share_price"] = converted
+            if converted: condition["stock_price"] = converted
         
         # Premium percentage
         premium_pct = get_cell(base_idx[f"{prefix}_premium_pct"]).replace('%', '')
