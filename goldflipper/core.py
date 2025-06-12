@@ -234,20 +234,32 @@ def get_option_data(option_contract_symbol: str) -> Optional[Dict[str, float]]:
 # ==================================================
 # Functions to evaluate whether the market conditions meet the strategy criteria based on trade type.
 
-def calculate_and_store_premium_levels(play, current_premium):
-    """Calculate and store TP/SL premium levels in the play data."""
+def calculate_and_store_premium_levels(play, option_data):
+    """Calculate and store TP/SL premium levels in the play data using correct entry price."""
+    # Get entry premium based on entry order type
+    entry_order_type = play.get('entry_point', {}).get('order_type', 'limit at bid')
+    
+    if entry_order_type == 'limit at bid':
+        entry_premium = option_data.get('bid', 0.0)
+    elif entry_order_type == 'limit at ask':
+        entry_premium = option_data.get('ask', 0.0)
+    elif entry_order_type == 'limit at mid':
+        entry_premium = option_data.get('mid', 0.0)
+    else:  # 'limit at last' or 'market'
+        entry_premium = option_data.get('last', 0.0)
+    
     if play['take_profit'].get('premium_pct'):
         tp_pct = play['take_profit']['premium_pct'] / 100
-        play['take_profit']['TP_option_prem'] = current_premium * (1 + tp_pct)
+        play['take_profit']['TP_option_prem'] = entry_premium * (1 + tp_pct)
         
     if play['stop_loss'].get('premium_pct'):
         sl_pct = play['stop_loss']['premium_pct'] / 100
-        play['stop_loss']['SL_option_prem'] = current_premium * (1 - sl_pct)
+        play['stop_loss']['SL_option_prem'] = entry_premium * (1 - sl_pct)
     
     # Add contingency SL premium calculation if it exists
     if play['stop_loss'].get('contingency_premium_pct'):
         contingency_sl_pct = play['stop_loss']['contingency_premium_pct'] / 100
-        play['stop_loss']['contingency_SL_option_prem'] = current_premium * (1 - contingency_sl_pct)
+        play['stop_loss']['contingency_SL_option_prem'] = entry_premium * (1 - contingency_sl_pct)
 
 def calculate_and_store_price_levels(play, entry_stock_price):
     """Calculate and store TP/SL stock price levels in the play data."""
@@ -520,25 +532,33 @@ def open_position(play, play_file):
     calculate_and_store_price_levels(play, entry_stock_price)
     
     # Get current premium before opening position
-    # OLD: current_premium = get_current_option_premium(play)
-    # NEW: Use our new function
     option_data = get_option_data(play['option_contract_symbol'])
     if option_data is None:
         logging.error("Failed to get current option premium. Aborting order placement.")
         display.error("Failed to get current option premium. Aborting order placement.")
         return False
         
-    current_premium = option_data['premium']
+    # Get entry premium based on entry order type
+    entry_order_type = play.get('entry_point', {}).get('order_type', 'limit at bid')
+    
+    if entry_order_type == 'limit at bid':
+        entry_premium = option_data.get('bid', 0.0)
+    elif entry_order_type == 'limit at ask':
+        entry_premium = option_data.get('ask', 0.0)
+    elif entry_order_type == 'limit at mid':
+        entry_premium = option_data.get('mid', 0.0)
+    else:  # 'limit at last' or 'market'
+        entry_premium = option_data.get('last', 0.0)
         
     # Store the entry premium in the play data's entry_point object
     if 'entry_point' not in play:
         play['entry_point'] = {}
-    play['entry_point']['entry_premium'] = current_premium
-    logging.info(f"Entry premium: ${current_premium:.4f}")
-    display.info(f"Entry premium: ${current_premium:.4f}")
+    play['entry_point']['entry_premium'] = entry_premium
+    logging.info(f"Entry premium ({entry_order_type}): ${entry_premium:.4f}")
+    display.info(f"Entry premium ({entry_order_type}): ${entry_premium:.4f}")
         
     # Calculate and store TP/SL levels if using premium percentages
-    calculate_and_store_premium_levels(play, current_premium)
+    calculate_and_store_premium_levels(play, option_data)
     
     # Capture Greeks and update logging
     try:
@@ -581,41 +601,24 @@ def open_position(play, play_file):
         is_limit_order = order_type != 'market'
         
         if is_limit_order:
-            # Determine which price to use for limit order
-            if order_type == 'limit at last':
-                limit_price = current_premium
-                logging.info(f"Using last traded price for limit order: ${limit_price:.2f}")
-                display.info(f"Using last traded price for limit order: ${limit_price:.2f}")
+            # Get limit price based on order type
+            if order_type == 'limit at bid':
+                limit_price = option_data.get('bid', 0.0)
             elif order_type == 'limit at ask':
-                # Get ask price if available
-                if option_data and option_data.get('ask') is not None:
-                    limit_price = option_data['ask']
-                    logging.info(f"Using ask price for limit order: ${limit_price:.2f}")
-                    display.info(f"Using ask price for limit order: ${limit_price:.2f}")
-                else:
-                    limit_price = current_premium
-                    logging.warning(f"Ask price not available, falling back to last traded price: ${limit_price:.2f}")
-                    display.warning(f"Ask price not available, falling back to last traded price: ${limit_price:.2f}")
+                limit_price = option_data.get('ask', 0.0)
             elif order_type == 'limit at mid':
-                # Calculate mid price if bid and ask are available
-                if option_data and option_data.get('bid') is not None and option_data.get('ask') is not None:
-                    limit_price = (option_data['bid'] + option_data['ask']) / 2
-                    logging.info(f"Using mid price for limit order: ${limit_price:.2f}")
-                    display.info(f"Using mid price for limit order: ${limit_price:.2f}")
-                else:
-                    limit_price = current_premium
-                    logging.warning(f"Bid/ask prices not available for mid calculation, falling back to last traded price: ${limit_price:.2f}")
-                    display.warning(f"Bid/ask prices not available for mid calculation, falling back to last traded price: ${limit_price:.2f}")
-            else:  # 'limit at bid'
-                # Get bid price if enabled in settings
-                if config.get('orders', 'bid_price_settings', 'entry', default=True):
-                    limit_price = option_data['bid']
-                    logging.info(f"Using bid price for limit order: ${limit_price:.2f}")
-                    display.info(f"Using bid price for limit order: ${limit_price:.2f}")
-                else:
-                    limit_price = current_premium
-                    logging.info(f"Using last traded price for limit order: ${limit_price:.2f}")
-                    display.info(f"Using last traded price for limit order: ${limit_price:.2f}")
+                limit_price = option_data.get('mid', 0.0)
+            else:  # 'limit at last'
+                limit_price = option_data.get('last', 0.0)
+                
+            # Apply bid price settings if applicable
+            if order_type == 'limit at bid' and not config.get('orders', 'bid_price_settings', 'entry', default=True):
+                limit_price = option_data.get('last', 0.0)
+                logging.info(f"Bid price settings disabled, using last traded price for limit order: ${limit_price:.2f}")
+                display.info(f"Bid price settings disabled, using last traded price for limit order: ${limit_price:.2f}")
+            else:
+                logging.info(f"Using {order_type} price for limit order: ${limit_price:.2f}")
+                display.info(f"Using {order_type} price for limit order: ${limit_price:.2f}")
                 
             # Round limit price to 2 decimal places
             limit_price = round(limit_price, 2)

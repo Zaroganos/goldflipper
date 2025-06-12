@@ -127,10 +127,19 @@ class MarketDataManager:
             quote = self._try_providers('get_option_quote', contract_symbol)
             
             if quote is not None and not quote.empty:
+                bid = quote.iloc[0].get('bid', 0.0)
+                ask = quote.iloc[0].get('ask', 0.0)
+                last = quote.iloc[0].get('last', 0.0)
+                
+                # Calculate mid price
+                mid = (bid + ask) / 2 if bid > 0 and ask > 0 else 0.0
+                
                 result = {
-                    'premium': quote.iloc[0].get('last', 0.0),
-                    'bid': quote.iloc[0].get('bid', 0.0),
-                    'ask': quote.iloc[0].get('ask', 0.0),
+                    'bid': bid,
+                    'ask': ask,
+                    'last': last,
+                    'mid': mid,
+                    'premium': last,  # Keep for backward compatibility, but will be replaced
                     'delta': quote.iloc[0].get('delta', 0.0),
                     'theta': quote.iloc[0].get('theta', 0.0)
                 }
