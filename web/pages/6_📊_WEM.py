@@ -14,6 +14,7 @@ from pathlib import Path
 import yaml
 import time
 import random
+from typing import Any
 
 # Set up logging first, before any other imports
 project_root = Path(__file__).parent.parent.parent
@@ -319,187 +320,662 @@ def update_wem_stock(session: Session, stock_data: Dict[str, Any]) -> bool:
 
 def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Calculate the expected move for a stock based on real options data.
+    Calculate the Weekly Expected Move (WEM) for a stock based on options data.
+    
+    AUTOMATED FULL CHAIN ANALYSIS METHOD:
+    1. Get full weekly option chain expiring on next Friday
+    2. Auto-detect ATM strike (closest to current stock price)
+    3. Auto-select adjacent strikes for ITM options (no manual interval detection needed)
+    4. Extract 4 required options from chain:
+       - ATM Call & Put: same strike closest to current price
+       - ITM Call: next adjacent strike below ATM (has intrinsic value)
+       - ITM Put: next adjacent strike above ATM (has intrinsic value)
+    5. Calculate WEM Points = (Straddle + Strangle) / 2
+    6. Calculate WEM Spread = WEM Points / (previous Friday's closing price)
+    7. Calculate expected ranges: Straddle 1/2 = Stock Price ± WEM Points
+    
+    Benefits of this approach:
+    - No need to detect strike intervals manually
+    - Works with any stock's option strike pattern automatically
+    - Single API call for full chain vs multiple option quote calls
+    - Consistent data from same timestamp/snapshot
+    - Robust error handling for missing strikes
     
     Args:
         session: Database session
         stock_data: Dictionary with stock symbol
         
     Returns:
-        dict: Dictionary with calculated WEM values
+        dict: Dictionary with calculated WEM values, or None if calculation fails
     """
     symbol = stock_data.get('symbol')
     if not symbol:
         logger.error("No symbol provided for WEM calculation")
         return None
             
-    logger.info(f"Calculating expected move for {symbol}")
+    logger.info(f"Calculating Weekly Expected Move for {symbol}")
     
     try:
-        # First try to get latest data from database
-        logger.debug(f"Attempting to get latest market data for {symbol}")
+        # Step 1: Get current stock price
+        logger.debug(f"Getting current market data for {symbol}")
         market_data = get_latest_market_data(session, symbol)
         
-        # If no recent data or data is old, update it
-        if not market_data or (datetime.utcnow() - market_data.timestamp).total_seconds() > 300:  # 5 minutes
-            logger.info(f"Market data for {symbol} is old or missing, updating...")
+        # Update market data if it's stale (older than 5 minutes)
+        if not market_data or (datetime.utcnow() - market_data.timestamp).total_seconds() > 300:
+            logger.info(f"Market data for {symbol} is stale, updating...")
             market_data = update_market_data(session, symbol)
         
         if not market_data:
             logger.error(f"No market data available for {symbol}")
             return None
         
-        # Get current price
-        atm_price = market_data.close
-        logger.info(f"Current price for {symbol}: ${atm_price:.2f}")
+        current_price = market_data.close
+        logger.info(f"Current price for {symbol}: ${current_price:.2f}")
         
-        # Get option chain from market data provider
-        manager = get_market_data_manager()
-        if not manager:
-            logger.error(f"No market data manager available for {symbol}")
+        # Step 2: Find next Friday expiration date
+        next_friday = _find_next_friday_expiration()
+        logger.info(f"Next Friday expiration: {next_friday}")
+        
+        # Step 3: Get weekly option chain for next Friday expiration
+        weekly_option_chain = _get_weekly_option_chain(symbol, next_friday)
+        
+        if not weekly_option_chain:
+            logger.error(f"No weekly option chain available for {symbol} expiring {next_friday}")
             return None
         
-        logger.info(f"Fetching option chain for {symbol}")
-        chain = manager.get_option_chain(symbol)
-        
-        if not chain or not isinstance(chain, dict) or 'calls' not in chain or 'puts' not in chain:
-            logger.error(f"Invalid option chain data for {symbol}")
-            return None
-        
-        calls = chain['calls']
-        puts = chain['puts']
+        calls = weekly_option_chain['calls']
+        puts = weekly_option_chain['puts']
         
         if calls.empty or puts.empty:
-            logger.error(f"Empty option chain data for {symbol}")
-            return None
-            
-        # Find ATM options (closest strike to current price)
-        logger.debug(f"Finding ATM options at price {atm_price}")
-        
-        # Get closest strike to current price
-        all_strikes = sorted(set(calls['strike'].tolist() + puts['strike'].tolist()))
-        atm_strike = min(all_strikes, key=lambda x: abs(float(x) - atm_price))
-        logger.info(f"Selected ATM strike: {atm_strike}")
-        
-        # Get ATM call and put
-        atm_calls = calls[calls['strike'] == atm_strike]
-        atm_puts = puts[puts['strike'] == atm_strike]
-        
-        if atm_calls.empty or atm_puts.empty:
-            logger.error(f"No ATM options found for {symbol} at strike {atm_strike}")
+            logger.error(f"Empty weekly option chain for {symbol}")
             return None
         
-        atm_call = atm_calls.iloc[0]
-        atm_put = atm_puts.iloc[0]
+        # Step 4: Extract and validate the 4 required options from full chain
+        logger.info(f"Analyzing full option chain for {symbol} to extract required options")
         
-        # Calculate ATM straddle mid price
+        # Extract the 4 required options using the new automated approach
+        required_options = _extract_required_options_from_chain(calls, puts, current_price, symbol)
+        
+        if not required_options:
+            logger.error(f"Could not extract required options for {symbol} from option chain - skipping stock")
+            return None
+        
+        atm_call = required_options['atm_call']
+        atm_put = required_options['atm_put']
+        itm_call = required_options['itm_call']
+        itm_put = required_options['itm_put']
+        
+        # Log the selected strikes for verification
+        logger.info(f"Selected strikes for {symbol}:")
+        logger.info(f"  ATM Call/Put: ${atm_call['strike']}")
+        logger.info(f"  ITM Call: ${itm_call['strike']} (below ATM)")
+        logger.info(f"  ITM Put: ${itm_put['strike']} (above ATM)")
+        
+        # Step 5: Calculate Straddle (ATM call + ATM put)
+        logger.debug(f"Calculating straddle using ATM strike ${atm_call['strike']}")
+        
+        # Calculate mid-prices for ATM options
         atm_call_mid = (float(atm_call['bid']) + float(atm_call['ask'])) / 2
         atm_put_mid = (float(atm_put['bid']) + float(atm_put['ask'])) / 2
-        straddle_level = atm_call_mid + atm_put_mid
         
-        # Find OTM options at approximately 16 delta
-        logger.debug(f"Finding OTM options at ~16 delta")
+        # Straddle = ATM call premium + ATM put premium
+        straddle_premium = atm_call_mid + atm_put_mid
+        logger.info(f"Straddle calculation: ${atm_call_mid:.2f} (call) + ${atm_put_mid:.2f} (put) = ${straddle_premium:.2f}")
         
-        # Get OTM calls (higher strikes)
-        otm_calls = calls[calls['strike'] > atm_strike].copy()
-        if not otm_calls.empty and 'delta' in otm_calls.columns:
-            # Convert to numeric and handle NaN
-            otm_calls['delta'] = pd.to_numeric(otm_calls['delta'], errors='coerce')
-            # Calculate distance from target delta
-            otm_calls['delta_diff'] = (otm_calls['delta'] - 0.16).abs()
-            # Get closest to 16 delta
-            otm_call = otm_calls.nsmallest(1, 'delta_diff').iloc[0]
+        # Step 6: Calculate Strangle (ITM call + ITM put at adjacent strikes)
+        logger.debug(f"Calculating strangle using ITM options at adjacent strikes")
+        
+        # Calculate mid-prices for ITM options
+        itm_call_mid = (float(itm_call['bid']) + float(itm_call['ask'])) / 2
+        itm_put_mid = (float(itm_put['bid']) + float(itm_put['ask'])) / 2
+        
+        # Strangle = ITM call premium + ITM put premium
+        strangle_premium = itm_call_mid + itm_put_mid
+        logger.info(f"Strangle calculation: ${itm_call_mid:.2f} (ITM call) + ${itm_put_mid:.2f} (ITM put) = ${strangle_premium:.2f}")
+        
+        # Store strike values for result
+        atm_strike = float(atm_call['strike'])
+        itm_call_strike = float(itm_call['strike'])
+        itm_put_strike = float(itm_put['strike'])
+        
+        # Step 7: Calculate Final WEM Points
+        # WEM Points = (Straddle + Strangle) / 2
+        wem_points = (straddle_premium + strangle_premium) / 2
+        logger.info(f"WEM Points calculation: (${straddle_premium:.2f} + ${strangle_premium:.2f}) / 2 = ${wem_points:.2f}")
+        
+        # Calculate additional metrics based on corrected formulas
+        # WEM Spread = WEM Points / (previous Friday's closing price)
+        previous_friday_date = _find_previous_friday()
+        previous_friday_close = _get_previous_friday_close_price(symbol, previous_friday_date)
+        
+        if previous_friday_close and previous_friday_close > 0:
+            wem_spread = wem_points / previous_friday_close
+            logger.info(f"WEM Spread calculation: ${wem_points:.2f} / ${previous_friday_close:.2f} = {wem_spread:.4f}")
         else:
-            # Fallback: use first OTM call
-            otm_call = calls[calls['strike'] > atm_strike].iloc[0] if not calls[calls['strike'] > atm_strike].empty else None
-            
-        # Get OTM puts (lower strikes)
-        otm_puts = puts[puts['strike'] < atm_strike].copy()
-        if not otm_puts.empty and 'delta' in otm_puts.columns:
-            # For puts, delta is negative, so we need absolute value
-            otm_puts['delta'] = pd.to_numeric(otm_puts['delta'], errors='coerce')
-            # Delta closer to -0.16
-            otm_puts['delta_diff'] = (otm_puts['delta'] + 0.16).abs()  # Add because put deltas are negative
-            # Get closest to -16 delta
-            otm_put = otm_puts.nsmallest(1, 'delta_diff').iloc[0]
-        else:
-            # Fallback: use first OTM put
-            otm_put = puts[puts['strike'] < atm_strike].iloc[0] if not puts[puts['strike'] < atm_strike].empty else None
-            
-        if otm_call is None or otm_put is None:
-            logger.error(f"Could not find suitable OTM options for {symbol}")
-            return None
-                
-        # Calculate OTM strangle mid price
-        otm_call_mid = (float(otm_call['bid']) + float(otm_call['ask'])) / 2
-        otm_put_mid = (float(otm_put['bid']) + float(otm_put['ask'])) / 2
-        strangle_level = otm_call_mid + otm_put_mid
+            # Fallback to current price if previous Friday price not available
+            wem_spread = wem_points / current_price
+            logger.warning(f"Previous Friday close not available for {symbol}, using current price for WEM Spread")
         
-        # Calculate straddle/strangle combined value
-        straddle_strangle = (straddle_level + strangle_level) / 2
+        # Straddle 2 = Stock Price + WEM Points (upper expected range)
+        straddle_2 = current_price + wem_points
         
-        # Calculate WEM as half of straddle/strangle
-        wem = straddle_strangle / 2
+        # Straddle 1 = Stock Price - WEM Points (lower expected range)  
+        straddle_1 = current_price - wem_points
         
-        # Calculate WEM spread as percentage of price
-        wem_spread = wem / atm_price
+        # Delta Range = Delta 16 Positive - Delta 16 Negative
+        delta_range = itm_put_strike - itm_call_strike
         
-        # Calculate price levels
-        delta_16_plus = float(otm_call['strike'])
-        delta_16_minus = float(otm_put['strike'])
-        delta_range = delta_16_plus - delta_16_minus
-        delta_range_pct = delta_range / atm_price
+        # Delta Range % = Delta Range / Stock Price
+        delta_range_pct = delta_range / current_price
         
-        # Log calculated values for debugging
-        logger.debug(f"{symbol} ATM price: ${atm_price:.2f}")
-        logger.debug(f"{symbol} ATM Call Mid: ${atm_call_mid:.2f}")
-        logger.debug(f"{symbol} ATM Put Mid: ${atm_put_mid:.2f}")
-        logger.debug(f"{symbol} Straddle level: ${straddle_level:.2f}")
-        logger.debug(f"{symbol} OTM Call Mid: ${otm_call_mid:.2f}")
-        logger.debug(f"{symbol} OTM Put Mid: ${otm_put_mid:.2f}")
-        logger.debug(f"{symbol} Strangle level: ${strangle_level:.2f}")
-        logger.debug(f"{symbol} Combined Straddle/Strangle: ${straddle_strangle:.2f}")
-        logger.debug(f"{symbol} WEM: ${wem:.2f}")
-        logger.debug(f"{symbol} WEM spread: {wem_spread:.4f}")
-        logger.debug(f"{symbol} Expected range: ${atm_price-wem:.2f} to ${atm_price+wem:.2f}")
+        logger.info(f"Expected weekly range for {symbol}: ${straddle_1:.2f} - ${straddle_2:.2f}")
+        logger.info(f"WEM Points: ${wem_points:.2f}")
+        logger.info(f"Delta Range: ${delta_range:.2f} ({delta_range_pct:.2%})")
         
-        # Return the calculated values with real market data
+        # Step 8: Package results
         result = {
-            'atm_price': float(atm_price),
-            'straddle_strangle': float(straddle_strangle),
-            'straddle': float(straddle_level),
-            'strangle': float(strangle_level),
-            'wem': float(wem),
+            'symbol': symbol,
+            'atm_price': float(current_price),
+            'straddle': float(straddle_premium),
+            'strangle': float(strangle_premium),
+            'wem_points': float(wem_points),
             'wem_spread': float(wem_spread),
-            'delta_16_plus': float(delta_16_plus),
-            'straddle_2': float(straddle_level),
-            'straddle_1': float(strangle_level),
-            'delta_16_minus': float(delta_16_minus),
+            'expected_range_low': float(straddle_1),
+            'expected_range_high': float(straddle_2),
+            'atm_strike': float(atm_strike),
+            'itm_call_strike': float(itm_call_strike),
+            'itm_put_strike': float(itm_put_strike),
+            'straddle_strangle': float(straddle_premium + strangle_premium),  # Combined straddle + strangle
+            'delta_16_plus': float(itm_put_strike),  # Upper bound (ITM put strike)
+            'delta_16_minus': float(itm_call_strike),  # Lower bound (ITM call strike)
             'delta_range': float(delta_range),
             'delta_range_pct': float(delta_range_pct),
+            'straddle_2': float(straddle_2),  # Stock Price + WEM Points
+            'straddle_1': float(straddle_1),  # Stock Price - WEM Points
             'meta_data': {
                 'calculation_timestamp': datetime.utcnow().isoformat(),
-                'calculation_method': 'market_data',
+                'calculation_method': 'automated_full_chain_analysis',
+                'expiration_date': next_friday.isoformat(),
                 'data_source': market_data.source,
-                'atm_call_mid': float(atm_call_mid),
-                'atm_put_mid': float(atm_put_mid),
-                'otm_call_mid': float(otm_call_mid),
-                'otm_put_mid': float(otm_put_mid),
-                'atm_strike': float(atm_strike),
-                'otm_call_strike': float(otm_call['strike']),
-                'otm_put_strike': float(otm_put['strike']),
-                'atm_call_delta': float(atm_call['delta']) if 'delta' in atm_call else None,
-                'atm_put_delta': float(atm_put['delta']) if 'delta' in atm_put else None,
-                'otm_call_delta': float(otm_call['delta']) if 'delta' in otm_call else None,
-                'otm_put_delta': float(otm_put['delta']) if 'delta' in otm_put else None,
-                'calculated_wem': float(wem)
+                'atm_call_premium': float(atm_call_mid),
+                'atm_put_premium': float(atm_put_mid),
+                'itm_call_premium': float(itm_call_mid),
+                'itm_put_premium': float(itm_put_mid),
+                'calculated_wem_points': float(wem_points),
+                'strikes_used': {
+                    'atm': float(atm_strike),
+                    'itm_call': float(itm_call_strike),
+                    'itm_put': float(itm_put_strike)
+                },
+                'previous_friday_date': previous_friday_date.isoformat(),
+                'previous_friday_close': float(previous_friday_close) if previous_friday_close else None,
+                'option_selection_method': 'adjacent_strikes_from_full_chain',
+                'formula_notes': {
+                    'wem_points': '(Straddle + Strangle) / 2',
+                    'wem_spread': 'WEM Points / Previous Friday Close Price',
+                    'straddle_1': 'Stock Price - WEM Points',
+                    'straddle_2': 'Stock Price + WEM Points',
+                    'delta_range': 'Delta 16+ - Delta 16-',
+                    'delta_range_pct': 'Delta Range / Stock Price',
+                    'option_extraction': 'ATM closest to price, ITM adjacent strikes'
+                }
             }
         }
         
-        logger.info(f"Successfully calculated expected move for {symbol} using real market data")
+        logger.info(f"Successfully calculated WEM Points for {symbol}: ${wem_points:.2f}")
         return result
+        
     except Exception as e:
-        logger.error(f"Error calculating expected move for {symbol}: {str(e)}", exc_info=True)
+        logger.error(f"Error calculating WEM for {symbol}: {str(e)}", exc_info=True)
+        return None
+
+
+def _find_next_friday_expiration() -> datetime:
+    """
+    Find the next Friday for weekly options expiration.
+    
+    Weekly options typically expire on Fridays. This function finds the next 
+    Friday from the current date.
+    
+    Returns:
+        datetime: Next Friday's date
+    """
+    today = datetime.now().date()
+    days_ahead = 4 - today.weekday()  # Friday is weekday 4 (Monday=0)
+    
+    if days_ahead <= 0:  # Today is Friday or weekend, get next Friday
+        days_ahead += 7
+    
+    next_friday = today + timedelta(days=days_ahead)
+    logger.debug(f"Next Friday expiration calculated: {next_friday}")
+    
+    return datetime.combine(next_friday, datetime.min.time())
+
+
+def _find_previous_friday() -> datetime:
+    """
+    Find the previous Friday for WEM Spread calculation.
+    
+    WEM Spread uses the previous Friday's closing price as the denominator.
+    This function finds the most recent Friday before today.
+    
+    Returns:
+        datetime: Previous Friday's date
+    """
+    today = datetime.now().date()
+    days_back = today.weekday() + 3  # Monday=0, so Friday would be 4 days back from Monday
+    
+    if today.weekday() == 4:  # If today is Friday
+        days_back = 7  # Get last Friday
+    elif today.weekday() < 4:  # Monday-Thursday
+        days_back = today.weekday() + 3  # Days back to last Friday
+    else:  # Weekend (Saturday=5, Sunday=6)
+        days_back = today.weekday() - 4  # Days back to last Friday
+    
+    previous_friday = today - timedelta(days=days_back)
+    logger.debug(f"Previous Friday calculated: {previous_friday}")
+    
+    return datetime.combine(previous_friday, datetime.min.time())
+
+
+def _get_weekly_cache_file() -> Path:
+    """
+    Get the path to the weekly cache file for WEM data.
+    
+    Returns:
+        Path: Path to the weekly cache file
+    """
+    project_root = Path(__file__).parent.parent.parent
+    cache_dir = project_root / 'data' / 'wem_cache'
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Use current week's Monday as cache identifier
+    today = datetime.now().date()
+    days_since_monday = today.weekday()
+    monday_date = today - timedelta(days=days_since_monday)
+    
+    cache_file = cache_dir / f'wem_cache_{monday_date.strftime("%Y%m%d")}.json'
+    return cache_file
+
+
+def _get_from_weekly_cache(cache_key: str) -> Any:
+    """
+    Get data from weekly cache.
+    
+    Args:
+        cache_key: The cache key to retrieve
+        
+    Returns:
+        Cached data or None if not found/expired
+    """
+    try:
+        cache_file = _get_weekly_cache_file()
+        
+        if not cache_file.exists():
+            return None
+        
+        import json
+        with open(cache_file, 'r') as f:
+            cache_data = json.load(f)
+        
+        if cache_key in cache_data:
+            cached_item = cache_data[cache_key]
+            
+            # Check if cache is still valid (1 week)
+            cache_time = datetime.fromisoformat(cached_item['timestamp'])
+            if (datetime.now() - cache_time).days < 7:
+                logger.debug(f"Cache hit for {cache_key}")
+                
+                # Handle DataFrame data
+                if 'dataframes' in cached_item:
+                    result = {}
+                    for df_name, df_data in cached_item['dataframes'].items():
+                        result[df_name] = pd.read_json(df_data, orient='records')
+                    return result
+                else:
+                    return cached_item['data']
+            else:
+                logger.debug(f"Cache expired for {cache_key}")
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Error reading from weekly cache: {str(e)}")
+        return None
+
+
+def _save_to_weekly_cache(cache_key: str, data: Any) -> None:
+    """
+    Save data to weekly cache.
+    
+    Args:
+        cache_key: The cache key to store under
+        data: The data to cache
+    """
+    try:
+        cache_file = _get_weekly_cache_file()
+        
+        # Load existing cache or create new
+        cache_data = {}
+        if cache_file.exists():
+            import json
+            with open(cache_file, 'r') as f:
+                cache_data = json.load(f)
+        
+        # Prepare cache entry
+        cache_entry = {
+            'timestamp': datetime.now().isoformat(),
+        }
+        
+        # Handle DataFrame data (option chains)
+        if isinstance(data, dict) and all(isinstance(v, pd.DataFrame) for v in data.values()):
+            cache_entry['dataframes'] = {}
+            for df_name, df in data.items():
+                cache_entry['dataframes'][df_name] = df.to_json(orient='records')
+        else:
+            cache_entry['data'] = data
+        
+        cache_data[cache_key] = cache_entry
+        
+        # Save cache
+        import json
+        with open(cache_file, 'w') as f:
+            json.dump(cache_data, f, indent=2)
+        
+        logger.debug(f"Cached data for {cache_key}")
+        
+        # Clean up old cache files
+        _cleanup_old_cache_files()
+        
+    except Exception as e:
+        logger.warning(f"Error saving to weekly cache: {str(e)}")
+
+
+def _cleanup_old_cache_files() -> None:
+    """
+    Clean up cache files older than 4 weeks to prevent accumulation.
+    """
+    try:
+        project_root = Path(__file__).parent.parent.parent
+        cache_dir = project_root / 'data' / 'wem_cache'
+        
+        if not cache_dir.exists():
+            return
+        
+        cutoff_date = datetime.now() - timedelta(weeks=4)
+        
+        for cache_file in cache_dir.glob('wem_cache_*.json'):
+            if cache_file.stat().st_mtime < cutoff_date.timestamp():
+                cache_file.unlink()
+                logger.debug(f"Deleted old cache file: {cache_file.name}")
+                
+    except Exception as e:
+        logger.warning(f"Error cleaning up old cache files: {str(e)}")
+
+
+def _extract_required_options_from_chain(calls: pd.DataFrame, puts: pd.DataFrame, 
+                                        current_price: float, symbol: str) -> Optional[Dict[str, Any]]:
+    """
+    Extract the 4 required options from a full option chain for WEM calculation.
+    
+    This function analyzes the full option chain and extracts:
+    1. ATM Call - at strike closest to current price
+    2. ATM Put - at same strike as ATM call  
+    3. ITM Call - at next adjacent strike below ATM (has intrinsic value)
+    4. ITM Put - at next adjacent strike above ATM (has intrinsic value)
+    
+    Args:
+        calls: DataFrame with call options from the option chain
+        puts: DataFrame with put options from the option chain
+        current_price: Current stock price for ATM determination
+        symbol: Stock symbol for logging
+        
+    Returns:
+        dict: Dictionary with the 4 required options, or None if any are missing
+    """
+    logger.debug(f"Extracting 4 required options for {symbol} from full chain")
+    
+    try:
+        # Get all available strikes from both calls and puts
+        all_strikes = sorted(set(calls['strike'].tolist() + puts['strike'].tolist()))
+        logger.debug(f"Available strikes for {symbol}: {len(all_strikes)} strikes from {min(all_strikes)} to {max(all_strikes)}")
+        
+        if len(all_strikes) < 3:
+            logger.error(f"Insufficient strikes available for {symbol}: need at least 3, found {len(all_strikes)}")
+            return None
+        
+        # Step 1: Find ATM strike (closest to current price)
+        atm_strike = min(all_strikes, key=lambda x: abs(float(x) - current_price))
+        logger.debug(f"ATM strike for {symbol}: ${atm_strike} (current price: ${current_price:.2f})")
+        
+        # Step 2: Find adjacent strikes for ITM options
+        atm_index = all_strikes.index(atm_strike)
+        
+        # ITM Call: one strike below ATM (next lower strike)
+        if atm_index == 0:
+            logger.error(f"No strike below ATM for ITM call - {symbol} ATM is at lowest available strike")
+            return None
+        itm_call_strike = all_strikes[atm_index - 1]
+        
+        # ITM Put: one strike above ATM (next higher strike)  
+        if atm_index == len(all_strikes) - 1:
+            logger.error(f"No strike above ATM for ITM put - {symbol} ATM is at highest available strike")
+            return None
+        itm_put_strike = all_strikes[atm_index + 1]
+        
+        logger.debug(f"Strike selection for {symbol}:")
+        logger.debug(f"  ITM Call: ${itm_call_strike} (below ATM)")
+        logger.debug(f"  ATM: ${atm_strike}")
+        logger.debug(f"  ITM Put: ${itm_put_strike} (above ATM)")
+        
+        # Step 3: Extract the actual option records from the DataFrames
+        
+        # ATM Call and Put
+        atm_calls = calls[calls['strike'] == atm_strike]
+        atm_puts = puts[puts['strike'] == atm_strike]
+        
+        if atm_calls.empty:
+            logger.error(f"No ATM call option found for {symbol} at strike ${atm_strike}")
+            return None
+        if atm_puts.empty:
+            logger.error(f"No ATM put option found for {symbol} at strike ${atm_strike}")
+            return None
+            
+        # ITM Call and Put
+        itm_calls = calls[calls['strike'] == itm_call_strike]
+        itm_puts = puts[puts['strike'] == itm_put_strike]
+        
+        if itm_calls.empty:
+            logger.error(f"No ITM call option found for {symbol} at strike ${itm_call_strike}")
+            return None
+        if itm_puts.empty:
+            logger.error(f"No ITM put option found for {symbol} at strike ${itm_put_strike}")
+            return None
+        
+        # Step 4: Validate that all options have valid bid/ask prices
+        atm_call = atm_calls.iloc[0]
+        atm_put = atm_puts.iloc[0]
+        itm_call = itm_calls.iloc[0]
+        itm_put = itm_puts.iloc[0]
+        
+        required_fields = ['bid', 'ask', 'strike']
+        for option_name, option_data in [
+            ('ATM Call', atm_call), ('ATM Put', atm_put), 
+            ('ITM Call', itm_call), ('ITM Put', itm_put)
+        ]:
+            for field in required_fields:
+                if field not in option_data or pd.isna(option_data[field]):
+                    logger.error(f"Missing or invalid {field} for {option_name} in {symbol}")
+                    return None
+                    
+            # Check for valid bid/ask prices (must be > 0)
+            if float(option_data['bid']) <= 0 or float(option_data['ask']) <= 0:
+                logger.error(f"Invalid bid/ask prices for {option_name} in {symbol}: bid={option_data['bid']}, ask={option_data['ask']}")
+                return None
+        
+        # Step 5: Return the extracted options
+        result = {
+            'atm_call': atm_call,
+            'atm_put': atm_put,
+            'itm_call': itm_call,
+            'itm_put': itm_put
+        }
+        
+        logger.info(f"Successfully extracted 4 required options for {symbol}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error extracting options from chain for {symbol}: {str(e)}", exc_info=True)
+        return None
+
+
+def _get_weekly_option_chain(symbol: str, expiration_date: datetime) -> Dict[str, pd.DataFrame]:
+    """
+    Get weekly option chain for a specific expiration date using MarketData.app.
+    
+    This function connects to the existing MarketDataManager to retrieve option chain
+    data for the specified weekly expiration date.
+    
+    Args:
+        symbol: Stock symbol (e.g., 'AAPL')
+        expiration_date: Options expiration date (next Friday)
+        
+    Returns:
+        dict: Dictionary with 'calls' and 'puts' DataFrames containing:
+            - strike: Strike price
+            - bid: Bid price
+            - ask: Ask price
+            - volume: Trading volume
+            - open_interest: Open interest
+            - delta: Option delta (optional)
+            - Other greeks (optional)
+    """
+    logger.info(f"Getting weekly option chain for {symbol} expiring {expiration_date.date()}")
+    
+    try:
+        # Check weekly cache first
+        cache_key = f"weekly_option_chain:{symbol}:{expiration_date.strftime('%Y-%m-%d')}"
+        cached_chain = _get_from_weekly_cache(cache_key)
+        
+        if cached_chain:
+            logger.info(f"Retrieved {symbol} option chain from weekly cache")
+            return cached_chain
+        
+        # Get market data manager
+        manager = get_market_data_manager()
+        if not manager:
+            logger.error("No market data manager available")
+            return None
+        
+        # Format expiration date for MarketData.app API (YYYY-MM-DD format)
+        expiration_str = expiration_date.strftime('%Y-%m-%d')
+        logger.info(f"Requesting option chain for {symbol} with expiration {expiration_str}")
+        
+        # Get option chain for specific expiration date
+        chain = manager.get_option_chain(symbol, expiration_str)
+        
+        if not chain or not isinstance(chain, dict) or 'calls' not in chain or 'puts' not in chain:
+            logger.error(f"Invalid option chain format received for {symbol}")
+            return None
+        
+        calls_df = chain['calls']
+        puts_df = chain['puts']
+        
+        if calls_df.empty and puts_df.empty:
+            logger.warning(f"Empty option chain received for {symbol} on {expiration_str}")
+            return None
+        
+        logger.info(f"Retrieved option chain for {symbol}: {len(calls_df)} calls, {len(puts_df)} puts")
+        
+        # Cache the result for weekly reuse
+        _save_to_weekly_cache(cache_key, chain)
+        
+        return chain
+        
+    except Exception as e:
+        logger.error(f"Error getting weekly option chain for {symbol}: {str(e)}", exc_info=True)
+        return None
+
+
+def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime) -> Optional[float]:
+    """
+    Get the closing price for a stock on the previous Friday using MarketData.app.
+    
+    This function connects to the existing MarketDataManager to retrieve historical
+    price data for the previous Friday for WEM Spread calculation.
+    
+    Args:
+        symbol: Stock symbol (e.g., 'AAPL')
+        previous_friday_date: The previous Friday's date
+        
+    Returns:
+        float: Closing price on previous Friday, or None if not available
+    """
+    logger.info(f"Getting previous Friday close price for {symbol} on {previous_friday_date.date()}")
+    
+    try:
+        # Check weekly cache first
+        cache_key = f"friday_close:{symbol}:{previous_friday_date.strftime('%Y-%m-%d')}"
+        cached_price = _get_from_weekly_cache(cache_key)
+        
+        if cached_price:
+            logger.info(f"Retrieved {symbol} Friday close from weekly cache: ${cached_price:.2f}")
+            return cached_price
+        
+        # Get market data manager
+        manager = get_market_data_manager()
+        if not manager:
+            logger.error("No market data manager available")
+            return None
+        
+        # Get historical data for the previous Friday
+        # MarketData.app provides historical candle data
+        from goldflipper.data.market.providers.marketdataapp_provider import MarketDataAppProvider
+        
+        # Create a direct provider instance to access historical data
+        project_root = Path(__file__).parent.parent.parent
+        config_path = project_root / 'goldflipper' / 'config' / 'settings.yaml'
+        provider = MarketDataAppProvider(str(config_path))
+        
+        # Get one day of data for the previous Friday
+        start_date = previous_friday_date
+        end_date = previous_friday_date + timedelta(days=1)
+        
+        logger.info(f"Requesting historical data for {symbol} on {previous_friday_date.date()}")
+        historical_data = provider.get_historical_data(symbol, start_date, end_date, interval="1d")
+        
+        if historical_data.empty:
+            logger.warning(f"No historical data available for {symbol} on {previous_friday_date.date()}")
+            # Fallback to current price if historical data not available
+            current_price = manager.get_stock_price(symbol)
+            if current_price:
+                logger.warning(f"Using current price as fallback for {symbol}: ${current_price:.2f}")
+                return float(current_price)
+            return None
+        
+        # Get the closing price from the Friday data
+        friday_close = float(historical_data.iloc[-1]['close'])
+        logger.info(f"Retrieved previous Friday close for {symbol}: ${friday_close:.2f}")
+        
+        # Cache the result for weekly reuse
+        _save_to_weekly_cache(cache_key, friday_close)
+        
+        return friday_close
+        
+    except Exception as e:
+        logger.error(f"Error getting previous Friday close for {symbol}: {str(e)}", exc_info=True)
+        
+        # Fallback to current price if historical data fails
+        try:
+            manager = get_market_data_manager()
+            if manager:
+                current_price = manager.get_stock_price(symbol)
+                if current_price:
+                    logger.warning(f"Using current price as fallback for {symbol}: ${current_price:.2f}")
+                    return float(current_price)
+        except Exception as fallback_error:
+            logger.error(f"Fallback to current price also failed: {str(fallback_error)}")
+        
         return None
 
 def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
@@ -541,19 +1017,26 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
         else:
             df[col] = df[col].apply(lambda x: round(x, sig_figs-1) if pd.notnull(x) else x)
     
-    # Ensure there's a WEM value for each stock - calculate if missing
+    # Ensure there's a WEM Points value for each stock - calculate if missing
     if 'straddle_strangle' in df.columns:
         for index, row in df.iterrows():
             symbol = row.get('symbol', 'UNKNOWN')
-            if pd.isna(row.get('wem')) and not pd.isna(row.get('straddle_strangle')):
-                # Calculate WEM as half of straddle_strangle
-                calculated_wem = row['straddle_strangle'] / 2
-                df.at[index, 'wem'] = calculated_wem
-                logger.info(f"Calculated WEM for {symbol}: {calculated_wem}")
+            
+            # Calculate WEM Points if missing and we have straddle_strangle data
+            if (pd.isna(row.get('wem_points')) and not pd.isna(row.get('straddle_strangle'))):
+                # Calculate WEM Points as half of straddle_strangle
+                calculated_wem_points = row['straddle_strangle'] / 2
+                df.at[index, 'wem_points'] = calculated_wem_points
+                logger.info(f"Calculated WEM Points for {symbol}: {calculated_wem_points}")
     
-    # Default metrics if none provided
+    # Convert old 'wem' field to 'wem_points' if needed
+    if 'wem' in df.columns and 'wem_points' not in df.columns:
+        df['wem_points'] = df['wem']
+        logger.info("Converted 'wem' field to 'wem_points'")
+    
+    # Default metrics using WEM Points terminology
     default_metrics = [
-        'symbol', 'atm_price', 'wem', 'straddle_strangle', 'wem_spread',
+        'symbol', 'atm_price', 'wem_points', 'straddle_strangle', 'wem_spread',
         'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
         'delta_range', 'delta_range_pct', 'last_updated'
     ]
@@ -564,14 +1047,27 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
     if 'symbol' not in metrics:
         metrics.insert(0, 'symbol')
     
-    # Filter columns
-    df = df[metrics]
+    # Filter columns - only include metrics that actually exist in the DataFrame
+    available_metrics = [metric for metric in metrics if metric in df.columns]
+    missing_metrics = [metric for metric in metrics if metric not in df.columns]
+    
+    if missing_metrics:
+        logger.warning(f"Missing columns in data: {missing_metrics}")
+        logger.info(f"Available columns: {df.columns.tolist()}")
+    
+    if not available_metrics:
+        logger.error("No valid metrics found in data")
+        return {"df": pd.DataFrame(), "columns": []}
+    
+    # Filter columns to only available ones
+    df = df[available_metrics]
+    metrics = available_metrics
     
     # Dictionary to map column names to prettier display names
     column_display_names = {
         'symbol': 'Symbol',
         'atm_price': 'ATM Price',
-        'wem': 'WEM',
+        'wem_points': 'WEM Points',
         'straddle': 'Straddle',
         'strangle': 'Strangle',
         'straddle_strangle': 'Straddle/Strangle',
@@ -627,7 +1123,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
             if metric == 'atm_price':
                 column_type = "number"
                 column_format = "$.4f"
-            elif metric in ['wem', 'straddle', 'strangle', 'straddle_strangle', 'delta_range', 'straddle_1', 'straddle_2', 'delta_16_plus', 'delta_16_minus']:
+            elif metric in ['wem_points', 'straddle', 'strangle', 'straddle_strangle', 'delta_range', 'straddle_1', 'straddle_2', 'delta_16_plus', 'delta_16_minus']:
                 column_type = "number" 
                 column_format = "%.4f"
             elif metric in ['wem_spread', 'delta_range_pct']:
@@ -816,7 +1312,7 @@ def main():
         
         # Available metrics for display
         all_metrics = [
-            'symbol', 'atm_price', 'wem', 'wem_spread',
+            'symbol', 'atm_price', 'wem_points', 'wem_spread',
             'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
             'delta_range', 'delta_range_pct', 'straddle', 'strangle', 'straddle_strangle', 'last_updated'
         ]
@@ -825,9 +1321,9 @@ def main():
         # as it becomes the column headers
         display_metrics = all_metrics if layout == 'vertical' else [m for m in all_metrics if m != 'symbol']
         
-        # Default selected metrics - all except straddle_strangle in the order from the image
+        # Default selected metrics using WEM Points
         default_metrics = [
-            'atm_price', 'wem', 'wem_spread', 
+            'atm_price', 'wem_points', 'wem_spread', 
             'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
             'delta_range', 'delta_range_pct', 'last_updated'
         ]
@@ -863,6 +1359,32 @@ def main():
     try:
         # Get WEM stocks from database within a context manager
         with get_db_connection() as db_session:
+            # Check if wem_stocks table exists, if not initialize the database
+            from sqlalchemy import inspect
+            inspector = inspect(db_session.bind)
+            existing_tables = inspector.get_table_names()
+            
+            if 'wem_stocks' not in existing_tables:
+                logger.warning("wem_stocks table not found, initializing database...")
+                st.warning("⚠️ WEM database not initialized. Setting up tables...")
+                
+                # Initialize the database
+                from goldflipper.database.connection import init_db
+                init_db(force=False)
+                
+                # Add default stocks
+                default_stocks = ['SPY', 'QQQ', 'VIX', 'NKE', 'SHOP', 'DLTR', 'WMT', 'TSLA', 'COIN', 'SBUX', 'PLTR', 'AMD', 'DIS']
+                for symbol in default_stocks:
+                    try:
+                        add_wem_stock(db_session, symbol, is_default=True)
+                        logger.info(f"Added default stock: {symbol}")
+                    except Exception as stock_error:
+                        logger.warning(f"Failed to add {symbol}: {stock_error}")
+                
+                st.success("✅ Database initialized successfully!")
+                st.info("Please refresh the page to load the WEM data.")
+                return
+            
             # Get WEM stocks from database
             date_start, date_end = date_range
             date_end = datetime.combine(date_end, datetime.max.time())  # End of the selected day

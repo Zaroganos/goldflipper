@@ -238,26 +238,11 @@ def init_db(force: bool = False) -> None:
     
     logger.info("Creating database schema")
     
-    # Execute direct SQL instead of relying on SQLAlchemy reflection
-    # This ensures tables match exactly what's defined in the models
+    # Standard table creation approach is more reliable for DuckDB
     if force:
-        # For each table defined in the models
-        for table in Base.metadata.sorted_tables:
-            try:
-                # Check if table exists
-                exists = engine.dialect.has_table(engine, table.name)
-                
-                # If it exists, drop it first
-                if exists:
-                    logger.info(f"Dropping table {table.name}")
-                    table.drop(engine)
-                
-                # Create the table fresh
-                logger.info(f"Creating table {table.name}")
-                table.create(engine)
-            except Exception as e:
-                logger.error(f"Error recreating {table.name}: {str(e)}")
-                # Continue with next table
+        logger.info("Dropping all existing tables")
+        Base.metadata.drop_all(engine)
+        logger.info("All tables dropped")
     
     # Standard table creation (will skip existing tables)
     Base.metadata.create_all(engine)
@@ -268,11 +253,13 @@ def init_db(force: bool = False) -> None:
             # Enable automatic statistics gathering
             session.execute(text("SET enable_progress_bar=false;"))
             session.execute(text("SET enable_object_cache=true;"))
-            session.execute(text("SET enable_external_access=true;"))
+            # Note: skip enable_external_access as it can't be changed while database is running
             # Force statistics collection for better query planning
-            session.execute(text("PRAGMA force_index_statistics;"))
+            # Note: force_index_statistics doesn't exist in this DuckDB version
+            # session.execute(text("PRAGMA force_index_statistics;"))
+            logger.info("Database optimization completed")
         except Exception as e:
-            logger.error(f"Failed to optimize database: {str(e)}")
+            logger.warning(f"Database optimization failed (non-critical): {str(e)}")
             # This is non-fatal, continue
 
 def backup_database() -> Path:

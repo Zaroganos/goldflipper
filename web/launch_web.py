@@ -13,9 +13,11 @@ def main():
         with open(log_file, 'w') as f:
             f.write(f"Starting launch_web.py at {datetime.now()}\n")
             
+
+            # This is a problem area. Make sure the dir actually points to the settings.yaml file!
             # Get the script directory and project root
             script_dir = Path(__file__).parent
-            project_root = script_dir.parent.parent  # Go up two levels to get to goldflipper directory
+            project_root = script_dir.parent  # Go up one level to get to goldflipper directory
             settings_file = project_root / 'goldflipper' / 'config' / 'settings.yaml'
             
             f.write(f"Reading settings from: {settings_file}\n")
