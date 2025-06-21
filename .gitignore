@@ -34,12 +34,18 @@ __pycache__/
 # Logs
 *.log
 logs/
+goldflipper/logs/
 
 # Database files
 web/data/db/*.db
 web/data/db/*.wal
 web/data/db/temp/
 web/data/db/backups/
+data/db/*.db
+data/db/*.wal
+data/db/temp/
+data/db/backups/
+data/wem_cache/
 *.duckdb
 *.duckdb.wal
 

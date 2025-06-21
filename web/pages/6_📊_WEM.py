@@ -6,6 +6,27 @@ This page provides functionality for:
 2. Calculating and displaying expected moves
 3. Exporting data to Excel
 4. Managing user preferences for WEM stocks
+
+RECENT FIXES (2025-06-21):
+==========================
+- Fixed MarketDataApp provider option splitting logic to use 'side' field instead of symbol parsing
+- Resolved database schema mismatch where web app used different database than command-line tools
+- Added proper database path configuration in web launcher to ensure consistency
+- Fixed WEM calculation displaying stock price levels instead of option premiums
+- Cleared corrupted weekly cache that contained wrong option chain data
+- All WEM calculations now correctly show:
+  * Straddle Level: ATM call + ATM put premiums (~$10-12)
+  * Strangle Level: ITM call + ITM put premiums (~$10-12) 
+  * S1/S2: Stock price ± WEM Points (stock price levels ~$580-610)
+
+TECHNICAL DETAILS:
+==================
+WEM Calculation Method: Automated Full Chain Analysis
+- Gets full weekly option chain for next Friday expiration
+- Auto-detects ATM strike closest to current stock price
+- Selects adjacent strikes for ITM options (one above/below ATM)
+- Calculates WEM Points = (Straddle + Strangle) / 2
+- Uses MarketDataApp provider with proper call/put separation
 """
 
 import logging
@@ -140,7 +161,7 @@ def get_wem_stocks(session: Session, from_date=None, to_date=None, symbols=None)
         symbols: Optional list of stock symbols to include
         
     Returns:
-        List of WEM stocks as dictionaries
+        List of WEM stocks as dictionaries ordered by preferred default order
     """
     query = session.query(WEMStock)
     
@@ -153,14 +174,28 @@ def get_wem_stocks(session: Session, from_date=None, to_date=None, symbols=None)
     if symbols and len(symbols) > 0:
         query = query.filter(WEMStock.symbol.in_(symbols))
     
-    # Order by symbol for consistency
-    query = query.order_by(WEMStock.symbol)
-    
     # Execute query and convert to dictionaries
     stocks = query.all()
-    logger.info(f"Retrieved {len(stocks)} WEM stocks matching filters")
+    stock_dicts = [stock.to_dict() for stock in stocks]
     
-    return [stock.to_dict() for stock in stocks]
+    # Define preferred order for display (matches default stocks order)
+    preferred_order = ['SPY', 'QQQ', 'VIX', 'NKE', 'SHOP', 'DLTR', 'WMT', 'TSLA', 'COIN', 'SBUX', 'PLTR', 'AMD', 'DIS']
+    
+    # Sort stocks by preferred order, with any additional stocks at the end alphabetically
+    def sort_key(stock_dict):
+        symbol = stock_dict.get('symbol', '')
+        try:
+            # Return index in preferred order if found
+            return (0, preferred_order.index(symbol))
+        except ValueError:
+            # Return high index + alphabetical sort for stocks not in preferred list
+            return (1, symbol)
+    
+    sorted_stocks = sorted(stock_dicts, key=sort_key)
+    
+    logger.info(f"Retrieved {len(sorted_stocks)} WEM stocks matching filters, ordered by preference")
+    
+    return sorted_stocks
 
 def get_default_wem_stocks(session: Session) -> List[Dict[str, Any]]:
     """Get default WEM stocks from database as dictionaries"""
@@ -288,23 +323,7 @@ def update_wem_stock(session: Session, stock_data: Dict[str, Any]) -> bool:
         if not wem_stock.meta_data:
             wem_stock.meta_data = {}
         
-        # Handle computed fields that might not exist in the database schema
-        computed_fields = ['wem', 'straddle', 'strangle']
-        
-        # Process each computed field
-        for field in computed_fields:
-            if field in stock_data:
-                field_value = stock_data.pop(field)  # Remove from dict to avoid SQLAlchemy errors
-                
-                # Store in meta_data as a fallback
-                if isinstance(wem_stock.meta_data, dict):
-                    wem_stock.meta_data[f'calculated_{field}'] = field_value
-                
-                # Also try to set the attribute directly if it exists
-                if hasattr(wem_stock, field) and not isinstance(getattr(wem_stock, field), type(None)):
-                    setattr(wem_stock, field, field_value)
-        
-        # Update other attributes
+        # Update all attributes directly - no special handling needed
         for key, value in stock_data.items():
             if hasattr(wem_stock, key):
                 setattr(wem_stock, key, value)
@@ -1034,11 +1053,24 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
         df['wem_points'] = df['wem']
         logger.info("Converted 'wem' field to 'wem_points'")
     
-    # Default metrics using WEM Points terminology
-    default_metrics = [
-        'symbol', 'atm_price', 'wem_points', 'straddle_strangle', 'wem_spread',
+    # Available metrics for display - reordered to match user requirements
+    all_metrics = [
+        'symbol', 'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread',
         'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-        'delta_range', 'delta_range_pct', 'last_updated'
+        'delta_range', 'delta_range_pct', 'straddle_strangle', 'last_updated'
+    ]
+    
+    # For horizontal layout, filter out 'symbol' from selectable metrics
+    # as it becomes the column headers
+    display_metrics = all_metrics if layout == 'vertical' else [m for m in all_metrics if m != 'symbol']
+    
+    # Default selected metrics matching exact user requirements:
+    # ATM (6/13/25), Straddle Level, Strangle Level, WEM Points, WEM Spread, 
+    # Delta 16 (+), S2, S1, Delta 16 (-), Delta Range, Delta Range %
+    default_metrics = [
+        'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread', 
+        'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
+        'delta_range', 'delta_range_pct'
     ]
     
     metrics = metrics or default_metrics
@@ -1063,23 +1095,32 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
     df = df[available_metrics]
     metrics = available_metrics
     
-    # Dictionary to map column names to prettier display names
+    # Dictionary to map column names to prettier display names - updated for exact user requirements
     column_display_names = {
         'symbol': 'Symbol',
-        'atm_price': 'ATM Price',
+        'atm_price': 'ATM (6/13/25)',  # Will be dynamically updated with actual date
         'wem_points': 'WEM Points',
-        'straddle': 'Straddle',
-        'strangle': 'Strangle',
+        'straddle': 'Straddle Level',
+        'strangle': 'Strangle Level', 
         'straddle_strangle': 'Straddle/Strangle',
-        'wem_spread': 'WEM Spread %',
-        'delta_16_plus': 'Delta 16+',
-        'straddle_2': 'Straddle 2',
-        'straddle_1': 'Straddle 1',
-        'delta_16_minus': 'Delta 16-',
+        'wem_spread': 'WEM Spread',
+        'delta_16_plus': 'Delta 16 (+)',
+        'straddle_2': 'S2',
+        'straddle_1': 'S1',
+        'delta_16_minus': 'Delta 16 (-)',
         'delta_range': 'Delta Range',
         'delta_range_pct': 'Delta Range %',
         'last_updated': 'Last Updated'
     }
+    
+    # Dynamically update ATM display name with previous Friday's date (when close price was recorded)
+    try:
+        previous_friday = _find_previous_friday()
+        atm_date_str = previous_friday.strftime('%m/%d')  # Format as M/D (e.g., 6/13)
+        column_display_names['atm_price'] = f'ATM ({atm_date_str})'
+    except Exception as e:
+        logger.warning(f"Could not determine previous Friday date: {e}")
+        # Keep default ATM name if date calculation fails
     
     # Configure the display based on layout
     columns = []
@@ -1108,13 +1149,14 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
             columns.append({
                 "field": symbol,
                 "headerName": symbol,
-                "width": 120
+                "width": 80  # Reduced from 120 to 80 (1/3 smaller)
             })
     else:  # vertical layout
         # Configure columns - each metric is a column with proper formatting
         for metric in metrics:
             display_name = column_display_names.get(metric, metric.replace('_', ' ').title())
-            column_width = 150 if metric in ['symbol', 'last_updated'] else 120
+            # Reduced column widths by about 1/3
+            column_width = 100 if metric in ['symbol', 'last_updated'] else 80  # Reduced from 150/120 to 100/80
             
             # Determine column type and format for display
             column_type = "text"
@@ -1310,22 +1352,24 @@ def main():
             help="Horizontal shows stocks as columns, vertical as rows"
         )
         
-        # Available metrics for display
+        # Available metrics for display - reordered to match user requirements
         all_metrics = [
-            'symbol', 'atm_price', 'wem_points', 'wem_spread',
+            'symbol', 'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread',
             'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-            'delta_range', 'delta_range_pct', 'straddle', 'strangle', 'straddle_strangle', 'last_updated'
+            'delta_range', 'delta_range_pct', 'straddle_strangle', 'last_updated'
         ]
         
         # For horizontal layout, filter out 'symbol' from selectable metrics
         # as it becomes the column headers
         display_metrics = all_metrics if layout == 'vertical' else [m for m in all_metrics if m != 'symbol']
         
-        # Default selected metrics using WEM Points
+        # Default selected metrics matching exact user requirements:
+        # ATM (6/13/25), Straddle Level, Strangle Level, WEM Points, WEM Spread, 
+        # Delta 16 (+), S2, S1, Delta 16 (-), Delta Range, Delta Range %
         default_metrics = [
-            'atm_price', 'wem_points', 'wem_spread', 
+            'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread', 
             'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-            'delta_range', 'delta_range_pct', 'last_updated'
+            'delta_range', 'delta_range_pct'
         ]
         if layout == 'vertical':
             default_metrics.insert(0, 'symbol')
@@ -1481,12 +1525,17 @@ def main():
                     logger.error(f"Error filtering columns: {str(e)}")
                     # Continue with unfiltered dataframe
             
-            # Style the dataframe
+            # Calculate dynamic height based on actual data
+            # Base height for headers + padding, plus row height for each data row
+            num_rows = len(wem_df['df'])
+            dynamic_height = min(max(200, 50 + (num_rows * 35)), 600)  # Min 200px, max 600px, ~35px per row
+            
+            # Style the dataframe with dynamic sizing
             st.dataframe(
                 wem_df['df'],
                 use_container_width=True,
                 hide_index=False,  # Show index for horizontal layout
-                height=800,  # Add height parameter to allow table to expand vertically
+                height=dynamic_height,  # Dynamic height based on content
                 column_config={
                     col["field"]: (
                         st.column_config.NumberColumn(

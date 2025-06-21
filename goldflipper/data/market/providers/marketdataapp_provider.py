@@ -193,9 +193,10 @@ class MarketDataAppProvider(MarketDataProvider):
             if data.get('s') == 'ok':
                 logging.info(f"MarketDataApp: Found {len(data.get('optionSymbol', []))} options")
                 
-                # Create DataFrame with all fields
+                # Create DataFrame with all fields including the side field
                 df_data = {
                     'optionSymbol': data['optionSymbol'],
+                    'side': data['side'],  # Include the side field to distinguish calls from puts
                     'strike': data['strike'],  # Make sure we include strike
                     'bid': data['bid'],
                     'ask': data['ask'],
@@ -213,9 +214,12 @@ class MarketDataAppProvider(MarketDataProvider):
                 
                 df = pd.DataFrame(df_data)
                 
-                # Split into calls and puts based on option symbol
-                calls_df = df[df['optionSymbol'].str.contains('C')]
-                puts_df = df[df['optionSymbol'].str.contains('P')]
+                # Split into calls and puts based on the side field (not symbol)
+                # FIX (2025-06-21): Use 'side' field instead of parsing symbols
+                # Previous logic used symbol.contains('C'/'P') which failed because
+                # all option symbols contain 'C' (e.g., SPY250627C00594000, SPY250627P00594000)
+                calls_df = df[df['side'] == 'call'].copy()
+                puts_df = df[df['side'] == 'put'].copy()
                 
                 # Standardize column names
                 calls_df = self.standardize_columns(calls_df)

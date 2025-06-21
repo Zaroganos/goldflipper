@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import sys
 import yaml
@@ -5,6 +7,15 @@ import subprocess
 from pathlib import Path
 import traceback
 from datetime import datetime
+
+# FIX (2025-06-21): Set the correct data directory to point to the main database
+# This ensures the web app uses the same database as the command-line tools
+# Previously, the web app created its own database in web/data/ causing schema mismatches
+project_root = Path(__file__).parent.parent
+os.environ['GOLDFLIPPER_DATA_DIR'] = str(project_root / 'data')
+
+# Add project root to Python path
+sys.path.insert(0, str(project_root))
 
 def main():
     try:
