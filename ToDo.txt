@@ -1,6 +1,29 @@
 This is a list of tasks to do and features to implement for the goldflipper project.
 Place new tasks on top.
 
+- [✓] Fix WEM Delta 16+/- calculation method (2025-01-14):
+      1. ✓ Identified incorrect method using arbitrary adjacent strikes as "Delta 16" values
+      2. ✓ Implemented proper delta-based lookup from deltas.py logic
+      3. ✓ Added calculate_delta_16_values() function for direct option chain lookup
+      4. ✓ Updated WEM calculation to find options with actual delta ≈ ±0.16
+      5. ✓ Removed invalid fallback logic that provided incorrect values
+      6. ✓ Added proper error handling when delta values unavailable (sets to None)
+      7. ✓ Added TODO placeholder for Black-Scholes Method 2 fallback implementation
+      8. ✓ Updated documentation to clarify WEM is primary, Delta 16 is secondary analysis
+      9. ✓ Enhanced logging to show actual delta values and calculation accuracy
+      
+      BEFORE: Delta 16+ = adjacent_strike_above_ATM (incorrect)
+      AFTER: Delta 16+ = actual_option_with_0.16_delta.strike (correct)
+
+- [ ] Fix WEM Streamlit deprecation warnings and data conversion issues:
+      1. [ ] Fix FutureWarning: pandas read_json literal string deprecated (line 693)
+         - Replace literal JSON string with StringIO object wrapper
+      2. [ ] Fix DeprecationWarning: datetime.utcnow() deprecated (line 543)
+         - Replace with datetime.now(datetime.UTC) for timezone-aware timestamps
+      3. [ ] Fix pyarrow conversion error with percentage strings (SPY column)
+         - Handle percentage string format in dataframe before pyarrow conversion
+         - Consider keeping percentage values as numeric and formatting on display
+
 - [✓] Fix WEM calculation to use real market data:
       1. ✓ Replace simulated random data with actual options market data
       2. ✓ Implement proper ATM straddle calculation using real mid prices
