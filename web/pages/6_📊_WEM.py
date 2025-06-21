@@ -18,6 +18,7 @@ RECENT FIXES (2025-06-21):
   * Straddle Level: ATM call + ATM put premiums (~$10-12)
   * Strangle Level: ITM call + ITM put premiums (~$10-12) 
   * S1/S2: Stock price ± WEM Points (stock price levels ~$580-610)
+- Fixed Delta 16+/- calculation to use actual delta values from option chain
 
 TECHNICAL DETAILS:
 ==================
@@ -25,7 +26,9 @@ WEM Calculation Method: Automated Full Chain Analysis
 - Gets full weekly option chain for next Friday expiration
 - Auto-detects ATM strike closest to current stock price
 - Selects adjacent strikes for ITM options (one above/below ATM)
+- Finds actual Delta 16+ (call ~0.16 delta) and Delta 16- (put ~-0.16 delta) options
 - Calculates WEM Points = (Straddle + Strangle) / 2
+- Additionally calculates proper Delta 16+/- values using actual option deltas
 - Uses MarketDataApp provider with proper call/put separation
 """
 
@@ -409,10 +412,10 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dic
             logger.error(f"Empty weekly option chain for {symbol}")
             return None
         
-        # Step 4: Extract and validate the 4 required options from full chain
+        # Step 4: Extract ATM options and calculate Delta 16+/- values
         logger.info(f"Analyzing full option chain for {symbol} to extract required options")
         
-        # Extract the 4 required options using the new automated approach
+        # Extract the ATM options using the existing automated approach
         required_options = _extract_required_options_from_chain(calls, puts, current_price, symbol)
         
         if not required_options:
@@ -421,14 +424,26 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dic
         
         atm_call = required_options['atm_call']
         atm_put = required_options['atm_put']
-        itm_call = required_options['itm_call']
-        itm_put = required_options['itm_put']
+        itm_call = required_options['itm_call']  # Keep for strangle calculation
+        itm_put = required_options['itm_put']    # Keep for strangle calculation
         
         # Log the selected strikes for verification
         logger.info(f"Selected strikes for {symbol}:")
         logger.info(f"  ATM Call/Put: ${atm_call['strike']}")
-        logger.info(f"  ITM Call: ${itm_call['strike']} (below ATM)")
-        logger.info(f"  ITM Put: ${itm_put['strike']} (above ATM)")
+        logger.info(f"  ITM Call: ${itm_call['strike']} (below ATM, for strangle)")
+        logger.info(f"  ITM Put: ${itm_put['strike']} (above ATM, for strangle)")
+        
+        # Step 4.5: Calculate proper Delta 16+/- values using delta-based lookup
+        logger.info(f"Calculating Delta 16+/- values for {symbol}")
+        expiration_str = next_friday.strftime('%Y-%m-%d')
+        delta_16_results = calculate_delta_16_values(weekly_option_chain, expiration_str)
+        
+        if delta_16_results:
+            logger.info(f"  Delta 16+ Call: ${delta_16_results['delta_16_plus']['strike']} (delta: {delta_16_results['delta_16_plus']['delta']:.4f})")
+            logger.info(f"  Delta 16- Put: ${delta_16_results['delta_16_minus']['strike']} (delta: {delta_16_results['delta_16_minus']['delta']:.4f})")
+        else:
+            logger.warning(f"Could not calculate Delta 16 values for {symbol} - delta values not available in option chain")
+            logger.info("NOTE: Black-Scholes calculation method (Method 2) will be added as fallback in future update")
         
         # Step 5: Calculate Straddle (ATM call + ATM put)
         logger.debug(f"Calculating straddle using ATM strike ${atm_call['strike']}")
@@ -481,11 +496,24 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dic
         # Straddle 1 = Stock Price - WEM Points (lower expected range)  
         straddle_1 = current_price - wem_points
         
-        # Delta Range = Delta 16 Positive - Delta 16 Negative
-        delta_range = itm_put_strike - itm_call_strike
-        
-        # Delta Range % = Delta Range / Stock Price
-        delta_range_pct = delta_range / current_price
+        # Calculate Delta Range using proper Delta 16 values (if available)
+        if delta_16_results:
+            # Use actual Delta 16 strikes for range calculation
+            delta_16_plus_strike = delta_16_results['delta_16_plus']['strike']
+            delta_16_minus_strike = delta_16_results['delta_16_minus']['strike']
+            delta_range = delta_16_plus_strike - delta_16_minus_strike
+            delta_range_pct = delta_range / current_price
+            
+            logger.info(f"Delta Range using proper Delta 16 values: ${delta_16_minus_strike:.2f} to ${delta_16_plus_strike:.2f} = ${delta_range:.2f}")
+        else:
+            # No valid delta calculation available - set to None
+            # TODO: Implement Black-Scholes calculation method (Method 2) as fallback
+            delta_16_plus_strike = None
+            delta_16_minus_strike = None
+            delta_range = None
+            delta_range_pct = None
+            
+            logger.warning(f"Delta 16 values not available for {symbol} - Delta Range will be null")
         
         logger.info(f"Expected weekly range for {symbol}: ${straddle_1:.2f} - ${straddle_2:.2f}")
         logger.info(f"WEM Points: ${wem_points:.2f}")
@@ -505,10 +533,10 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dic
             'itm_call_strike': float(itm_call_strike),
             'itm_put_strike': float(itm_put_strike),
             'straddle_strangle': float(straddle_premium + strangle_premium),  # Combined straddle + strangle
-            'delta_16_plus': float(itm_put_strike),  # Upper bound (ITM put strike)
-            'delta_16_minus': float(itm_call_strike),  # Lower bound (ITM call strike)
-            'delta_range': float(delta_range),
-            'delta_range_pct': float(delta_range_pct),
+            'delta_16_plus': float(delta_16_plus_strike) if delta_16_plus_strike is not None else None,  # Actual Delta 16+ strike
+            'delta_16_minus': float(delta_16_minus_strike) if delta_16_minus_strike is not None else None,  # Actual Delta 16- strike
+            'delta_range': float(delta_range) if delta_range is not None else None,
+            'delta_range_pct': float(delta_range_pct) if delta_range_pct is not None else None,
             'straddle_2': float(straddle_2),  # Stock Price + WEM Points
             'straddle_1': float(straddle_1),  # Stock Price - WEM Points
             'meta_data': {
@@ -524,19 +552,32 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dic
                 'strikes_used': {
                     'atm': float(atm_strike),
                     'itm_call': float(itm_call_strike),
-                    'itm_put': float(itm_put_strike)
+                    'itm_put': float(itm_put_strike),
+                    'delta_16_plus': float(delta_16_plus_strike) if delta_16_plus_strike is not None else None,
+                    'delta_16_minus': float(delta_16_minus_strike) if delta_16_minus_strike is not None else None
+                },
+                'delta_16_calculation': {
+                    'method': 'proper_delta_lookup' if delta_16_results else 'not_available',
+                    'delta_16_plus_actual_delta': float(delta_16_results['delta_16_plus']['delta']) if delta_16_results else None,
+                    'delta_16_minus_actual_delta': float(delta_16_results['delta_16_minus']['delta']) if delta_16_results else None,
+                    'delta_16_plus_accuracy': float(delta_16_results['delta_16_plus']['delta_accuracy']) if delta_16_results else None,
+                    'delta_16_minus_accuracy': float(delta_16_results['delta_16_minus']['delta_accuracy']) if delta_16_results else None,
+                    'fallback_todo': 'Black-Scholes calculation method (Method 2) to be implemented'
                 },
                 'previous_friday_date': previous_friday_date.isoformat(),
                 'previous_friday_close': float(previous_friday_close) if previous_friday_close else None,
-                'option_selection_method': 'adjacent_strikes_from_full_chain',
+                'option_selection_method': 'atm_and_adjacent_strikes_for_wem_plus_delta_lookup',
                 'formula_notes': {
                     'wem_points': '(Straddle + Strangle) / 2',
                     'wem_spread': 'WEM Points / Previous Friday Close Price',
                     'straddle_1': 'Stock Price - WEM Points',
                     'straddle_2': 'Stock Price + WEM Points',
-                    'delta_range': 'Delta 16+ - Delta 16-',
-                    'delta_range_pct': 'Delta Range / Stock Price',
-                    'option_extraction': 'ATM closest to price, ITM adjacent strikes'
+                    'delta_range': 'Delta 16+ Strike - Delta 16- Strike (when delta values available)',
+                    'delta_range_pct': 'Delta Range / Stock Price (when delta values available)',
+                    'option_extraction': 'ATM closest to price, adjacent strikes for strangle calculation',
+                    'delta_16_method': 'Direct lookup from option chain for options with delta closest to ±0.16 (if available)',
+                    'primary_calculation': 'WEM based on straddle/strangle premiums',
+                    'secondary_calculation': 'Delta 16 range for additional analysis'
                 }
             }
         }
@@ -1251,6 +1292,139 @@ def setup_logging():
         logger.debug("Debug logging enabled for WEM module")
     
     return logger
+
+def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expiration_date: str) -> Optional[Dict[str, Any]]:
+    """
+    Calculate Delta 16+ (call) and Delta 16- (put) using direct lookup method from option chain.
+    
+    This is the most accurate method when delta values are available in the option chain
+    as it uses actual market-derived deltas that incorporate real implied volatilities,
+    volatility smile/skew effects, and current market conditions.
+    
+    Args:
+        option_chain_dict: Dictionary containing option data:
+            {
+                'calls': pd.DataFrame with columns ['strike', 'delta', 'bid', 'ask', ...],
+                'puts': pd.DataFrame with columns ['strike', 'delta', 'bid', 'ask', ...]
+            }
+        expiration_date: Specific expiration date to filter options (YYYY-MM-DD format)
+    
+    Returns:
+        dict: {
+            'delta_16_plus': {'strike': float, 'delta': float, 'price': float, ...},
+            'delta_16_minus': {'strike': float, 'delta': float, 'price': float, ...}
+        } or None if calculation fails
+    """
+    logger.info(f"Calculating Delta 16+/- values for expiration {expiration_date}")
+    
+    try:
+        calls_df = option_chain_dict.get('calls')
+        puts_df = option_chain_dict.get('puts')
+        
+        if calls_df is None or puts_df is None or calls_df.empty or puts_df.empty:
+            logger.error("Missing or empty option chain data for delta calculation")
+            return None
+        
+        # Check if delta column exists
+        if 'delta' not in calls_df.columns or 'delta' not in puts_df.columns:
+            logger.warning("Delta values not available in option chain - cannot calculate proper Delta 16 values")
+            return None
+        
+        # Filter out options with missing or invalid delta values
+        valid_calls = calls_df[calls_df['delta'].notna() & (calls_df['delta'] > 0)]
+        valid_puts = puts_df[puts_df['delta'].notna() & (puts_df['delta'] < 0)]
+        
+        if valid_calls.empty or valid_puts.empty:
+            logger.error("No valid options with delta values found")
+            return None
+        
+        # Target delta values
+        TARGET_CALL_DELTA = 0.16
+        TARGET_PUT_DELTA = -0.16
+        
+        # Find Delta 16+ (Call with delta closest to +0.16)
+        call_delta_diffs = (valid_calls['delta'] - TARGET_CALL_DELTA).abs()
+        delta_16_plus_idx = call_delta_diffs.idxmin()
+        delta_16_plus_option = valid_calls.loc[delta_16_plus_idx]
+        
+        # Find Delta 16- (Put with delta closest to -0.16)
+        put_delta_diffs = (valid_puts['delta'] - TARGET_PUT_DELTA).abs()
+        delta_16_minus_idx = put_delta_diffs.idxmin()
+        delta_16_minus_option = valid_puts.loc[delta_16_minus_idx]
+        
+        # Quality validation - ensure we found reasonable matches
+        call_delta_diff = abs(float(delta_16_plus_option['delta']) - TARGET_CALL_DELTA)
+        put_delta_diff = abs(float(delta_16_minus_option['delta']) - TARGET_PUT_DELTA)
+        
+        # Log the accuracy of our matches
+        logger.info(f"Delta 16+ match accuracy: {call_delta_diff:.4f} (target: {TARGET_CALL_DELTA}, found: {delta_16_plus_option['delta']:.4f})")
+        logger.info(f"Delta 16- match accuracy: {put_delta_diff:.4f} (target: {TARGET_PUT_DELTA}, found: {delta_16_minus_option['delta']:.4f})")
+        
+        # Calculate mid prices for the delta 16 options
+        delta_16_plus_price = (float(delta_16_plus_option['bid']) + float(delta_16_plus_option['ask'])) / 2
+        delta_16_minus_price = (float(delta_16_minus_option['bid']) + float(delta_16_minus_option['ask'])) / 2
+        
+        # Package results
+        results = {
+            'delta_16_plus': {
+                'strike': float(delta_16_plus_option['strike']),
+                'delta': float(delta_16_plus_option['delta']),
+                'price': delta_16_plus_price,
+                'bid': float(delta_16_plus_option['bid']),
+                'ask': float(delta_16_plus_option['ask']),
+                'type': 'call',
+                'delta_accuracy': call_delta_diff  # How close to exact 0.16
+            },
+            'delta_16_minus': {
+                'strike': float(delta_16_minus_option['strike']),
+                'delta': float(delta_16_minus_option['delta']),
+                'price': delta_16_minus_price,
+                'bid': float(delta_16_minus_option['bid']),
+                'ask': float(delta_16_minus_option['ask']),
+                'type': 'put',
+                'delta_accuracy': put_delta_diff  # How close to exact -0.16
+            }
+        }
+        
+        logger.info(f"Successfully calculated Delta 16 values:")
+        logger.info(f"  Delta 16+ Call: Strike ${results['delta_16_plus']['strike']}, Delta {results['delta_16_plus']['delta']:.4f}")
+        logger.info(f"  Delta 16- Put: Strike ${results['delta_16_minus']['strike']}, Delta {results['delta_16_minus']['delta']:.4f}")
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error calculating Delta 16 values: {str(e)}", exc_info=True)
+        return None
+
+
+def calculate_risk_reversal_spread(delta_16_results: Dict[str, Any]) -> Optional[float]:
+    """
+    Calculate the risk reversal spread (Call IV - Put IV) from Delta 16+/- results
+    
+    Args:
+        delta_16_results: Output from calculate_delta_16_values()
+    
+    Returns:
+        float: Risk reversal spread in volatility terms, or None if data unavailable
+    """
+    try:
+        delta_16_plus = delta_16_results.get('delta_16_plus', {})
+        delta_16_minus = delta_16_results.get('delta_16_minus', {})
+        
+        call_iv = delta_16_plus.get('implied_vol')
+        put_iv = delta_16_minus.get('implied_vol')
+        
+        if call_iv is None or put_iv is None:
+            logger.warning("Implied volatility data missing for risk reversal calculation")
+            return None
+        
+        rr_spread = float(call_iv) - float(put_iv)
+        logger.info(f"Risk reversal spread: {rr_spread:.4f} (Call IV - Put IV)")
+        return rr_spread
+        
+    except Exception as e:
+        logger.error(f"Error calculating risk reversal spread: {str(e)}")
+        return None
 
 def main():
     """Main function for the WEM application"""
