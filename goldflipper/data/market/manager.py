@@ -95,15 +95,23 @@ class MarketDataManager:
         display.error(f"All providers failed: {'; '.join(errors)}")
         return None
         
-    def get_stock_price(self, symbol: str) -> Optional[float]:
-        """Get current stock price with cycle caching"""
+    def get_stock_price(self, symbol: str, regular_hours_only: bool = False) -> Optional[float]:
+        """Get current stock price with cycle caching
+        
+        Args:
+            symbol: Stock ticker symbol
+            regular_hours_only: If True, excludes extended hours data and returns
+                               the last primary session close when markets are closed
+        """
         try:
-            cache_key = f"stock_price:{symbol}"
+            # Include regular_hours_only in cache key to separate cached values
+            cache_key = f"stock_price:{symbol}:regular_only_{regular_hours_only}"
             if cached_price := self.cache.get(cache_key):
                 return cached_price
                 
-            self.logger.info(f"Fetching stock price for {symbol}")
-            price = self._try_providers('get_stock_price', symbol)
+            pricing_mode = "regular hours only" if regular_hours_only else "including extended hours"
+            self.logger.info(f"Fetching stock price for {symbol} ({pricing_mode})")
+            price = self._try_providers('get_stock_price', symbol, regular_hours_only)
             
             if price is not None:
                 self.cache.set(cache_key, price)

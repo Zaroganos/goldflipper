@@ -53,18 +53,18 @@ if settings_file.exists():
     with open(settings_file, 'r') as f:
         settings = yaml.safe_load(f)
 
-# Configure root logger with less verbose settings
-logging.basicConfig(
-    level=logging.INFO,  # Set root logger to INFO level
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()  # Console handler at INFO level
-    ]
-)
-
-# Create logger for this module with more detailed settings
+# Create logger for this module - do NOT configure root logger to avoid duplication
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default to INFO level
+logger.propagate = False  # Prevent propagation to root logger to avoid duplication
+
+# Create console handler for immediate feedback
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(
+    logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+)
+logger.addHandler(console_handler)
 
 # Create file handler with custom formatting for important messages
 file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
@@ -74,9 +74,10 @@ file_handler.setFormatter(
 )
 logger.addHandler(file_handler)
 
-# Create debug file handler for development/troubleshooting
+# Create debug file handler for development/troubleshooting (only if debug enabled)
 debug_enabled = settings.get('logging', {}).get('debug', {}).get('enabled', False)
 if debug_enabled:  # Only enable debug logging if debug mode is on in settings
+    logger.setLevel(logging.DEBUG)  # Enable debug level for the logger
     debug_handler = logging.FileHandler(log_dir / f'wem_debug_{datetime.now().strftime("%Y%m%d")}.log', mode='a')
     debug_handler.setLevel(logging.DEBUG)
     debug_handler.setFormatter(
@@ -217,8 +218,14 @@ def get_latest_market_data(session: Session, symbol: str) -> Optional[MarketData
     repo = MarketDataRepository(session)
     return repo.get_latest_price(symbol)
 
-def update_market_data(session: Session, symbol: str) -> Optional[MarketData]:
-    """Update market data for a symbol"""
+def update_market_data(session: Session, symbol: str, regular_hours_only: bool = False) -> Optional[MarketData]:
+    """Update market data for a symbol
+    
+    Args:
+        session: Database session
+        symbol: Stock symbol
+        regular_hours_only: If True, uses regular hours close instead of extended hours
+    """
     try:
         manager = get_market_data_manager()
         if not manager:
@@ -228,9 +235,10 @@ def update_market_data(session: Session, symbol: str) -> Optional[MarketData]:
             
         repo = MarketDataRepository(session)
         
-        # Get live price from market data provider
-        logger.info(f"Requesting price data for {symbol} from {manager.provider.__class__.__name__}")
-        price = manager.get_stock_price(symbol)
+        # Get live price from market data provider with pricing mode
+        pricing_mode = "regular hours only" if regular_hours_only else "including extended hours"
+        logger.info(f"Requesting price data for {symbol} from {manager.provider.__class__.__name__} ({pricing_mode})")
+        price = manager.get_stock_price(symbol, regular_hours_only)
         if price is None:
             st.warning(f"Could not get current price for {symbol}")
             logger.warning(f"Could not get price for {symbol} from any provider")
@@ -241,7 +249,7 @@ def update_market_data(session: Session, symbol: str) -> Optional[MarketData]:
             symbol=symbol,
             timestamp=datetime.utcnow(),
             close=price,  # Use as close since it's current price
-            source=manager.provider.__class__.__name__  # Use class name instead of attribute
+            source=f"{manager.provider.__class__.__name__}_{'regular' if regular_hours_only else 'extended'}"
         )
         
         try:
@@ -340,7 +348,7 @@ def update_wem_stock(session: Session, stock_data: Dict[str, Any]) -> bool:
         logger.error(f"Error updating WEM stock {symbol}: {str(e)}", exc_info=True)
         return False
 
-def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dict[str, Any]:
+def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regular_hours_only: bool = False) -> Dict[str, Any]:
     """
     Calculate the Weekly Expected Move (WEM) for a stock based on options data.
     
@@ -385,7 +393,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any]) -> Dic
         # Update market data if it's stale (older than 5 minutes)
         if not market_data or (datetime.utcnow() - market_data.timestamp).total_seconds() > 300:
             logger.info(f"Market data for {symbol} is stale, updating...")
-            market_data = update_market_data(session, symbol)
+            market_data = update_market_data(session, symbol, regular_hours_only)
         
         if not market_data:
             logger.error(f"No market data available for {symbol}")
@@ -1225,12 +1233,13 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
     logger.info(f"Created table with {df.shape[0]} rows, {df.shape[1]} columns")
     return {"df": df, "columns": columns}
 
-def update_all_wem_stocks(session: Session) -> bool:
+def update_all_wem_stocks(session: Session, regular_hours_only: bool = False) -> bool:
     """
     Update all WEM stocks with fresh data.
     
     Args:
         session: Database session
+        regular_hours_only: If True, uses regular hours close instead of extended hours
         
     Returns:
         bool: Success or failure
@@ -1246,14 +1255,15 @@ def update_all_wem_stocks(session: Session) -> bool:
         logger.warning("No WEM stocks found to update")
         return False
     
-    logger.info(f"Found {len(stocks)} WEM stocks to update")
+    pricing_mode = "regular hours only" if regular_hours_only else "including extended hours"
+    logger.info(f"Found {len(stocks)} WEM stocks to update ({pricing_mode})")
     
     # Update each stock
     for stock in stocks:
         logger.info(f"Calculating WEM for {stock.symbol}")
         try:
             # Calculate new values
-            new_data = calculate_expected_move(session, {'symbol': stock.symbol})
+            new_data = calculate_expected_move(session, {'symbol': stock.symbol}, regular_hours_only)
             
             if new_data:
                 # Update stock data
@@ -1438,6 +1448,20 @@ def main():
     with st.sidebar:
         st.header("WEM Configuration")
         
+        # Stock pricing mode toggle - DEFINE FIRST before any buttons that use it
+        st.subheader("Pricing Mode")
+        regular_hours_only = st.checkbox(
+            "Use Regular Hours Close Only",
+            value=False,
+            help="When enabled, uses last regular trading session close (4:00 PM ET) instead of extended hours pricing. Helpful for consistent WEM calculations after market close."
+        )
+        
+        # Add informational text about the pricing mode
+        if regular_hours_only:
+            st.caption("📊 **Regular Hours Mode**: Using last primary session close (excludes after-hours/pre-market)")
+        else:
+            st.caption("🕐 **Extended Hours Mode**: Using most recent price (includes after-hours/pre-market)")
+        
         # Add a button to update WEM data
         if st.button("Update WEM Data", help="Fetch latest options data and calculate WEM"):
             logger.info("Updating WEM data...")
@@ -1445,9 +1469,10 @@ def main():
                 try:
                     # Use the database session within a context manager
                     with get_db_connection() as db_session:
-                        update_all_wem_stocks(db_session)
+                        update_all_wem_stocks(db_session, regular_hours_only)
                     
-                    st.success("WEM data updated successfully!")
+                    pricing_mode = "regular hours close" if regular_hours_only else "extended hours pricing"
+                    st.success(f"WEM data updated successfully using {pricing_mode}!")
                     # Rerun the app to show updated data
                     time.sleep(1)  # Small delay to ensure UI updates
                     st.rerun()
@@ -1476,11 +1501,12 @@ def main():
                             st.success(f"Added {symbol} to WEM stocks")
                             # Calculate WEM values for the new stock
                             with st.spinner(f"Calculating WEM for {symbol}..."):
-                                new_data = calculate_expected_move(db_session, {'symbol': symbol})
+                                new_data = calculate_expected_move(db_session, {'symbol': symbol}, regular_hours_only)
                                 if new_data:
                                     update_data = {'symbol': symbol, **new_data}
                                     update_wem_stock(db_session, update_data)
-                                    st.success(f"WEM data calculated for {symbol}")
+                                    pricing_mode = "regular hours close" if regular_hours_only else "extended hours pricing"
+                                    st.success(f"WEM data calculated for {symbol} using {pricing_mode}")
                     
                     # Rerun to show the new stock
                     time.sleep(0.5)

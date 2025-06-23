@@ -25,8 +25,16 @@ class YFinanceProvider(MarketDataProvider):
     def __init__(self):
         self._cache = {}  # Simple memory cache
         
-    async def get_stock_price(self, symbol: str) -> float:
-        """Get current stock price"""
+    async def get_stock_price(self, symbol: str, regular_hours_only: bool = False) -> float:
+        """Get current stock price
+        
+        Args:
+            symbol: Stock ticker symbol
+            regular_hours_only: Currently not supported by YFinance provider
+        """
+        if regular_hours_only:
+            logging.warning(f"YFinance provider does not support regular_hours_only mode for {symbol}")
+            
         try:
             ticker = yf.Ticker(symbol)
             

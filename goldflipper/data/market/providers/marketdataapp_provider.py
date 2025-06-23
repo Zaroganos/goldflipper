@@ -88,10 +88,22 @@ class MarketDataAppProvider(MarketDataProvider):
         self._check_rate_limit()
         return self.session.get(url, headers=self.headers, params=params)
 
-    def get_stock_price(self, symbol: str) -> float:
-        """Get current stock price"""
+    def get_stock_price(self, symbol: str, regular_hours_only: bool = False) -> float:
+        """Get current stock price
+        
+        Args:
+            symbol: Stock ticker symbol
+            regular_hours_only: If True, excludes extended hours data and returns
+                               the last primary session close when markets are closed
+        """
         url = f"{self.base_url}/stocks/quotes/{symbol}/"
-        response = self._make_request(url)
+        
+        # Add extended parameter based on regular_hours_only flag
+        params = {}
+        if regular_hours_only:
+            params['extended'] = 'false'
+        
+        response = self._make_request(url, params)
         
         if response.status_code in (200, 203):
             data = response.json()

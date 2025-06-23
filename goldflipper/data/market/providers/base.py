@@ -56,8 +56,13 @@ class MarketDataProvider(ABC):
         return df.rename(columns=self.COLUMN_MAPPING)
     
     @abstractmethod
-    def get_stock_price(self, symbol: str) -> Optional[float]:
-        """Get current stock price"""
+    def get_stock_price(self, symbol: str, regular_hours_only: bool = False) -> Optional[float]:
+        """Get current stock price
+        
+        Args:
+            symbol: Stock ticker symbol  
+            regular_hours_only: If True, excludes extended hours data
+        """
         pass
         
     @abstractmethod

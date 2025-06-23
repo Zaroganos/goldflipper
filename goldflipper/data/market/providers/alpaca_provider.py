@@ -390,8 +390,16 @@ class AlpacaProvider(MarketDataProvider):
         self.stream_client = None
         self._ws_connected = False
     
-    async def get_stock_price(self, symbol: str) -> float:
-        """Get current stock price for a symbol"""
+    async def get_stock_price(self, symbol: str, regular_hours_only: bool = False) -> float:
+        """Get current stock price for a symbol
+        
+        Args:
+            symbol: Stock ticker symbol
+            regular_hours_only: Currently not supported by Alpaca provider
+        """
+        if regular_hours_only:
+            logging.warning(f"Alpaca provider does not support regular_hours_only mode for {symbol}")
+            
         try:
             # Normalize symbol
             symbol = symbol.upper()

@@ -12,9 +12,14 @@ class MarketDataOperations:
         self.provider = MarketDataAppProvider(config_path)
         self.manager = MarketDataManager(provider=self.provider)
         
-    def get_stock_price(self, symbol: str) -> Optional[float]:
-        """Get current stock price with validation"""
-        price = self.manager.get_stock_price(symbol)
+    def get_stock_price(self, symbol: str, regular_hours_only: bool = False) -> Optional[float]:
+        """Get current stock price with validation
+        
+        Args:
+            symbol: Stock ticker symbol
+            regular_hours_only: If True, excludes extended hours data
+        """
+        price = self.manager.get_stock_price(symbol, regular_hours_only)
         
         if price is not None and price > 0:
             return price
