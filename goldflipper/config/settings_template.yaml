@@ -628,6 +628,53 @@ csv_ingestor:
     backup_dir: "ingestor_backups"  # Directory to store CSV backups
 
 ####################################################################################################
+# WEM (Weekly Expected Moves) Settings
+####################################################################################################
+wem:
+  # Default pricing mode for WEM calculations
+  pricing:
+    default_regular_hours_only: true  # true = regular hours only (default), false = extended hours
+    
+  # Default stocks to include in WEM analysis
+  default_stocks:
+    - SPY
+    - QQQ
+    - VIX
+    - NKE
+    - SHOP
+    - DLTR
+    - WMT
+    - TSLA
+    - COIN
+    - SBUX
+    - PLTR
+    - AMD
+    - DIS
+    
+  # Cache settings for WEM calculations
+  cache:
+    enabled: true
+    weekly_cache_days: 7  # How long to cache weekly option chain data
+    auto_cleanup_weeks: 4  # Remove cache files older than N weeks
+    
+  # Delta 16+/- validation default settings
+  validation:
+    enabled_by_default: false  # Whether validation is enabled by default in UI
+    default_thresholds:
+      max_delta_deviation: 0.03      # Maximum allowed deviation from target delta (3%)
+      min_strike_count: 5             # Minimum number of strikes required
+      max_strike_interval: 10.0       # Maximum average strike interval
+      min_days_to_expiry: 1           # Minimum days to expiration
+      min_delta_std: 0.05             # Minimum delta standard deviation for good distribution
+      max_bid_ask_spread_pct: 0.10    # Maximum bid-ask spread as % of mid price (10%)
+      
+  # Export settings
+  export:
+    default_format: "Excel"  # "CSV" or "Excel"
+    include_notes_sheet: true  # For Excel exports, include notes sheet
+    auto_timestamp: true       # Add timestamp to export filenames
+
+####################################################################################################
 # System Settings
 ####################################################################################################
 system:

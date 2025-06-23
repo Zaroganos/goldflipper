@@ -1,6 +1,25 @@
 This is a list of tasks to do and features to implement for the goldflipper project.
 Place new tasks on top.
 
+- [✓] Fix WEM display and validation issues (2025-06-23):
+      1. ✓ Fixed WEM price source bug - mystery $305.95 vs correct Friday close $308.38
+         - Root cause: WEM was making live API calls instead of using Friday close cache
+         - Fixed: Ensured WEM ALWAYS uses previous Friday close price (never live API)
+         - Fixed: Removed orphaned market_data.source reference causing errors
+      2. ✓ Improved number formatting in WEM table display
+         - Added max_digits parameter (default 5) to limit display width
+         - Always show minimum 2 decimal places for consistency
+         - Use scientific notation for numbers exceeding max_digits
+         - Added both sig_figs and max_digits controls in sidebar
+      3. ✓ Fixed Delta 16+/- validation system timing issue
+         - Root cause: Validation config created AFTER Update WEM Data button
+         - Fixed: Moved validation controls to top of sidebar (before button)
+         - Added debug logging to track validation config usage
+         - Validation now properly enables/disables based on user settings
+      4. ✓ Enhanced Friday close data source documentation
+         - Confirmed proper data flow: cache → MarketDataApp historical API → fallback
+         - Validated weekly caching strategy and cleanup procedures
+
 - [✓] Fix WEM Delta 16+/- calculation method (2025-01-14):
       1. ✓ Identified incorrect method using arbitrary adjacent strikes as "Delta 16" values
       2. ✓ Implemented proper delta-based lookup from deltas.py logic

@@ -20,6 +20,21 @@ RECENT FIXES (2025-06-21):
   * S1/S2: Stock price ± WEM Points (stock price levels ~$580-610)
 - Fixed Delta 16+/- calculation to use actual delta values from option chain
 
+NEW FEATURES (Current Session):
+===============================
+- Added modular Delta 16+/- quality validation system with UI controls
+- Validation checks include:
+  * Strike coverage and density validation
+  * Strike interval quality assessment  
+  * Time to expiration proximity checks
+  * Delta distribution quality validation
+  * Bid-ask spread quality assessment
+  * Delta match accuracy validation
+- User-configurable validation thresholds via sidebar controls
+- Validation can be enabled/disabled and fine-tuned per user preference
+- Comprehensive logging of validation results and warnings
+- Graceful degradation: poor quality matches are rejected only when validation enabled
+
 TECHNICAL DETAILS:
 ==================
 WEM Calculation Method: Automated Full Chain Analysis
@@ -40,53 +55,71 @@ import time
 import random
 from typing import Any
 
-# Set up logging first, before any other imports
+# Set up logging in a Streamlit-safe way
 project_root = Path(__file__).parent.parent.parent
-log_dir = project_root / 'logs'
+log_dir = project_root / 'logs'  # Correct path: goldflipper/logs not goldflipper/goldflipper/logs
 log_dir.mkdir(exist_ok=True)
-log_file = log_dir / f'wem_{datetime.now().strftime("%Y%m%d")}.log'
 
-# Load settings to check debug mode
+# Load settings to check debug mode  
 settings_file = project_root / 'goldflipper' / 'config' / 'settings.yaml'
 settings = {}
 if settings_file.exists():
     with open(settings_file, 'r') as f:
         settings = yaml.safe_load(f)
 
-# Create logger for this module - do NOT configure root logger to avoid duplication
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Default to INFO level
-logger.propagate = False  # Prevent propagation to root logger to avoid duplication
-
-# Create console handler for immediate feedback
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(
-    logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-)
-logger.addHandler(console_handler)
-
-# Create file handler with custom formatting for important messages
-file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-file_handler.setLevel(logging.INFO)  # Set file handler to INFO level
-file_handler.setFormatter(
-    logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-)
-logger.addHandler(file_handler)
-
-# Create debug file handler for development/troubleshooting (only if debug enabled)
-debug_enabled = settings.get('logging', {}).get('debug', {}).get('enabled', False)
-if debug_enabled:  # Only enable debug logging if debug mode is on in settings
-    logger.setLevel(logging.DEBUG)  # Enable debug level for the logger
-    debug_handler = logging.FileHandler(log_dir / f'wem_debug_{datetime.now().strftime("%Y%m%d")}.log', mode='a')
-    debug_handler.setLevel(logging.DEBUG)
-    debug_handler.setFormatter(
-        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+def setup_wem_logging():
+    """Set up logging for WEM session - called when actually running WEM operations"""
+    # Create a per-session log file with timestamp - each WEM generation gets its own log
+    session_timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    log_file = log_dir / f'wem_{session_timestamp}.log'
+    
+    # Get or create logger for this module
+    logger = logging.getLogger(__name__)
+    
+    # Clear any existing handlers to prevent duplication
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    
+    logger.setLevel(logging.INFO)
+    logger.propagate = False  # Prevent propagation to avoid duplication
+    
+    # Create file handler for this session
+    file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')  # 'w' mode for new session
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(
+        logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     )
-    logger.addHandler(debug_handler)
+    logger.addHandler(file_handler)
+    
+    # Create debug file handler if debug enabled
+    debug_enabled = settings.get('logging', {}).get('debug', {}).get('enabled', False)
+    if debug_enabled:
+        logger.setLevel(logging.DEBUG)
+        debug_handler = logging.FileHandler(log_dir / f'wem_debug_{session_timestamp}.log', mode='w')
+        debug_handler.setLevel(logging.DEBUG)
+        debug_handler.setFormatter(
+            logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        )
+        logger.addHandler(debug_handler)
+    
+    # Log session start
+    logger.info("=" * 80)
+    logger.info(f"WEM CALCULATION SESSION STARTED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Session ID: {session_timestamp}")
+    logger.info(f"Log File: wem_{session_timestamp}.log")
+    logger.info("=" * 80)
+    
+    # Ensure the log gets written to disk immediately
+    for handler in logger.handlers:
+        handler.flush()
+    
+    return logger
 
-# Test logging
-logger.info("=== WEM Page Starting ===")
+# Create a basic logger for module-level messages (no file handler yet)
+logger = logging.getLogger(__name__)
+if not logger.handlers:  # Only set up basic logging if no handlers exist
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 # Now import the rest of the modules
 import streamlit as st
@@ -386,21 +419,17 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
     logger.info(f"Calculating Weekly Expected Move for {symbol}")
     
     try:
-        # Step 1: Get current stock price
-        logger.debug(f"Getting current market data for {symbol}")
-        market_data = get_latest_market_data(session, symbol)
+        # Step 1: Get previous Friday's close price - WEM NEVER uses live prices
+        logger.info(f"WEM calculation for {symbol} - using previous Friday close (NEVER live API)")
+        previous_friday_date = _find_previous_friday()
+        current_price = _get_previous_friday_close_price(symbol, previous_friday_date)
         
-        # Update market data if it's stale (older than 5 minutes)
-        if not market_data or (datetime.utcnow() - market_data.timestamp).total_seconds() > 300:
-            logger.info(f"Market data for {symbol} is stale, updating...")
-            market_data = update_market_data(session, symbol, regular_hours_only)
-        
-        if not market_data:
-            logger.error(f"No market data available for {symbol}")
+        if current_price is None:
+            logger.error(f"Previous Friday close price not available for {symbol} - WEM calculation cannot proceed")
             return None
         
-        current_price = market_data.close
-        logger.info(f"Current price for {symbol}: ${current_price:.2f}")
+        pricing_mode = "previous Friday close (regular hours)" if regular_hours_only else "previous Friday close (extended hours)"
+        logger.info(f"Using {pricing_mode} for {symbol}: ${current_price:.2f}")
         
         # Step 2: Find next Friday expiration date
         next_friday = _find_next_friday_expiration()
@@ -444,7 +473,17 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         # Step 4.5: Calculate proper Delta 16+/- values using delta-based lookup
         logger.info(f"Calculating Delta 16+/- values for {symbol}")
         expiration_str = next_friday.strftime('%Y-%m-%d')
-        delta_16_results = calculate_delta_16_values(weekly_option_chain, expiration_str)
+        
+        # Get validation config from session state if available (will be set by UI)
+        validation_config = getattr(st.session_state, 'delta_16_validation_config', None)
+        
+        # Debug logging for validation config
+        if validation_config:
+            logger.info(f"Delta 16 validation config found: enabled={validation_config.enabled}, max_deviation={validation_config.max_delta_deviation}")
+        else:
+            logger.warning("No delta 16 validation config found in session state")
+        
+        delta_16_results = calculate_delta_16_values(weekly_option_chain, expiration_str, validation_config)
         
         if delta_16_results:
             logger.info(f"  Delta 16+ Call: ${delta_16_results['delta_16_plus']['strike']} (delta: {delta_16_results['delta_16_plus']['delta']:.4f})")
@@ -551,7 +590,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                 'calculation_timestamp': datetime.utcnow().isoformat(),
                 'calculation_method': 'automated_full_chain_analysis',
                 'expiration_date': next_friday.isoformat(),
-                'data_source': market_data.source,
+                'data_source': 'previous_friday_close_cache',
                 'atm_call_premium': float(atm_call_mid),
                 'atm_put_premium': float(atm_put_mid),
                 'itm_call_premium': float(itm_call_mid),
@@ -1046,7 +1085,7 @@ def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime
         
         return None
 
-def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
+def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_digits=5):
     """
     Creates an interactive table for displaying WEM data.
     
@@ -1055,6 +1094,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
         layout: 'horizontal' or 'vertical' layout
         metrics: List of metrics to display
         sig_figs: Number of significant figures to display
+        max_digits: Maximum total digits to display (before decimal point)
         
     Returns:
         dict: Dictionary with the table data and column configuration
@@ -1076,14 +1116,31 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
         df['last_updated'] = pd.to_datetime(df['last_updated'])
         df['last_updated'] = df['last_updated'].dt.strftime('%Y-%m-%d %H:%M')
     
-    # Format numeric columns with specified significant figures
+    # Format numeric columns with specified formatting rules
+    def format_number(x, col_name):
+        """Format numbers with max digits and minimum 2 decimal places"""
+        if pd.isna(x):
+            return x
+        
+        # Convert to float to ensure we can format it
+        num_val = float(x)
+        
+        # Special handling for percentage columns
+        if col_name in ['wem_spread', 'delta_range_pct']:
+            return f"{num_val*100:.2f}%"
+        
+        # For all other numeric columns, apply consistent formatting
+        # Max digits before decimal (max_digits), always show 2 decimal places minimum
+        if abs(num_val) >= 10**(max_digits):
+            # Number too large for max_digits, use scientific notation
+            return f"{num_val:.2e}"
+        else:
+            # Standard formatting: always show 2 decimal places minimum
+            return f"{num_val:.2f}"
+    
     numeric_cols = df.select_dtypes(include=['float', 'int']).columns
     for col in numeric_cols:
-        if col in ['wem_spread', 'delta_range_pct']:
-            # Format percentage values with percent sign
-            df[col] = df[col].apply(lambda x: f"{x*100:.{sig_figs-2}f}%" if pd.notnull(x) else x)
-        else:
-            df[col] = df[col].apply(lambda x: round(x, sig_figs-1) if pd.notnull(x) else x)
+        df[col] = df[col].apply(lambda x: format_number(x, col))
     
     # Ensure there's a WEM Points value for each stock - calculate if missing
     if 'straddle_strangle' in df.columns:
@@ -1186,8 +1243,14 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
         # Filter out metrics that shouldn't be displayed as rows
         valid_metrics = [m for m in metrics if m != 'symbol']
         
-        # Filter rows that match our valid metrics
-        df = df.loc[valid_metrics]
+        # Filter rows that match our valid metrics - only include metrics that actually exist in the transposed df
+        available_metrics = [m for m in valid_metrics if m in df.index]
+        if available_metrics:
+            df = df.loc[available_metrics]
+        else:
+            logger.warning(f"No valid metrics found in transposed dataframe. Available index: {list(df.index)}, Requested: {valid_metrics}")
+            # Don't filter if no metrics match - show what's available
+            valid_metrics = available_metrics
         
         # Rename index with pretty names
         df.index = [column_display_names.get(idx, idx.replace('_', ' ').title()) for idx in df.index]
@@ -1233,7 +1296,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4):
     logger.info(f"Created table with {df.shape[0]} rows, {df.shape[1]} columns")
     return {"df": df, "columns": columns}
 
-def update_all_wem_stocks(session: Session, regular_hours_only: bool = False) -> bool:
+def update_all_wem_stocks(session: Session, regular_hours_only: bool = False, wem_logger=None) -> bool:
     """
     Update all WEM stocks with fresh data.
     
@@ -1244,7 +1307,9 @@ def update_all_wem_stocks(session: Session, regular_hours_only: bool = False) ->
     Returns:
         bool: Success or failure
     """
-    logger.info("Starting update of all WEM stocks")
+    # Use provided logger or fall back to module logger
+    log = wem_logger if wem_logger else logger
+    log.info("Starting update of all WEM stocks")
     success_count = 0
     error_count = 0
     
@@ -1252,15 +1317,15 @@ def update_all_wem_stocks(session: Session, regular_hours_only: bool = False) ->
     stocks = session.query(WEMStock).all()
     
     if not stocks:
-        logger.warning("No WEM stocks found to update")
+        log.warning("No WEM stocks found to update")
         return False
     
     pricing_mode = "regular hours only" if regular_hours_only else "including extended hours"
-    logger.info(f"Found {len(stocks)} WEM stocks to update ({pricing_mode})")
+    log.info(f"Found {len(stocks)} WEM stocks to update ({pricing_mode})")
     
     # Update each stock
     for stock in stocks:
-        logger.info(f"Calculating WEM for {stock.symbol}")
+        log.info(f"Calculating WEM for {stock.symbol}")
         try:
             # Calculate new values
             new_data = calculate_expected_move(session, {'symbol': stock.symbol}, regular_hours_only)
@@ -1272,21 +1337,21 @@ def update_all_wem_stocks(session: Session, regular_hours_only: bool = False) ->
                     **new_data
                 }
                 if update_wem_stock(session, update_data):
-                    logger.info(f"Successfully updated {stock.symbol}")
+                    log.info(f"Successfully updated {stock.symbol}")
                     success_count += 1
                 else:
-                    logger.error(f"Failed to update {stock.symbol}")
+                    log.error(f"Failed to update {stock.symbol}")
                     error_count += 1
             else:
-                logger.warning(f"No market data available for {stock.symbol}")
+                log.warning(f"No market data available for {stock.symbol}")
                 error_count += 1
             
         except Exception as e:
             error_msg = f"Error calculating WEM for {stock.symbol}: {str(e)}"
-            logger.error(error_msg, exc_info=True)
+            log.error(error_msg, exc_info=True)
             error_count += 1
     
-    logger.info(f"WEM update completed: {success_count} succeeded, {error_count} failed")
+    log.info(f"WEM update completed: {success_count} succeeded, {error_count} failed")
     return success_count > 0
 
 def setup_logging():
@@ -1303,7 +1368,250 @@ def setup_logging():
     
     return logger
 
-def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expiration_date: str) -> Optional[Dict[str, Any]]:
+class Delta16ValidationConfig:
+    """Configuration class for Delta 16+/- validation checks"""
+    def __init__(self):
+        self.enabled = True
+        self.max_delta_deviation = 0.03  # Maximum allowed deviation from target delta (3%)
+        self.min_strike_count = 5  # Minimum number of strikes required
+        self.max_strike_interval = 10.0  # Maximum average strike interval
+        self.min_days_to_expiry = 1  # Minimum days to expiration
+        self.min_delta_std = 0.05  # Minimum delta standard deviation for good distribution
+        self.max_bid_ask_spread_pct = 0.10  # Maximum bid-ask spread as % of mid price (10%)
+        self.min_coverage_ratio = 0.8  # Minimum ratio of acceptable options on both sides
+
+def validate_delta_16_quality(calls_df: pd.DataFrame, puts_df: pd.DataFrame, 
+                             expiration_date: str, config: Delta16ValidationConfig) -> Dict[str, Any]:
+    """
+    Perform quality validation checks on Delta 16+/- calculation inputs.
+    
+    Args:
+        calls_df: DataFrame with call options
+        puts_df: DataFrame with put options  
+        expiration_date: Expiration date string (YYYY-MM-DD)
+        config: Validation configuration object
+        
+    Returns:
+        dict: Validation results with pass/fail status and details
+    """
+    results = {
+        'overall_pass': True,
+        'checks': {},
+        'warnings': [],
+        'errors': []
+    }
+    
+    if not config.enabled:
+        results['checks']['validation_disabled'] = {'pass': True, 'message': 'Validation checks disabled'}
+        return results
+    
+    logger.info("Running Delta 16+/- quality validation checks")
+    
+    try:
+        # Check 1: Strike Coverage and Density
+        all_strikes = sorted(set(calls_df['strike'].tolist() + puts_df['strike'].tolist()))
+        strike_count = len(all_strikes)
+        
+        if strike_count < config.min_strike_count:
+            results['checks']['strike_count'] = {
+                'pass': False, 
+                'value': strike_count,
+                'threshold': config.min_strike_count,
+                'message': f'Insufficient strikes: {strike_count} < {config.min_strike_count}'
+            }
+            results['overall_pass'] = False
+            results['errors'].append(f'Insufficient strike coverage: {strike_count} strikes')
+        else:
+            results['checks']['strike_count'] = {
+                'pass': True,
+                'value': strike_count, 
+                'message': f'Adequate strike count: {strike_count}'
+            }
+        
+        # Check 2: Strike Interval Quality
+        if len(all_strikes) > 1:
+            strike_intervals = [all_strikes[i+1] - all_strikes[i] for i in range(len(all_strikes)-1)]
+            avg_interval = sum(strike_intervals) / len(strike_intervals)
+            
+            if avg_interval > config.max_strike_interval:
+                results['checks']['strike_interval'] = {
+                    'pass': False,
+                    'value': avg_interval,
+                    'threshold': config.max_strike_interval,
+                    'message': f'Strike intervals too wide: {avg_interval:.2f} > {config.max_strike_interval}'
+                }
+                results['warnings'].append(f'Wide strike intervals may reduce delta accuracy: {avg_interval:.2f}')
+            else:
+                results['checks']['strike_interval'] = {
+                    'pass': True,
+                    'value': avg_interval,
+                    'message': f'Good strike interval: {avg_interval:.2f}'
+                }
+        
+        # Check 3: Time to Expiration
+        try:
+            exp_date = datetime.strptime(expiration_date, '%Y-%m-%d')
+            days_to_expiry = (exp_date - datetime.now()).days
+            
+            if days_to_expiry < config.min_days_to_expiry:
+                results['checks']['time_to_expiry'] = {
+                    'pass': False,
+                    'value': days_to_expiry,
+                    'threshold': config.min_days_to_expiry,
+                    'message': f'Too close to expiration: {days_to_expiry} days'
+                }
+                results['warnings'].append(f'Very close to expiration: {days_to_expiry} days - delta behavior may be unstable')
+            else:
+                results['checks']['time_to_expiry'] = {
+                    'pass': True,
+                    'value': days_to_expiry,
+                    'message': f'Good time to expiry: {days_to_expiry} days'
+                }
+        except Exception as e:
+            results['warnings'].append(f'Could not parse expiration date: {e}')
+        
+        # Check 4: Delta Distribution Quality
+        valid_calls = calls_df[calls_df['delta'].notna() & (calls_df['delta'] > 0)]
+        valid_puts = puts_df[puts_df['delta'].notna() & (puts_df['delta'] < 0)]
+        
+        if not valid_calls.empty:
+            call_delta_std = valid_calls['delta'].std()
+            if call_delta_std < config.min_delta_std:
+                results['checks']['call_delta_distribution'] = {
+                    'pass': False,
+                    'value': call_delta_std,
+                    'threshold': config.min_delta_std,
+                    'message': f'Poor call delta distribution: std={call_delta_std:.4f}'
+                }
+                results['warnings'].append(f'Limited call delta variation: {call_delta_std:.4f}')
+            else:
+                results['checks']['call_delta_distribution'] = {
+                    'pass': True,
+                    'value': call_delta_std,
+                    'message': f'Good call delta distribution: std={call_delta_std:.4f}'
+                }
+        
+        if not valid_puts.empty:
+            put_delta_std = valid_puts['delta'].abs().std()  # Use absolute values for puts
+            if put_delta_std < config.min_delta_std:
+                results['checks']['put_delta_distribution'] = {
+                    'pass': False,
+                    'value': put_delta_std,
+                    'threshold': config.min_delta_std,
+                    'message': f'Poor put delta distribution: std={put_delta_std:.4f}'
+                }
+                results['warnings'].append(f'Limited put delta variation: {put_delta_std:.4f}')
+            else:
+                results['checks']['put_delta_distribution'] = {
+                    'pass': True,
+                    'value': put_delta_std,
+                    'message': f'Good put delta distribution: std={put_delta_std:.4f}'
+                }
+        
+        # Check 5: Bid-Ask Spread Quality
+        def check_spread_quality(df, option_type):
+            if 'bid' in df.columns and 'ask' in df.columns:
+                valid_options = df[(df['bid'] > 0) & (df['ask'] > df['bid'])]
+                if not valid_options.empty:
+                    spreads = (valid_options['ask'] - valid_options['bid']) / ((valid_options['ask'] + valid_options['bid']) / 2)
+                    avg_spread_pct = spreads.mean()
+                    
+                    if avg_spread_pct > config.max_bid_ask_spread_pct:
+                        results['checks'][f'{option_type}_spread_quality'] = {
+                            'pass': False,
+                            'value': avg_spread_pct,
+                            'threshold': config.max_bid_ask_spread_pct,
+                            'message': f'Wide {option_type} spreads: {avg_spread_pct:.2%}'
+                        }
+                        results['warnings'].append(f'Wide {option_type} bid-ask spreads: {avg_spread_pct:.2%}')
+                    else:
+                        results['checks'][f'{option_type}_spread_quality'] = {
+                            'pass': True,
+                            'value': avg_spread_pct,
+                            'message': f'Good {option_type} spread quality: {avg_spread_pct:.2%}'
+                        }
+        
+        check_spread_quality(calls_df, 'call')
+        check_spread_quality(puts_df, 'put')
+        
+        # Summary
+        total_checks = len(results['checks'])
+        passed_checks = sum(1 for check in results['checks'].values() if check['pass'])
+        results['summary'] = {
+            'total_checks': total_checks,
+            'passed_checks': passed_checks,
+            'pass_rate': passed_checks / total_checks if total_checks > 0 else 0
+        }
+        
+        logger.info(f"Validation complete: {passed_checks}/{total_checks} checks passed")
+        
+    except Exception as e:
+        logger.error(f"Error during validation: {str(e)}", exc_info=True)
+        results['errors'].append(f'Validation error: {str(e)}')
+        results['overall_pass'] = False
+    
+    return results
+
+def validate_delta_16_matches(delta_16_plus_option: pd.Series, delta_16_minus_option: pd.Series, 
+                             config: Delta16ValidationConfig) -> Dict[str, Any]:
+    """
+    Validate the quality of specific Delta 16+/- option matches.
+    
+    Args:
+        delta_16_plus_option: Selected call option (pandas Series)
+        delta_16_minus_option: Selected put option (pandas Series)
+        config: Validation configuration
+        
+    Returns:
+        dict: Validation results for the specific matches
+    """
+    results = {
+        'overall_pass': True,
+        'delta_plus_accuracy': None,
+        'delta_minus_accuracy': None,
+        'warnings': [],
+        'errors': []
+    }
+    
+    if not config.enabled:
+        return results
+    
+    TARGET_CALL_DELTA = 0.16
+    TARGET_PUT_DELTA = -0.16
+    
+    # Check Delta 16+ accuracy
+    call_delta_diff = abs(float(delta_16_plus_option['delta']) - TARGET_CALL_DELTA)
+    results['delta_plus_accuracy'] = call_delta_diff
+    
+    if call_delta_diff > config.max_delta_deviation:
+        results['overall_pass'] = False
+        results['errors'].append(
+            f'Delta 16+ match too inaccurate: {call_delta_diff:.4f} > {config.max_delta_deviation:.4f} '
+            f'(found: {delta_16_plus_option["delta"]:.4f}, target: {TARGET_CALL_DELTA})'
+        )
+    
+    # Check Delta 16- accuracy  
+    put_delta_diff = abs(float(delta_16_minus_option['delta']) - TARGET_PUT_DELTA)
+    results['delta_minus_accuracy'] = put_delta_diff
+    
+    if put_delta_diff > config.max_delta_deviation:
+        results['overall_pass'] = False
+        results['errors'].append(
+            f'Delta 16- match too inaccurate: {put_delta_diff:.4f} > {config.max_delta_deviation:.4f} '
+            f'(found: {delta_16_minus_option["delta"]:.4f}, target: {TARGET_PUT_DELTA})'
+        )
+    
+    # Check for asymmetric accuracy
+    accuracy_ratio = max(call_delta_diff, put_delta_diff) / min(call_delta_diff, put_delta_diff) if min(call_delta_diff, put_delta_diff) > 0 else float('inf')
+    if accuracy_ratio > 3.0:  # One side is 3x worse than the other
+        results['warnings'].append(
+            f'Asymmetric delta accuracy: call={call_delta_diff:.4f}, put={put_delta_diff:.4f}'
+        )
+    
+    return results
+
+def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expiration_date: str, 
+                             validation_config: Optional[Delta16ValidationConfig] = None) -> Optional[Dict[str, Any]]:
     """
     Calculate Delta 16+ (call) and Delta 16- (put) using direct lookup method from option chain.
     
@@ -1318,14 +1626,24 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
                 'puts': pd.DataFrame with columns ['strike', 'delta', 'bid', 'ask', ...]
             }
         expiration_date: Specific expiration date to filter options (YYYY-MM-DD format)
+        validation_config: Optional validation configuration object
     
     Returns:
         dict: {
             'delta_16_plus': {'strike': float, 'delta': float, 'price': float, ...},
-            'delta_16_minus': {'strike': float, 'delta': float, 'price': float, ...}
+            'delta_16_minus': {'strike': float, 'delta': float, 'price': float, ...},
+            'validation_results': {...}  # Validation check results
         } or None if calculation fails
     """
     logger.info(f"Calculating Delta 16+/- values for expiration {expiration_date}")
+    
+    # Use default validation config if none provided
+    if validation_config is None:
+        validation_config = Delta16ValidationConfig()
+        validation_config.enabled = False  # Default to disabled for backward compatibility
+        logger.info("No validation config provided - using default disabled config")
+    else:
+        logger.info(f"Using provided validation config: enabled={validation_config.enabled}")
     
     try:
         calls_df = option_chain_dict.get('calls')
@@ -1339,6 +1657,22 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
         if 'delta' not in calls_df.columns or 'delta' not in puts_df.columns:
             logger.warning("Delta values not available in option chain - cannot calculate proper Delta 16 values")
             return None
+        
+        # Run quality validation checks first
+        validation_results = validate_delta_16_quality(calls_df, puts_df, expiration_date, validation_config)
+        
+        # If validation is enabled and fails, return None
+        if validation_config.enabled and not validation_results['overall_pass']:
+            logger.error("Delta 16+/- validation failed:")
+            for error in validation_results['errors']:
+                logger.error(f"  - {error}")
+            for warning in validation_results['warnings']:
+                logger.warning(f"  - {warning}")
+            return None
+        
+        # Log validation warnings even if overall pass
+        for warning in validation_results['warnings']:
+            logger.warning(f"Delta 16+/- validation warning: {warning}")
         
         # Filter out options with missing or invalid delta values
         valid_calls = calls_df[calls_df['delta'].notna() & (calls_df['delta'] > 0)]
@@ -1361,6 +1695,20 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
         put_delta_diffs = (valid_puts['delta'] - TARGET_PUT_DELTA).abs()
         delta_16_minus_idx = put_delta_diffs.idxmin()
         delta_16_minus_option = valid_puts.loc[delta_16_minus_idx]
+        
+        # Validate the specific matches
+        match_validation = validate_delta_16_matches(delta_16_plus_option, delta_16_minus_option, validation_config)
+        
+        # If match validation fails and validation is enabled, return None
+        if validation_config.enabled and not match_validation['overall_pass']:
+            logger.error("Delta 16+/- match validation failed:")
+            for error in match_validation['errors']:
+                logger.error(f"  - {error}")
+            return None
+        
+        # Log match validation warnings
+        for warning in match_validation['warnings']:
+            logger.warning(f"Delta 16+/- match warning: {warning}")
         
         # Quality validation - ensure we found reasonable matches
         call_delta_diff = abs(float(delta_16_plus_option['delta']) - TARGET_CALL_DELTA)
@@ -1393,12 +1741,20 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
                 'ask': float(delta_16_minus_option['ask']),
                 'type': 'put',
                 'delta_accuracy': put_delta_diff  # How close to exact -0.16
+            },
+            'validation_results': {
+                'quality_check': validation_results,
+                'match_check': match_validation,
+                'validation_enabled': validation_config.enabled
             }
         }
         
         logger.info(f"Successfully calculated Delta 16 values:")
         logger.info(f"  Delta 16+ Call: Strike ${results['delta_16_plus']['strike']}, Delta {results['delta_16_plus']['delta']:.4f}")
         logger.info(f"  Delta 16- Put: Strike ${results['delta_16_minus']['strike']}, Delta {results['delta_16_minus']['delta']:.4f}")
+        
+        if validation_config.enabled:
+            logger.info(f"  Validation: {validation_results['summary']['passed_checks']}/{validation_results['summary']['total_checks']} checks passed")
         
         return results
         
@@ -1450,11 +1806,22 @@ def main():
         
         # Stock pricing mode toggle - DEFINE FIRST before any buttons that use it
         st.subheader("Pricing Mode")
+        
+        # Initialize regular hours setting in session state if not exists
+        if 'regular_hours_only' not in st.session_state:
+            # Try to get default from settings, fallback to False
+            default_regular_hours = settings.get('wem', {}).get('pricing', {}).get('default_regular_hours_only', False)
+            st.session_state.regular_hours_only = default_regular_hours
+        
         regular_hours_only = st.checkbox(
             "Use Regular Hours Close Only",
-            value=False,
+            value=st.session_state.regular_hours_only,
+            key="regular_hours_checkbox",
             help="When enabled, uses last regular trading session close (4:00 PM ET) instead of extended hours pricing. Helpful for consistent WEM calculations after market close."
         )
+        
+        # Update session state when checkbox changes
+        st.session_state.regular_hours_only = regular_hours_only
         
         # Add informational text about the pricing mode
         if regular_hours_only:
@@ -1462,24 +1829,145 @@ def main():
         else:
             st.caption("🕐 **Extended Hours Mode**: Using most recent price (includes after-hours/pre-market)")
         
-        # Add a button to update WEM data
+        # Delta 16 Validation Controls - MOVED TO TOP so config is available for WEM button
+        st.subheader("Delta 16+/- Validation")
+        
+        # Get validation defaults from settings
+        validation_defaults = settings.get('wem', {}).get('validation', {})
+        validation_enabled_default = validation_defaults.get('enabled_by_default', False)
+        threshold_defaults = validation_defaults.get('default_thresholds', {})
+        
+        # Enable/disable validation
+        validation_enabled = st.checkbox(
+            "Enable Delta 16+/- Quality Validation",
+            value=validation_enabled_default,
+            help="Enable quality checks for Delta 16+/- calculations to ensure accurate results"
+        )
+        
+        # Set default values for validation parameters from settings
+        max_delta_deviation = threshold_defaults.get('max_delta_deviation', 0.03)
+        min_strike_count = threshold_defaults.get('min_strike_count', 5)
+        max_strike_interval = threshold_defaults.get('max_strike_interval', 10.0)
+        min_days_to_expiry = threshold_defaults.get('min_days_to_expiry', 1)
+        min_delta_std = threshold_defaults.get('min_delta_std', 0.05)
+        max_bid_ask_spread = threshold_defaults.get('max_bid_ask_spread_pct', 0.10)
+        
+        # Advanced validation settings (only show if validation is enabled)
+        if validation_enabled:
+            with st.expander("Advanced Validation Settings", expanded=False):
+                st.caption("Fine-tune validation thresholds for Delta 16+/- calculations")
+                
+                max_delta_deviation = st.slider(
+                    "Max Delta Deviation",
+                    min_value=0.01,
+                    max_value=0.10,
+                    value=max_delta_deviation,
+                    step=0.01,
+                    format="%.2f",
+                    help="Maximum allowed deviation from target delta (0.16/-0.16)"
+                )
+                
+                min_strike_count = st.slider(
+                    "Min Strike Count",
+                    min_value=3,
+                    max_value=20,
+                    value=min_strike_count,
+                    step=1,
+                    help="Minimum number of option strikes required"
+                )
+                
+                max_strike_interval = st.slider(
+                    "Max Strike Interval",
+                    min_value=1.0,
+                    max_value=25.0,
+                    value=max_strike_interval,
+                    step=1.0,
+                    format="%.1f",
+                    help="Maximum average strike price interval"
+                )
+                
+                min_days_to_expiry = st.slider(
+                    "Min Days to Expiry",
+                    min_value=0,
+                    max_value=7,
+                    value=min_days_to_expiry,
+                    step=1,
+                    help="Minimum days until expiration (0 = allow same day)"
+                )
+                
+                min_delta_std = st.slider(
+                    "Min Delta Std Dev",
+                    min_value=0.01,
+                    max_value=0.20,
+                    value=min_delta_std,
+                    step=0.01,
+                    format="%.2f",
+                    help="Minimum delta standard deviation for good distribution"
+                )
+                
+                max_bid_ask_spread = st.slider(
+                    "Max Bid-Ask Spread %",
+                    min_value=0.05,
+                    max_value=0.50,
+                    value=max_bid_ask_spread,
+                    step=0.01,
+                    format="%.2f",
+                    help="Maximum bid-ask spread as percentage of mid price"
+                )
+        
+        # Create and store validation config in session state
+        if validation_enabled:
+            validation_config = Delta16ValidationConfig()
+            validation_config.enabled = True
+            validation_config.max_delta_deviation = max_delta_deviation
+            validation_config.min_strike_count = min_strike_count
+            validation_config.max_strike_interval = max_strike_interval
+            validation_config.min_days_to_expiry = min_days_to_expiry
+            validation_config.min_delta_std = min_delta_std
+            validation_config.max_bid_ask_spread_pct = max_bid_ask_spread
+        else:
+            validation_config = Delta16ValidationConfig()
+            validation_config.enabled = False
+        
+        # Store in session state for use in calculations
+        st.session_state.delta_16_validation_config = validation_config
+        
+        # Show current validation status
+        if validation_enabled:
+            st.success("✅ Delta 16+/- validation enabled")
+            st.caption(f"📊 Current thresholds: Max deviation {max_delta_deviation:.2f}, Min strikes {min_strike_count}")
+        else:
+            st.info("⚠️ Delta 16+/- validation disabled - calculations will accept any closest match")
+
+        # Add a button to update WEM data - MOVED AFTER validation config setup
         if st.button("Update WEM Data", help="Fetch latest options data and calculate WEM"):
-            logger.info("Updating WEM data...")
             with st.spinner("Updating WEM data..."):
                 try:
+                    # Set up logging for this WEM session
+                    session_logger = setup_wem_logging()
+                    session_logger.info("Starting WEM data update...")
+                    
                     # Use the database session within a context manager
                     with get_db_connection() as db_session:
-                        update_all_wem_stocks(db_session, regular_hours_only)
+                        update_all_wem_stocks(db_session, regular_hours_only, session_logger)
                     
                     pricing_mode = "regular hours close" if regular_hours_only else "extended hours pricing"
+                    session_logger.info(f"WEM data update completed using {pricing_mode}")
+                    
+                    # Log session end
+                    session_logger.info("=" * 80)
+                    session_logger.info(f"WEM CALCULATION SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    session_logger.info("=" * 80)
+                    
                     st.success(f"WEM data updated successfully using {pricing_mode}!")
                     # Rerun the app to show updated data
                     time.sleep(1)  # Small delay to ensure UI updates
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to update WEM data: {str(e)}")
-                    logger.exception("WEM update error")
-        
+                    if 'session_logger' in locals():
+                        session_logger.exception("WEM update error")
+
         # Add stock section
         st.subheader("Add New Stock")
         with st.form("add_stock_form"):
@@ -1515,6 +2003,8 @@ def main():
                     st.error(f"Error adding stock: {str(e)}")
                     logger.exception(f"Error adding stock {new_symbol}")
         
+
+
         # Date range for data display
         st.subheader("Data Filtering")
         date_range = st.date_input(
@@ -1543,6 +2033,16 @@ def main():
             value=4,
             step=1,
             help="Number of significant figures to display for numeric values"
+        )
+        
+        # Add maximum digits setting
+        max_digits = st.slider(
+            "Max Digits (before decimal)",
+            min_value=3,
+            max_value=8,
+            value=5,
+            step=1,
+            help="Maximum digits before decimal point (larger numbers use scientific notation)"
         )
         
         layout = st.radio(
@@ -1589,12 +2089,27 @@ def main():
         
         # Export options
         st.subheader("Export Options")
+        
+        # Get export defaults from settings
+        export_defaults = settings.get('wem', {}).get('export', {})
+        default_format = export_defaults.get('default_format', 'Excel')
+        format_options = ["CSV", "Excel"]
+        default_index = format_options.index(default_format) if default_format in format_options else 1
+        
         export_format = st.selectbox(
             "Export Format",
-            options=["CSV", "Excel"],
-            index=0,
+            options=format_options,
+            index=default_index,
             help="Select export format"
         )
+        
+        # Store export format in session state for access outside sidebar
+        st.session_state.export_format = export_format
+        
+        # Export button (will be handled after data is loaded)
+        export_data_requested = st.button("Export Data", help="Export WEM data to file")
+        if export_data_requested:
+            st.session_state.export_requested = True
         
         # Initialize wem_df as None so we can check if it exists before export
         wem_df = None
@@ -1650,17 +2165,21 @@ def main():
                 stocks_data = wem_stocks  # Already a list of dictionaries
                 
                 # Create WEM table
-                wem_df = create_wem_table(stocks_data, layout=layout, metrics=selected_metrics, sig_figs=sig_figs)
+                wem_df = create_wem_table(stocks_data, layout=layout, metrics=selected_metrics, sig_figs=sig_figs, max_digits=max_digits)
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
         logger.exception("Error getting WEM data")
         wem_df = None
     
-    if st.button("Export Data") and wem_df is not None:
+    # Handle export request from sidebar
+    if hasattr(st.session_state, 'export_requested') and st.session_state.export_requested and wem_df is not None:
+        st.session_state.export_requested = False  # Reset the flag
+        
         with st.spinner("Preparing export..."):
             try:
                 # Get the current timestamp for the filename
                 timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M")
+                export_format = getattr(st.session_state, 'export_format', 'CSV')
                 
                 if export_format == "CSV":
                     # Export to CSV
@@ -1691,12 +2210,38 @@ def main():
             except Exception as e:
                 st.error(f"Export failed: {str(e)}")
                 logger.exception("Export error")
+    
+    elif hasattr(st.session_state, 'export_requested') and st.session_state.export_requested and wem_df is None:
+        st.session_state.export_requested = False  # Reset the flag
+        st.error("No data available to export. Please update the WEM data first.")
 
     # Display the table if data is available
     if 'wem_df' in locals() and wem_df is not None:
         # Display the table
         with st.container():
             st.subheader("Weekly Expected Moves")
+            
+            # Show validation status information
+            if hasattr(st.session_state, 'delta_16_validation_config') and st.session_state.delta_16_validation_config.enabled:
+                validation_info = st.expander("🔍 Delta 16+/- Validation Status", expanded=False)
+                with validation_info:
+                    st.info("✅ **Quality validation is ENABLED** for Delta 16+/- calculations")
+                    st.write("**Active validation checks:**")
+                    config = st.session_state.delta_16_validation_config
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write(f"• Max delta deviation: **{config.max_delta_deviation:.2f}**")
+                        st.write(f"• Min strike count: **{config.min_strike_count}**")
+                        st.write(f"• Max strike interval: **${config.max_strike_interval:.1f}**")
+                    with col2:
+                        st.write(f"• Min days to expiry: **{config.min_days_to_expiry}**")
+                        st.write(f"• Min delta std dev: **{config.min_delta_std:.2f}**")
+                        st.write(f"• Max bid-ask spread: **{config.max_bid_ask_spread_pct:.1%}**")
+                    
+                    st.caption("ℹ️ Stocks failing validation checks will show null Delta 16+/- values to maintain data quality.")
+            else:
+                st.info("⚠️ **Validation disabled** - Delta 16+/- values use closest available matches regardless of quality")
             
             if layout == "horizontal":
                 # Filter only the rows that exist in the transposed dataframe
@@ -1706,8 +2251,9 @@ def main():
                 if valid_metrics:
                     filtered_df = wem_df['df'].loc[valid_metrics]
                     wem_df['df'] = filtered_df
-                else:
-                    logger.warning("No valid metrics to display in horizontal mode")
+                elif selected_metrics:  # Only warn if metrics were actually requested
+                    logger.warning(f"No valid metrics to display in horizontal mode. Requested: {selected_metrics}, Available: {list(wem_df['df'].index)}")
+                # If no specific metrics selected, show all available data
             
             else:  # vertical
                 # For vertical layout, filter the requested columns
