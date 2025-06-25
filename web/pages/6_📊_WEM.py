@@ -381,7 +381,7 @@ def update_wem_stock(session: Session, stock_data: Dict[str, Any]) -> bool:
         logger.error(f"Error updating WEM stock {symbol}: {str(e)}", exc_info=True)
         return False
 
-def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regular_hours_only: bool = False) -> Dict[str, Any]:
+def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regular_hours_only: bool = False, use_friday_close: bool = True) -> Dict[str, Any]:
     """
     Calculate the Weekly Expected Move (WEM) for a stock based on options data.
     
@@ -407,6 +407,8 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
     Args:
         session: Database session
         stock_data: Dictionary with stock symbol
+        regular_hours_only: If True, uses regular hours pricing instead of extended hours
+        use_friday_close: If True, uses previous Friday close (standard), if False uses most recent data (testing)
         
     Returns:
         dict: Dictionary with calculated WEM values, or None if calculation fails
@@ -419,24 +421,44 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
     logger.info(f"Calculating Weekly Expected Move for {symbol}")
     
     try:
-        # Step 1: Get previous Friday's close price - WEM NEVER uses live prices
-        logger.info(f"WEM calculation for {symbol} - using previous Friday close (NEVER live API)")
-        previous_friday_date = _find_previous_friday()
-        current_price = _get_previous_friday_close_price(symbol, previous_friday_date)
+        # Step 1: Get stock price based on selected data source mode
+        if use_friday_close:
+            # Standard mode: Use previous Friday's close price
+            logger.info(f"WEM calculation for {symbol} - using previous Friday close (standard method)")
+            previous_friday_date = _find_previous_friday()
+            current_price = _get_previous_friday_close_price(symbol, previous_friday_date, use_cache=True)
+            
+            if current_price is None:
+                logger.error(f"Previous Friday close price not available for {symbol} - WEM calculation cannot proceed")
+                return None
+            
+            pricing_mode = "previous Friday close (regular hours)" if regular_hours_only else "previous Friday close (extended hours)"
+            data_source = "Friday Close"
+        else:
+            # Testing mode: Use most recent market data
+            logger.info(f"WEM calculation for {symbol} - using most recent market data (testing mode)")
+            manager = get_market_data_manager()
+            if not manager:
+                logger.error(f"No market data manager available for {symbol}")
+                return None
+            
+            current_price = manager.get_stock_price(symbol, regular_hours_only)
+            if current_price is None:
+                logger.error(f"Could not get current price for {symbol} - WEM calculation cannot proceed")
+                return None
+                
+            current_price = float(current_price)
+            pricing_mode = "most recent (regular hours)" if regular_hours_only else "most recent (extended hours)"
+            data_source = "Most Recent"
         
-        if current_price is None:
-            logger.error(f"Previous Friday close price not available for {symbol} - WEM calculation cannot proceed")
-            return None
-        
-        pricing_mode = "previous Friday close (regular hours)" if regular_hours_only else "previous Friday close (extended hours)"
-        logger.info(f"Using {pricing_mode} for {symbol}: ${current_price:.2f}")
+        logger.info(f"Using {data_source} data with {pricing_mode} for {symbol}: ${current_price:.2f}")
         
         # Step 2: Find next Friday expiration date
         next_friday = _find_next_friday_expiration()
         logger.info(f"Next Friday expiration: {next_friday}")
         
         # Step 3: Get weekly option chain for next Friday expiration
-        weekly_option_chain = _get_weekly_option_chain(symbol, next_friday)
+        weekly_option_chain = _get_weekly_option_chain(symbol, next_friday, use_friday_close)
         
         if not weekly_option_chain:
             logger.error(f"No weekly option chain available for {symbol} expiring {next_friday}")
@@ -525,17 +547,26 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         logger.info(f"WEM Points calculation: (${straddle_premium:.2f} + ${strangle_premium:.2f}) / 2 = ${wem_points:.2f}")
         
         # Calculate additional metrics based on corrected formulas
-        # WEM Spread = WEM Points / (previous Friday's closing price)
-        previous_friday_date = _find_previous_friday()
-        previous_friday_close = _get_previous_friday_close_price(symbol, previous_friday_date)
-        
-        if previous_friday_close and previous_friday_close > 0:
-            wem_spread = wem_points / previous_friday_close
-            logger.info(f"WEM Spread calculation: ${wem_points:.2f} / ${previous_friday_close:.2f} = {wem_spread:.4f}")
+        # WEM Spread = WEM Points / (base price for comparison)
+        if use_friday_close:
+            # Standard mode: Use previous Friday's close for WEM Spread calculation
+            previous_friday_date = _find_previous_friday()
+            previous_friday_close = _get_previous_friday_close_price(symbol, previous_friday_date, use_cache=True)
+            
+            if previous_friday_close and previous_friday_close > 0:
+                wem_spread = wem_points / previous_friday_close
+                logger.info(f"WEM Spread calculation (Friday close): ${wem_points:.2f} / ${previous_friday_close:.2f} = {wem_spread:.4f}")
+                spread_base_price = previous_friday_close
+            else:
+                # Fallback to current price if previous Friday price not available
+                wem_spread = wem_points / current_price
+                logger.warning(f"Previous Friday close not available for {symbol}, using current price for WEM Spread")
+                spread_base_price = current_price
         else:
-            # Fallback to current price if previous Friday price not available
+            # Testing mode: Use current price as base for WEM Spread calculation
             wem_spread = wem_points / current_price
-            logger.warning(f"Previous Friday close not available for {symbol}, using current price for WEM Spread")
+            logger.info(f"WEM Spread calculation (most recent): ${wem_points:.2f} / ${current_price:.2f} = {wem_spread:.4f}")
+            spread_base_price = current_price
         
         # Straddle 2 = Stock Price + WEM Points (upper expected range)
         straddle_2 = current_price + wem_points
@@ -564,9 +595,38 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         
         logger.info(f"Expected weekly range for {symbol}: ${straddle_1:.2f} - ${straddle_2:.2f}")
         logger.info(f"WEM Points: ${wem_points:.2f}")
-        logger.info(f"Delta Range: ${delta_range:.2f} ({delta_range_pct:.2%})")
+        
+        # Handle None values in delta range logging
+        if delta_range is not None and delta_range_pct is not None:
+            logger.info(f"Delta Range: ${delta_range:.2f} ({delta_range_pct:.2%})")
+        else:
+            logger.info(f"Delta Range: Not available (delta values missing from option chain)")
         
         # Step 8: Package results
+        # Determine validation status for display
+        delta_validation_status = "none"  # none, pass, warning, error
+        delta_validation_message = ""
+        
+        if delta_16_results:
+            validation_results = delta_16_results.get('validation_results', {})
+            if validation_results.get('validation_enabled', False):
+                quality_check = validation_results.get('quality_check', {})
+                match_check = validation_results.get('match_check', {})
+                
+                # Check for errors (validation failures)
+                total_errors = len(quality_check.get('errors', [])) + len(match_check.get('errors', []))
+                total_warnings = len(quality_check.get('warnings', [])) + len(match_check.get('warnings', []))
+                
+                if total_errors > 0:
+                    delta_validation_status = "error"
+                    delta_validation_message = f"{total_errors} validation error(s)"
+                elif total_warnings > 0:
+                    delta_validation_status = "warning"
+                    delta_validation_message = f"{total_warnings} validation warning(s)"
+                else:
+                    delta_validation_status = "pass"
+                    delta_validation_message = "Validation passed"
+        
         result = {
             'symbol': symbol,
             'atm_price': float(current_price),
@@ -586,16 +646,23 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             'delta_range_pct': float(delta_range_pct) if delta_range_pct is not None else None,
             'straddle_2': float(straddle_2),  # Stock Price + WEM Points
             'straddle_1': float(straddle_1),  # Stock Price - WEM Points
+            'delta_validation_status': delta_validation_status,  # For UI highlighting
+            'delta_validation_message': delta_validation_message,  # For tooltips/details
             'meta_data': {
                 'calculation_timestamp': datetime.utcnow().isoformat(),
                 'calculation_method': 'automated_full_chain_analysis',
                 'expiration_date': next_friday.isoformat(),
-                'data_source': 'previous_friday_close_cache',
+                'data_source': data_source.lower().replace(' ', '_'),
+                'data_source_mode': data_source,
+                'pricing_mode': pricing_mode,
+                'use_friday_close': use_friday_close,
                 'atm_call_premium': float(atm_call_mid),
                 'atm_put_premium': float(atm_put_mid),
                 'itm_call_premium': float(itm_call_mid),
                 'itm_put_premium': float(itm_put_mid),
                 'calculated_wem_points': float(wem_points),
+                'stock_price_used': float(current_price),
+                'spread_base_price': float(spread_base_price),
                 'strikes_used': {
                     'atm': float(atm_strike),
                     'itm_call': float(itm_call_strike),
@@ -611,12 +678,12 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                     'delta_16_minus_accuracy': float(delta_16_results['delta_16_minus']['delta_accuracy']) if delta_16_results else None,
                     'fallback_todo': 'Black-Scholes calculation method (Method 2) to be implemented'
                 },
-                'previous_friday_date': previous_friday_date.isoformat(),
-                'previous_friday_close': float(previous_friday_close) if previous_friday_close else None,
+                'previous_friday_date': previous_friday_date.isoformat() if use_friday_close else None,
+                'previous_friday_close': float(previous_friday_close) if use_friday_close and 'previous_friday_close' in locals() and previous_friday_close else None,
                 'option_selection_method': 'atm_and_adjacent_strikes_for_wem_plus_delta_lookup',
                 'formula_notes': {
                     'wem_points': '(Straddle + Strangle) / 2',
-                    'wem_spread': 'WEM Points / Previous Friday Close Price',
+                    'wem_spread': f'WEM Points / {data_source} Price',
                     'straddle_1': 'Stock Price - WEM Points',
                     'straddle_2': 'Stock Price + WEM Points',
                     'delta_range': 'Delta 16+ Strike - Delta 16- Strike (when delta values available)',
@@ -624,7 +691,8 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                     'option_extraction': 'ATM closest to price, adjacent strikes for strangle calculation',
                     'delta_16_method': 'Direct lookup from option chain for options with delta closest to ±0.16 (if available)',
                     'primary_calculation': 'WEM based on straddle/strangle premiums',
-                    'secondary_calculation': 'Delta 16 range for additional analysis'
+                    'secondary_calculation': 'Delta 16 range for additional analysis',
+                    'data_source_note': f'Using {data_source} data for calculation base price'
                 }
             }
         }
@@ -936,7 +1004,7 @@ def _extract_required_options_from_chain(calls: pd.DataFrame, puts: pd.DataFrame
         return None
 
 
-def _get_weekly_option_chain(symbol: str, expiration_date: datetime) -> Dict[str, pd.DataFrame]:
+def _get_weekly_option_chain(symbol: str, expiration_date: datetime, use_friday_close: bool = True) -> Dict[str, pd.DataFrame]:
     """
     Get weekly option chain for a specific expiration date using MarketData.app.
     
@@ -946,6 +1014,7 @@ def _get_weekly_option_chain(symbol: str, expiration_date: datetime) -> Dict[str
     Args:
         symbol: Stock symbol (e.g., 'AAPL')
         expiration_date: Options expiration date (next Friday)
+        use_friday_close: If True, uses cache (Friday close mode), if False bypasses cache (Most Recent mode)
         
     Returns:
         dict: Dictionary with 'calls' and 'puts' DataFrames containing:
@@ -960,13 +1029,17 @@ def _get_weekly_option_chain(symbol: str, expiration_date: datetime) -> Dict[str
     logger.info(f"Getting weekly option chain for {symbol} expiring {expiration_date.date()}")
     
     try:
-        # Check weekly cache first
+        # Check weekly cache first ONLY in Friday Close mode
         cache_key = f"weekly_option_chain:{symbol}:{expiration_date.strftime('%Y-%m-%d')}"
-        cached_chain = _get_from_weekly_cache(cache_key)
+        cached_chain = None
         
-        if cached_chain:
-            logger.info(f"Retrieved {symbol} option chain from weekly cache")
-            return cached_chain
+        if use_friday_close:
+            cached_chain = _get_from_weekly_cache(cache_key)
+            if cached_chain:
+                logger.info(f"Retrieved {symbol} option chain from weekly cache (Friday Close mode)")
+                return cached_chain
+        else:
+            logger.info(f"Bypassing cache for {symbol} option chain (Most Recent mode)")
         
         # Get market data manager
         manager = get_market_data_manager()
@@ -994,8 +1067,12 @@ def _get_weekly_option_chain(symbol: str, expiration_date: datetime) -> Dict[str
         
         logger.info(f"Retrieved option chain for {symbol}: {len(calls_df)} calls, {len(puts_df)} puts")
         
-        # Cache the result for weekly reuse
-        _save_to_weekly_cache(cache_key, chain)
+        # Cache the result for weekly reuse ONLY in Friday Close mode
+        if use_friday_close:
+            _save_to_weekly_cache(cache_key, chain)
+            logger.debug(f"Cached option chain for {symbol} (Friday Close mode)")
+        else:
+            logger.debug(f"Skipping cache save for {symbol} (Most Recent mode)")
         
         return chain
         
@@ -1004,7 +1081,7 @@ def _get_weekly_option_chain(symbol: str, expiration_date: datetime) -> Dict[str
         return None
 
 
-def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime) -> Optional[float]:
+def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime, use_cache: bool = True) -> Optional[float]:
     """
     Get the closing price for a stock on the previous Friday using MarketData.app.
     
@@ -1014,6 +1091,7 @@ def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime
     Args:
         symbol: Stock symbol (e.g., 'AAPL')
         previous_friday_date: The previous Friday's date
+        use_cache: If True, uses weekly cache (Friday close mode), if False bypasses cache (testing mode)
         
     Returns:
         float: Closing price on previous Friday, or None if not available
@@ -1021,13 +1099,17 @@ def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime
     logger.info(f"Getting previous Friday close price for {symbol} on {previous_friday_date.date()}")
     
     try:
-        # Check weekly cache first
+        # Check weekly cache first ONLY if caching is enabled
         cache_key = f"friday_close:{symbol}:{previous_friday_date.strftime('%Y-%m-%d')}"
-        cached_price = _get_from_weekly_cache(cache_key)
+        cached_price = None
         
-        if cached_price:
-            logger.info(f"Retrieved {symbol} Friday close from weekly cache: ${cached_price:.2f}")
-            return cached_price
+        if use_cache:
+            cached_price = _get_from_weekly_cache(cache_key)
+            if cached_price:
+                logger.info(f"Retrieved {symbol} Friday close from weekly cache: ${cached_price:.2f}")
+                return cached_price
+        else:
+            logger.info(f"Bypassing cache for {symbol} Friday close (testing mode)")
         
         # Get market data manager
         manager = get_market_data_manager()
@@ -1064,8 +1146,12 @@ def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime
         friday_close = float(historical_data.iloc[-1]['close'])
         logger.info(f"Retrieved previous Friday close for {symbol}: ${friday_close:.2f}")
         
-        # Cache the result for weekly reuse
-        _save_to_weekly_cache(cache_key, friday_close)
+        # Cache the result for weekly reuse ONLY if caching is enabled
+        if use_cache:
+            _save_to_weekly_cache(cache_key, friday_close)
+            logger.debug(f"Cached Friday close for {symbol}")
+        else:
+            logger.debug(f"Skipping cache save for {symbol} Friday close (testing mode)")
         
         return friday_close
         
@@ -1138,9 +1224,33 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
             # Standard formatting: always show 2 decimal places minimum
             return f"{num_val:.2f}"
     
+    # Format validation status with visual indicators
+    def format_validation_status(status):
+        """Format validation status with emoji indicators"""
+        if pd.isna(status):
+            return ""
+        status_str = str(status).lower()
+        if status_str == "pass":
+            return "✅ Pass"
+        elif status_str == "warning":
+            return "⚠️ Warning"
+        elif status_str == "error":
+            return "❌ Error"
+        elif status_str == "none":
+            return "➖ N/A"
+        else:
+            return str(status)
+    
+    # Apply formatting to columns
     numeric_cols = df.select_dtypes(include=['float', 'int']).columns
     for col in numeric_cols:
-        df[col] = df[col].apply(lambda x: format_number(x, col))
+        # Skip validation status columns from numeric formatting
+        if col not in ['delta_validation_status', 'delta_validation_message']:
+            df[col] = df[col].apply(lambda x: format_number(x, col))
+    
+    # Format validation status column if it exists
+    if 'delta_validation_status' in df.columns:
+        df['delta_validation_status'] = df['delta_validation_status'].apply(format_validation_status)
     
     # Ensure there's a WEM Points value for each stock - calculate if missing
     if 'straddle_strangle' in df.columns:
@@ -1163,7 +1273,8 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     all_metrics = [
         'symbol', 'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread',
         'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-        'delta_range', 'delta_range_pct', 'straddle_strangle', 'last_updated'
+        'delta_range', 'delta_range_pct', 'straddle_strangle', 'delta_validation_status', 
+        'delta_validation_message', 'last_updated'
     ]
     
     # For horizontal layout, filter out 'symbol' from selectable metrics
@@ -1216,6 +1327,8 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
         'delta_16_minus': 'Delta 16 (-)',
         'delta_range': 'Delta Range',
         'delta_range_pct': 'Delta Range %',
+        'delta_validation_status': 'Δ Status',
+        'delta_validation_message': 'Δ Details',
         'last_updated': 'Last Updated'
     }
     
@@ -1296,20 +1409,24 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     logger.info(f"Created table with {df.shape[0]} rows, {df.shape[1]} columns")
     return {"df": df, "columns": columns}
 
-def update_all_wem_stocks(session: Session, regular_hours_only: bool = False, wem_logger=None) -> bool:
+def update_all_wem_stocks(session: Session, regular_hours_only: bool = False, use_friday_close: bool = True, wem_logger=None) -> bool:
     """
     Update all WEM stocks with fresh data.
     
     Args:
         session: Database session
         regular_hours_only: If True, uses regular hours close instead of extended hours
+        use_friday_close: If True, uses previous Friday close (standard), if False uses most recent data (testing)
+        wem_logger: Optional logger instance for this session
         
     Returns:
         bool: Success or failure
     """
     # Use provided logger or fall back to module logger
     log = wem_logger if wem_logger else logger
-    log.info("Starting update of all WEM stocks")
+    data_source = "Friday Close" if use_friday_close else "Most Recent"
+    pricing_mode = "regular hours only" if regular_hours_only else "including extended hours"
+    log.info(f"Starting update of all WEM stocks using {data_source} data ({pricing_mode})")
     success_count = 0
     error_count = 0
     
@@ -1320,15 +1437,14 @@ def update_all_wem_stocks(session: Session, regular_hours_only: bool = False, we
         log.warning("No WEM stocks found to update")
         return False
     
-    pricing_mode = "regular hours only" if regular_hours_only else "including extended hours"
-    log.info(f"Found {len(stocks)} WEM stocks to update ({pricing_mode})")
+    log.info(f"Found {len(stocks)} WEM stocks to update using {data_source} data ({pricing_mode})")
     
     # Update each stock
     for stock in stocks:
         log.info(f"Calculating WEM for {stock.symbol}")
         try:
             # Calculate new values
-            new_data = calculate_expected_move(session, {'symbol': stock.symbol}, regular_hours_only)
+            new_data = calculate_expected_move(session, {'symbol': stock.symbol}, regular_hours_only, use_friday_close)
             
             if new_data:
                 # Update stock data
@@ -1800,12 +1916,55 @@ def main():
     st.title("📊 Weekly Expected Moves (WEM)")
     st.subheader("Options-derived expected price ranges for the upcoming week")
     
+    # Get available symbols from database for the symbol selector (at top level for broader scope)
+    try:
+        with get_db_connection() as db_session:
+            all_wem_stocks = db_session.query(WEMStock).all()
+            # Create formatted options showing which are default stocks
+            stock_options = []
+            default_symbols = []
+            all_symbols = []
+            
+            for stock in sorted(all_wem_stocks, key=lambda x: x.symbol):
+                symbol = stock.symbol
+                all_symbols.append(symbol)
+                if stock.is_default:
+                    stock_options.append(f"⭐ {symbol}")  # Star for default stocks
+                    default_symbols.append(symbol)
+                else:
+                    stock_options.append(f"   {symbol}")  # Spaces for alignment
+            
+            # For the actual filtering, we need the clean symbol names
+            available_symbols = all_symbols
+            
+    except Exception as e:
+        st.error(f"Error loading stock symbols: {str(e)}")
+        available_symbols = []
+        default_symbols = []
+        stock_options = []
+    
     # Sidebar configuration
     with st.sidebar:
         st.header("WEM Configuration")
         
-        # Stock pricing mode toggle - DEFINE FIRST before any buttons that use it
-        st.subheader("Pricing Mode")
+        # Data source and pricing mode toggles - DEFINE FIRST before any buttons that use them
+        st.subheader("Data Source & Pricing")
+        
+        # Initialize data source setting in session state if not exists
+        if 'use_friday_close' not in st.session_state:
+            # Default to Friday Close (the "right" way)
+            st.session_state.use_friday_close = True
+        
+        # Data source toggle
+        use_friday_close = st.checkbox(
+            "Use Friday Close Data",
+            value=st.session_state.use_friday_close,
+            key="data_source_checkbox",
+            help="When enabled, uses previous Friday's close price for WEM calculations (standard method). When disabled, uses most recent market data (for testing purposes)."
+        )
+        
+        # Update session state when checkbox changes
+        st.session_state.use_friday_close = use_friday_close
         
         # Initialize regular hours setting in session state if not exists
         if 'regular_hours_only' not in st.session_state:
@@ -1817,17 +1976,21 @@ def main():
             "Use Regular Hours Close Only",
             value=st.session_state.regular_hours_only,
             key="regular_hours_checkbox",
-            help="When enabled, uses last regular trading session close (4:00 PM ET) instead of extended hours pricing. Helpful for consistent WEM calculations after market close."
+            help="When enabled, uses last regular trading session close (4:00 PM ET) instead of extended hours pricing. Applies to both Friday Close and Most Recent data modes."
         )
         
         # Update session state when checkbox changes
         st.session_state.regular_hours_only = regular_hours_only
         
-        # Add informational text about the pricing mode
-        if regular_hours_only:
-            st.caption("📊 **Regular Hours Mode**: Using last primary session close (excludes after-hours/pre-market)")
+        # Add informational text about the data source and pricing mode
+        data_source_text = "Friday Close" if use_friday_close else "Most Recent"
+        pricing_mode_text = "Regular Hours" if regular_hours_only else "Extended Hours"
+        st.caption(f"📊 **{data_source_text}** data using **{pricing_mode_text}** pricing")
+        
+        if use_friday_close:
+            st.caption("✅ Standard WEM calculation using previous Friday's close price")
         else:
-            st.caption("🕐 **Extended Hours Mode**: Using most recent price (includes after-hours/pre-market)")
+            st.caption("🧪 Testing mode using most recent market data")
         
         # Delta 16 Validation Controls - MOVED TO TOP so config is available for WEM button
         st.subheader("Delta 16+/- Validation")
@@ -1945,21 +2108,22 @@ def main():
                 try:
                     # Set up logging for this WEM session
                     session_logger = setup_wem_logging()
-                    session_logger.info("Starting WEM data update...")
+                    data_source_text = "Friday Close" if use_friday_close else "Most Recent"
+                    pricing_mode_text = "regular hours" if regular_hours_only else "extended hours"
+                    session_logger.info(f"Starting WEM data update using {data_source_text} data with {pricing_mode_text} pricing...")
                     
                     # Use the database session within a context manager
                     with get_db_connection() as db_session:
-                        update_all_wem_stocks(db_session, regular_hours_only, session_logger)
+                        update_all_wem_stocks(db_session, regular_hours_only, use_friday_close, session_logger)
                     
-                    pricing_mode = "regular hours close" if regular_hours_only else "extended hours pricing"
-                    session_logger.info(f"WEM data update completed using {pricing_mode}")
+                    session_logger.info(f"WEM data update completed using {data_source_text} data with {pricing_mode_text} pricing")
                     
                     # Log session end
                     session_logger.info("=" * 80)
                     session_logger.info(f"WEM CALCULATION SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                     session_logger.info("=" * 80)
                     
-                    st.success(f"WEM data updated successfully using {pricing_mode}!")
+                    st.success(f"WEM data updated successfully using {data_source_text} data with {pricing_mode_text} pricing!")
                     # Rerun the app to show updated data
                     time.sleep(1)  # Small delay to ensure UI updates
                     st.rerun()
@@ -1968,8 +2132,11 @@ def main():
                     if 'session_logger' in locals():
                         session_logger.exception("WEM update error")
 
+        # Stock management section
+        st.subheader("Stock Management")
+        
         # Add stock section
-        st.subheader("Add New Stock")
+        st.write("**Add New Stock**")
         with st.form("add_stock_form"):
             new_symbol = st.text_input("Stock Symbol", key="new_stock_symbol")
             is_default = st.checkbox("Add as Default Stock", key="new_stock_default")
@@ -1989,12 +2156,13 @@ def main():
                             st.success(f"Added {symbol} to WEM stocks")
                             # Calculate WEM values for the new stock
                             with st.spinner(f"Calculating WEM for {symbol}..."):
-                                new_data = calculate_expected_move(db_session, {'symbol': symbol}, regular_hours_only)
+                                new_data = calculate_expected_move(db_session, {'symbol': symbol}, regular_hours_only, use_friday_close)
                                 if new_data:
                                     update_data = {'symbol': symbol, **new_data}
                                     update_wem_stock(db_session, update_data)
-                                    pricing_mode = "regular hours close" if regular_hours_only else "extended hours pricing"
-                                    st.success(f"WEM data calculated for {symbol} using {pricing_mode}")
+                                    data_source_text = "Friday Close" if use_friday_close else "Most Recent"
+                                    pricing_mode_text = "regular hours" if regular_hours_only else "extended hours"
+                                    st.success(f"WEM data calculated for {symbol} using {data_source_text} data with {pricing_mode_text} pricing")
                     
                     # Rerun to show the new stock
                     time.sleep(0.5)
@@ -2002,6 +2170,71 @@ def main():
                 except Exception as e:
                     st.error(f"Error adding stock: {str(e)}")
                     logger.exception(f"Error adding stock {new_symbol}")
+        
+        # Remove stock section
+        st.write("**Remove Stock**")
+        if available_symbols:
+            # Create options showing default/custom status
+            remove_options = []
+            for symbol in available_symbols:
+                if symbol in default_symbols:
+                    remove_options.append(f"⭐ {symbol} (default)")
+                else:
+                    remove_options.append(f"📈 {symbol} (custom)")
+            
+            selected_to_remove = st.selectbox(
+                "Select Stock to Remove",
+                options=[""] + remove_options,  # Empty option to prevent accidental selection
+                help="⚠️ This will permanently remove the stock and all its WEM data"
+            )
+            
+            if selected_to_remove:
+                # Extract clean symbol from formatted option
+                symbol_to_remove = selected_to_remove.split(" ")[1]  # Get symbol after emoji
+                is_default_stock = "(default)" in selected_to_remove
+                
+                # Show warning and confirmation
+                if is_default_stock:
+                    st.warning(f"⚠️ **{symbol_to_remove}** is a default stock!")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"🗑️ Remove {symbol_to_remove}", type="primary"):
+                        # Double confirmation for safety
+                        if 'confirm_remove' not in st.session_state:
+                            st.session_state.confirm_remove = symbol_to_remove
+                            st.warning(f"⚠️ Click 'Confirm Removal' to permanently delete {symbol_to_remove}")
+                            st.rerun()
+                
+                with col2:
+                    # Show confirm button only if we're in confirmation state
+                    if st.session_state.get('confirm_remove') == symbol_to_remove:
+                        if st.button(f"✅ Confirm Removal", type="secondary"):
+                            try:
+                                with get_db_connection() as db_session:
+                                    if remove_wem_stock(db_session, symbol_to_remove):
+                                        st.success(f"✅ Successfully removed {symbol_to_remove} from WEM stocks")
+                                        # Clear confirmation state
+                                        if 'confirm_remove' in st.session_state:
+                                            del st.session_state.confirm_remove
+                                        # Also remove from current selection if selected
+                                        if 'selected_symbols' in st.session_state and symbol_to_remove in st.session_state.selected_symbols:
+                                            st.session_state.selected_symbols.remove(symbol_to_remove)
+                                        # Rerun to refresh the UI
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ Failed to remove {symbol_to_remove} - stock not found")
+                            except Exception as e:
+                                st.error(f"Error removing stock: {str(e)}")
+                                logger.exception(f"Error removing stock {symbol_to_remove}")
+                
+                # Cancel confirmation if user selects a different stock
+                if st.session_state.get('confirm_remove') and st.session_state.confirm_remove != symbol_to_remove:
+                    del st.session_state.confirm_remove
+                    
+        else:
+            st.info("No stocks available to remove")
         
 
 
@@ -2013,14 +2246,84 @@ def main():
             help="Filter stocks by last updated date"
         )
         
-        # Symbol filter
-        symbol_filter = st.text_input(
-            "Symbol Filter", 
-            value="",
-            help="Enter stock symbols separated by commas (e.g., AAPL,MSFT,GOOG)"
-        )
+        # Available symbols are now loaded at the top level for broader scope
         
-        symbols = [s.strip().upper() for s in symbol_filter.split(',')] if symbol_filter else []
+        # Symbol selector with multiselect
+        if available_symbols:
+            # Initialize default selection if not set
+            if 'selected_symbols' not in st.session_state:
+                st.session_state.selected_symbols = default_symbols if default_symbols else available_symbols[:10]
+            
+            # Allow "Select All" and "Select Defaults" shortcuts
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("Select All", help="Select all available stocks"):
+                    st.session_state.selected_symbols = available_symbols
+                    st.rerun()
+            with col2:
+                if st.button("Select Defaults", help="Select only default stocks") and default_symbols:
+                    st.session_state.selected_symbols = default_symbols
+                    st.rerun()
+            with col3:
+                if st.button("Clear All", help="Clear all selections"):
+                    st.session_state.selected_symbols = []
+                    st.rerun()
+            
+            # Create mapping between formatted options and clean symbols
+            option_to_symbol = {}
+            symbol_to_option = {}
+            for stock_option in stock_options:
+                clean_symbol = stock_option.replace("⭐ ", "").replace("   ", "")
+                option_to_symbol[stock_option] = clean_symbol
+                symbol_to_option[clean_symbol] = stock_option
+            
+            # Convert current session state symbols to formatted options for display
+            default_selected_options = [symbol_to_option.get(sym, sym) for sym in st.session_state.selected_symbols if sym in symbol_to_option]
+            
+            # Main multiselect widget with formatted options
+            selected_options = st.multiselect(
+                "Select Stocks to Display",
+                options=stock_options,
+                default=default_selected_options,
+                key="symbols_multiselect",
+                help="⭐ = Default stocks | Choose which stocks to include in WEM calculations and display"
+            )
+            
+            # Convert selected formatted options back to clean symbols
+            selected_symbols = [option_to_symbol[option] for option in selected_options]
+            
+            # Update session state with current selection
+            st.session_state.selected_symbols = selected_symbols
+            
+            # Use selected symbols
+            symbols = selected_symbols
+            
+            # Show selection summary
+            if symbols:
+                # Count default vs non-default in selection
+                selected_defaults = [s for s in symbols if s in default_symbols]
+                selected_non_defaults = [s for s in symbols if s not in default_symbols]
+                
+                summary_parts = []
+                if selected_defaults:
+                    summary_parts.append(f"⭐ {len(selected_defaults)} default")
+                if selected_non_defaults:
+                    summary_parts.append(f"📈 {len(selected_non_defaults)} custom")
+                
+                summary_text = " + ".join(summary_parts)
+                stock_list = ', '.join(symbols[:5]) + (' ...' if len(symbols) > 5 else '')
+                
+                st.caption(f"📊 Selected: {len(symbols)} stocks ({summary_text}) - {stock_list}")
+            else:
+                st.warning("⚠️ No stocks selected - please select at least one stock")
+                
+        else:
+            st.warning("No WEM stocks found in database. Please add stocks first.")
+            symbols = []
+        
+        # Add helpful tip about symbol selection
+        if available_symbols and len(available_symbols) > 5:
+            st.caption("💡 **Tip**: Use the selection buttons above for quick filtering, or manually select individual stocks from the dropdown.")
         
         # Display options
         st.subheader("Display Options")
@@ -2221,11 +2524,23 @@ def main():
         with st.container():
             st.subheader("Weekly Expected Moves")
             
+            # Show current calculation settings
+            current_data_source = "Friday Close" if st.session_state.get('use_friday_close', True) else "Most Recent"
+            current_pricing = "Regular Hours" if st.session_state.get('regular_hours_only', False) else "Extended Hours"
+            
+            st.info(f"📊 **Current WEM Settings**: {current_data_source} data using {current_pricing} pricing")
+            
             # Show validation status information
             if hasattr(st.session_state, 'delta_16_validation_config') and st.session_state.delta_16_validation_config.enabled:
                 validation_info = st.expander("🔍 Delta 16+/- Validation Status", expanded=False)
                 with validation_info:
                     st.info("✅ **Quality validation is ENABLED** for Delta 16+/- calculations")
+                    st.write("**How validation works:**")
+                    st.write("• **❌ Errors**: Validation failures that block calculation entirely")
+                    st.write("• **⚠️ Warnings**: Quality issues detected but calculation proceeds")
+                    st.write("• **✅ Pass**: All validation checks passed successfully")
+                    st.write("• **➖ N/A**: No delta values available in option chain")
+                    
                     st.write("**Active validation checks:**")
                     config = st.session_state.delta_16_validation_config
                     
@@ -2239,7 +2554,7 @@ def main():
                         st.write(f"• Min delta std dev: **{config.min_delta_std:.2f}**")
                         st.write(f"• Max bid-ask spread: **{config.max_bid_ask_spread_pct:.1%}**")
                     
-                    st.caption("ℹ️ Stocks failing validation checks will show null Delta 16+/- values to maintain data quality.")
+                    st.caption("💡 **Why you see deltas with warnings**: Warnings indicate potential quality issues but still allow calculation. Only errors completely block delta calculation.")
             else:
                 st.info("⚠️ **Validation disabled** - Delta 16+/- values use closest available matches regardless of quality")
             
@@ -2276,26 +2591,69 @@ def main():
             num_rows = len(wem_df['df'])
             dynamic_height = min(max(200, 50 + (num_rows * 35)), 600)  # Min 200px, max 600px, ~35px per row
             
+            # Prepare column configuration with conditional styling
+            column_config = {}
+            for col in wem_df['columns']:
+                if col.get("type") == "number":
+                    column_config[col["field"]] = st.column_config.NumberColumn(
+                        col["headerName"],
+                        width=col["width"],
+                        format=col["format"]
+                    )
+                else:
+                    column_config[col["field"]] = st.column_config.Column(
+                        col["headerName"],
+                        width=col["width"]
+                    )
+            
+            # Special handling for validation status columns
+            if 'delta_validation_status' in wem_df['df'].columns:
+                column_config['delta_validation_status'] = st.column_config.Column(
+                    "Δ Status",
+                    width=80,
+                    help="Delta 16+/- validation status: ✅ Pass, ⚠️ Warning, ❌ Error, ➖ N/A"
+                )
+            
+            if 'delta_validation_message' in wem_df['df'].columns:
+                column_config['delta_validation_message'] = st.column_config.Column(
+                    "Δ Details",
+                    width=120,
+                    help="Detailed validation message for Delta 16+/- calculations"
+                )
+            
             # Style the dataframe with dynamic sizing
             st.dataframe(
                 wem_df['df'],
                 use_container_width=True,
                 hide_index=False,  # Show index for horizontal layout
                 height=dynamic_height,  # Dynamic height based on content
-                column_config={
-                    col["field"]: (
-                        st.column_config.NumberColumn(
-                            col["headerName"],
-                            width=col["width"],
-                            format=col["format"]
-                        ) if col.get("type") == "number" else
-                        st.column_config.Column(
-                            col["headerName"],
-                            width=col["width"]
-                        )
-                    ) for col in wem_df['columns']
-                }
+                column_config=column_config
             )
+            
+            # Add validation summary if validation is enabled
+            if hasattr(st.session_state, 'delta_16_validation_config') and st.session_state.delta_16_validation_config.enabled:
+                # Count validation statuses
+                if 'delta_validation_status' in wem_df['df'].columns:
+                    status_counts = {}
+                    for status in wem_df['df']['delta_validation_status']:
+                        if pd.notna(status):
+                            clean_status = str(status).split(' ')[-1].lower()  # Extract status after emoji
+                            status_counts[clean_status] = status_counts.get(clean_status, 0) + 1
+                    
+                    if status_counts:
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            if 'pass' in status_counts:
+                                st.success(f"✅ {status_counts['pass']} Passed")
+                        with col2:
+                            if 'warning' in status_counts:
+                                st.warning(f"⚠️ {status_counts['warning']} Warnings")
+                        with col3:
+                            if 'error' in status_counts:
+                                st.error(f"❌ {status_counts['error']} Errors")
+                        with col4:
+                            if 'n/a' in status_counts:
+                                st.info(f"➖ {status_counts['n/a']} N/A")
 
 if __name__ == "__main__":
     main() 
