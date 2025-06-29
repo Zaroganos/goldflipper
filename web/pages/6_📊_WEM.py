@@ -37,14 +37,23 @@ NEW FEATURES (Current Session):
 
 TECHNICAL DETAILS:
 ==================
-WEM Calculation Method: Automated Full Chain Analysis
-- Gets full weekly option chain for next Friday expiration
+WEM Calculation Method: Automated Full Chain Analysis with Holiday Handling
+- Gets full weekly option chain for next Friday expiration (with smart holiday adjustment)
 - Auto-detects ATM strike closest to current stock price
 - Selects adjacent strikes for ITM options (one above/below ATM)
 - Finds actual Delta 16+ (call ~0.16 delta) and Delta 16- (put ~-0.16 delta) options
 - Calculates WEM Points = (Straddle + Strangle) / 2
 - Additionally calculates proper Delta 16+/- values using actual option deltas
 - Uses MarketDataApp provider with proper call/put separation
+
+HOLIDAY HANDLING:
+=================
+- Automatically detects US market holidays (Independence Day, Christmas, etc.)
+- When Friday is a holiday, adjusts expiration to Thursday (industry standard)
+- Includes comprehensive fallback mechanism to try alternative expiration dates
+- Handles cases like July 4th, 2025 (Friday) → July 3rd, 2025 (Thursday) expiration
+- Logs all adjustments for transparency and debugging
+- Covers all major US market holidays with proper weekend adjustments
 """
 
 import logging
@@ -141,6 +150,13 @@ from goldflipper.database.models import WEMStock, MarketData
 from goldflipper.database.repositories import MarketDataRepository
 from goldflipper.data.market.manager import MarketDataManager
 from goldflipper.config.config import config
+from goldflipper.utils.market_holidays import (
+    is_market_holiday,
+    find_next_friday_expiration,
+    find_previous_friday,
+    get_expiration_date_candidates,
+    test_holiday_detection_ui
+)
 
 # Page configuration
 st.set_page_config(
@@ -425,7 +441,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         if use_friday_close:
             # Standard mode: Use previous Friday's close price
             logger.info(f"WEM calculation for {symbol} - using previous Friday close (standard method)")
-            previous_friday_date = _find_previous_friday()
+            previous_friday_date = find_previous_friday()
             current_price = _get_previous_friday_close_price(symbol, previous_friday_date, use_cache=True)
             
             if current_price is None:
@@ -454,15 +470,36 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         logger.info(f"Using {data_source} data with {pricing_mode} for {symbol}: ${current_price:.2f}")
         
         # Step 2: Find next Friday expiration date
-        next_friday = _find_next_friday_expiration()
+        next_friday = find_next_friday_expiration()
         logger.info(f"Next Friday expiration: {next_friday}")
         
-        # Step 3: Get weekly option chain for next Friday expiration
-        weekly_option_chain = _get_weekly_option_chain(symbol, next_friday, use_friday_close)
+        # Step 3: Get weekly option chain for next Friday expiration (with holiday adjustment)
+        weekly_option_chain_result = _get_weekly_option_chain(symbol, next_friday, use_friday_close)
         
-        if not weekly_option_chain:
-            logger.error(f"No weekly option chain available for {symbol} expiring {next_friday}")
+        if not weekly_option_chain_result:
+            logger.error(f"No weekly option chain available for {symbol} - tried multiple expiration dates around {next_friday.date()}")
             return None
+        
+        weekly_option_chain = weekly_option_chain_result
+        
+        # Extract the actual expiration date used (may be different from calculated Friday due to holidays)
+        actual_expiration_date = next_friday  # Default to calculated date
+        
+        # Try to determine actual expiration date from the option chain data
+        # This is a best-effort attempt since the API response format may vary
+        try:
+            # Check if there's expiration info in the option chain data
+            calls = weekly_option_chain.get('calls')
+            if calls is not None and not calls.empty and 'expiration' in calls.columns:
+                # Get the expiration date from the first option
+                exp_str = calls.iloc[0]['expiration']
+                if exp_str:
+                    actual_expiration_date = datetime.strptime(exp_str, '%Y-%m-%d')
+                    if actual_expiration_date.date() != next_friday.date():
+                        logger.info(f"📅 Detected actual expiration date {actual_expiration_date.date()} differs from calculated {next_friday.date()}")
+        except Exception as e:
+            logger.debug(f"Could not extract actual expiration date from option chain: {e}")
+            # Keep the original calculated date
         
         calls = weekly_option_chain['calls']
         puts = weekly_option_chain['puts']
@@ -494,7 +531,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         
         # Step 4.5: Calculate proper Delta 16+/- values using delta-based lookup
         logger.info(f"Calculating Delta 16+/- values for {symbol}")
-        expiration_str = next_friday.strftime('%Y-%m-%d')
+        expiration_str = actual_expiration_date.strftime('%Y-%m-%d')
         
         # Get validation config from session state if available (will be set by UI)
         validation_config = getattr(st.session_state, 'delta_16_validation_config', None)
@@ -550,7 +587,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         # WEM Spread = WEM Points / (base price for comparison)
         if use_friday_close:
             # Standard mode: Use previous Friday's close for WEM Spread calculation
-            previous_friday_date = _find_previous_friday()
+            previous_friday_date = find_previous_friday()
             previous_friday_close = _get_previous_friday_close_price(symbol, previous_friday_date, use_cache=True)
             
             if previous_friday_close and previous_friday_close > 0:
@@ -651,7 +688,10 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             'meta_data': {
                 'calculation_timestamp': datetime.utcnow().isoformat(),
                 'calculation_method': 'automated_full_chain_analysis',
-                'expiration_date': next_friday.isoformat(),
+                'expiration_date': actual_expiration_date.isoformat(),
+                'calculated_expiration_date': next_friday.isoformat(),
+                'expiration_date_adjusted': actual_expiration_date.date() != next_friday.date(),
+                'adjustment_reason': f"Market holiday adjustment from {next_friday.date()} to {actual_expiration_date.date()}" if actual_expiration_date.date() != next_friday.date() else None,
                 'data_source': data_source.lower().replace(' ', '_'),
                 'data_source_mode': data_source,
                 'pricing_mode': pricing_mode,
@@ -692,7 +732,9 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                     'delta_16_method': 'Direct lookup from option chain for options with delta closest to ±0.16 (if available)',
                     'primary_calculation': 'WEM based on straddle/strangle premiums',
                     'secondary_calculation': 'Delta 16 range for additional analysis',
-                    'data_source_note': f'Using {data_source} data for calculation base price'
+                    'data_source_note': f'Using {data_source} data for calculation base price',
+                    'expiration_handling': 'Automatically adjusts for market holidays (e.g., July 4th on Friday → Thursday expiration)',
+                    'fallback_mechanism': 'Tries multiple expiration dates if primary date has no option chains available'
                 }
             }
         }
@@ -705,52 +747,13 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         return None
 
 
-def _find_next_friday_expiration() -> datetime:
-    """
-    Find the next Friday for weekly options expiration.
-    
-    Weekly options typically expire on Fridays. This function finds the next 
-    Friday from the current date.
-    
-    Returns:
-        datetime: Next Friday's date
-    """
-    today = datetime.now().date()
-    days_ahead = 4 - today.weekday()  # Friday is weekday 4 (Monday=0)
-    
-    if days_ahead <= 0:  # Today is Friday or weekend, get next Friday
-        days_ahead += 7
-    
-    next_friday = today + timedelta(days=days_ahead)
-    logger.debug(f"Next Friday expiration calculated: {next_friday}")
-    
-    return datetime.combine(next_friday, datetime.min.time())
 
 
-def _find_previous_friday() -> datetime:
-    """
-    Find the previous Friday for WEM Spread calculation.
-    
-    WEM Spread uses the previous Friday's closing price as the denominator.
-    This function finds the most recent Friday before today.
-    
-    Returns:
-        datetime: Previous Friday's date
-    """
-    today = datetime.now().date()
-    days_back = today.weekday() + 3  # Monday=0, so Friday would be 4 days back from Monday
-    
-    if today.weekday() == 4:  # If today is Friday
-        days_back = 7  # Get last Friday
-    elif today.weekday() < 4:  # Monday-Thursday
-        days_back = today.weekday() + 3  # Days back to last Friday
-    else:  # Weekend (Saturday=5, Sunday=6)
-        days_back = today.weekday() - 4  # Days back to last Friday
-    
-    previous_friday = today - timedelta(days=days_back)
-    logger.debug(f"Previous Friday calculated: {previous_friday}")
-    
-    return datetime.combine(previous_friday, datetime.min.time())
+
+
+
+
+
 
 
 def _get_weekly_cache_file() -> Path:
@@ -1009,11 +1012,13 @@ def _get_weekly_option_chain(symbol: str, expiration_date: datetime, use_friday_
     Get weekly option chain for a specific expiration date using MarketData.app.
     
     This function connects to the existing MarketDataManager to retrieve option chain
-    data for the specified weekly expiration date.
+    data for the specified weekly expiration date. If the primary date doesn't have
+    option chains available (e.g., due to market holidays), it will try alternative
+    dates in the same week.
     
     Args:
         symbol: Stock symbol (e.g., 'AAPL')
-        expiration_date: Options expiration date (next Friday)
+        expiration_date: Options expiration date (typically next Friday)
         use_friday_close: If True, uses cache (Friday close mode), if False bypasses cache (Most Recent mode)
         
     Returns:
@@ -1026,59 +1031,72 @@ def _get_weekly_option_chain(symbol: str, expiration_date: datetime, use_friday_
             - delta: Option delta (optional)
             - Other greeks (optional)
     """
-    logger.info(f"Getting weekly option chain for {symbol} expiring {expiration_date.date()}")
+    # Try multiple expiration dates in order of preference
+    dates_to_try = get_expiration_date_candidates(expiration_date)
     
-    try:
-        # Check weekly cache first ONLY in Friday Close mode
-        cache_key = f"weekly_option_chain:{symbol}:{expiration_date.strftime('%Y-%m-%d')}"
-        cached_chain = None
+    for attempt, (candidate_date, reason) in enumerate(dates_to_try):
+        logger.info(f"Attempt {attempt + 1}: Getting weekly option chain for {symbol} expiring {candidate_date.date()} ({reason})")
         
-        if use_friday_close:
-            cached_chain = _get_from_weekly_cache(cache_key)
-            if cached_chain:
-                logger.info(f"Retrieved {symbol} option chain from weekly cache (Friday Close mode)")
-                return cached_chain
-        else:
-            logger.info(f"Bypassing cache for {symbol} option chain (Most Recent mode)")
-        
-        # Get market data manager
-        manager = get_market_data_manager()
-        if not manager:
-            logger.error("No market data manager available")
-            return None
-        
-        # Format expiration date for MarketData.app API (YYYY-MM-DD format)
-        expiration_str = expiration_date.strftime('%Y-%m-%d')
-        logger.info(f"Requesting option chain for {symbol} with expiration {expiration_str}")
-        
-        # Get option chain for specific expiration date
-        chain = manager.get_option_chain(symbol, expiration_str)
-        
-        if not chain or not isinstance(chain, dict) or 'calls' not in chain or 'puts' not in chain:
-            logger.error(f"Invalid option chain format received for {symbol}")
-            return None
-        
-        calls_df = chain['calls']
-        puts_df = chain['puts']
-        
-        if calls_df.empty and puts_df.empty:
-            logger.warning(f"Empty option chain received for {symbol} on {expiration_str}")
-            return None
-        
-        logger.info(f"Retrieved option chain for {symbol}: {len(calls_df)} calls, {len(puts_df)} puts")
-        
-        # Cache the result for weekly reuse ONLY in Friday Close mode
-        if use_friday_close:
-            _save_to_weekly_cache(cache_key, chain)
-            logger.debug(f"Cached option chain for {symbol} (Friday Close mode)")
-        else:
-            logger.debug(f"Skipping cache save for {symbol} (Most Recent mode)")
-        
-        return chain
-        
-    except Exception as e:
-        logger.error(f"Error getting weekly option chain for {symbol}: {str(e)}", exc_info=True)
-        return None
+        try:
+            # Check weekly cache first ONLY in Friday Close mode
+            cache_key = f"weekly_option_chain:{symbol}:{candidate_date.strftime('%Y-%m-%d')}"
+            cached_chain = None
+            
+            if use_friday_close:
+                cached_chain = _get_from_weekly_cache(cache_key)
+                if cached_chain:
+                    logger.info(f"Retrieved {symbol} option chain from weekly cache for {candidate_date.date()} (Friday Close mode)")
+                    return cached_chain
+            
+            # Get market data manager
+            manager = get_market_data_manager()
+            if not manager:
+                logger.error("No market data manager available")
+                continue
+            
+            # Format expiration date for MarketData.app API (YYYY-MM-DD format)
+            expiration_str = candidate_date.strftime('%Y-%m-%d')
+            logger.info(f"Requesting option chain for {symbol} with expiration {expiration_str}")
+            
+            # Get option chain for specific expiration date
+            chain = manager.get_option_chain(symbol, expiration_str)
+            
+            if not chain or not isinstance(chain, dict) or 'calls' not in chain or 'puts' not in chain:
+                logger.warning(f"Invalid option chain format received for {symbol} on {expiration_str}, trying next date")
+                continue
+            
+            calls_df = chain['calls']
+            puts_df = chain['puts']
+            
+            if calls_df.empty and puts_df.empty:
+                logger.warning(f"Empty option chain received for {symbol} on {expiration_str}, trying next date")
+                continue
+            
+            # Success! We found a valid option chain
+            logger.info(f"✅ Successfully retrieved option chain for {symbol} on {expiration_str}: {len(calls_df)} calls, {len(puts_df)} puts")
+            
+            if candidate_date != expiration_date:
+                logger.info(f"📅 Note: Using adjusted expiration date {candidate_date.date()} instead of original {expiration_date.date()} due to {reason}")
+            
+            # Cache the result for weekly reuse ONLY in Friday Close mode
+            if use_friday_close:
+                _save_to_weekly_cache(cache_key, chain)
+                logger.debug(f"Cached option chain for {symbol} on {candidate_date.date()} (Friday Close mode)")
+            else:
+                logger.debug(f"Skipping cache save for {symbol} on {candidate_date.date()} (Most Recent mode)")
+            
+            return chain
+            
+        except Exception as e:
+            logger.warning(f"Error getting option chain for {symbol} on {candidate_date.date()}: {str(e)}")
+            continue
+    
+    # If we get here, none of the candidate dates worked
+    logger.error(f"❌ Failed to retrieve option chain for {symbol} - tried {len(dates_to_try)} different expiration dates")
+    return None
+
+
+
 
 
 def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime, use_cache: bool = True) -> Optional[float]:
@@ -1334,7 +1352,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     
     # Dynamically update ATM display name with previous Friday's date (when close price was recorded)
     try:
-        previous_friday = _find_previous_friday()
+        previous_friday = find_previous_friday()
         atm_date_str = previous_friday.strftime('%m/%d')  # Format as M/D (e.g., 6/13)
         column_display_names['atm_price'] = f'ATM ({atm_date_str})'
     except Exception as e:
@@ -1908,6 +1926,9 @@ def calculate_risk_reversal_spread(delta_16_results: Dict[str, Any]) -> Optional
         logger.error(f"Error calculating risk reversal spread: {str(e)}")
         return None
 
+
+
+
 def main():
     """Main function for the WEM application"""
     setup_logging()
@@ -2102,6 +2123,16 @@ def main():
         else:
             st.info("⚠️ Delta 16+/- validation disabled - calculations will accept any closest match")
 
+        # Show debug tools only when debug mode is enabled
+        debug_enabled = settings.get('logging', {}).get('debug', {}).get('enabled', False)
+        if debug_enabled:
+            st.subheader("🔧 Debug Tools")
+            st.caption("Debug mode is enabled - additional testing tools available")
+            
+            # Holiday detection test button (debug mode only)
+            if st.button("🧪 Test Holiday Detection", help="Test the market holiday detection system (Debug Mode)"):
+                test_holiday_detection_ui()
+        
         # Add a button to update WEM data - MOVED AFTER validation config setup
         if st.button("Update WEM Data", help="Fetch latest options data and calculate WEM"):
             with st.spinner("Updating WEM data..."):
