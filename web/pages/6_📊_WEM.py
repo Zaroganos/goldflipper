@@ -2137,11 +2137,127 @@ def main():
         
         # Add stock section
         st.write("**Add New Stock**")
+        
+        # Bulk add option
+        with st.expander("Bulk Add Stocks", expanded=False):
+            st.write("Add multiple stocks at once (comma or space separated)")
+            bulk_symbols = st.text_area(
+                "Stock Symbols",
+                placeholder="SPY, QQQ, TSLA, META, NVDA, AAPL, GOOGL, MSFT, OSCR, LRCX, SMR, RDDT, ADBE, CHWY, SOFI, ARM",
+                height=80,
+                key="bulk_symbols"
+            )
+            bulk_is_default = st.checkbox("Add as Default Stocks", key="bulk_default")
+            auto_select_new = st.checkbox(
+                "Auto-select new stocks for display", 
+                value=True, 
+                key="auto_select_bulk",
+                help="Automatically add newly added stocks to the current display selection"
+            )
+            
+            if st.button("Add Multiple Stocks", type="primary"):
+                if bulk_symbols:
+                    try:
+                        # Parse symbols from text (handle commas, spaces, newlines)
+                        import re
+                        symbols_to_add = re.findall(r'[A-Za-z]+', bulk_symbols.upper())
+                        symbols_to_add = list(set(symbols_to_add))  # Remove duplicates
+                        
+                        if not symbols_to_add:
+                            st.warning("No valid stock symbols found in input")
+                        else:
+                            with get_db_connection() as db_session:
+                                added_count = 0
+                                skipped_count = 0
+                                error_count = 0
+                                newly_added_symbols = []  # Track newly added symbols for auto-selection
+                                
+                                # Progress bar for bulk operations
+                                progress_bar = st.progress(0)
+                                status_text = st.empty()
+                                
+                                for i, symbol in enumerate(symbols_to_add):
+                                    status_text.text(f"Processing {symbol}... ({i+1}/{len(symbols_to_add)})")
+                                    progress_bar.progress((i + 1) / len(symbols_to_add))
+                                    
+                                    try:
+                                        # Check if stock already exists
+                                        existing = db_session.query(WEMStock).filter_by(symbol=symbol).first()
+                                        if existing:
+                                            logger.info(f"Stock {symbol} already exists, skipping")
+                                            skipped_count += 1
+                                        else:
+                                            add_wem_stock(db_session, symbol, bulk_is_default)
+                                            logger.info(f"Added {symbol} to WEM stocks")
+                                            added_count += 1
+                                            newly_added_symbols.append(symbol)  # Track for auto-selection
+                                            
+                                            # Calculate WEM values for the new stock
+                                            try:
+                                                new_data = calculate_expected_move(db_session, {'symbol': symbol}, regular_hours_only, use_friday_close)
+                                                if new_data:
+                                                    update_data = {'symbol': symbol, **new_data}
+                                                    update_wem_stock(db_session, update_data)
+                                                    logger.info(f"WEM data calculated for {symbol}")
+                                            except Exception as calc_error:
+                                                logger.warning(f"Failed to calculate WEM for {symbol}: {calc_error}")
+                                                # Continue adding other stocks even if WEM calculation fails
+                                    except Exception as stock_error:
+                                        logger.error(f"Error adding stock {symbol}: {stock_error}")
+                                        error_count += 1
+                                
+                                # Clear progress indicators
+                                progress_bar.empty()
+                                status_text.empty()
+                                
+                                # Auto-select newly added stocks if requested
+                                if auto_select_new and newly_added_symbols:
+                                    # Initialize selected_symbols if it doesn't exist
+                                    if 'selected_symbols' not in st.session_state:
+                                        st.session_state.selected_symbols = []
+                                    
+                                    # Add newly added symbols to current selection (avoid duplicates)
+                                    current_selection = set(st.session_state.selected_symbols)
+                                    new_symbols_set = set(newly_added_symbols)
+                                    updated_selection = list(current_selection.union(new_symbols_set))
+                                    st.session_state.selected_symbols = updated_selection
+                                    
+                                    logger.info(f"Auto-selected {len(newly_added_symbols)} newly added stocks for display")
+                                
+                                # Show summary
+                                if added_count > 0:
+                                    data_source_text = "Friday Close" if use_friday_close else "Most Recent"
+                                    pricing_mode_text = "regular hours" if regular_hours_only else "extended hours"
+                                    st.success(f"✅ Added {added_count} new stocks with WEM data using {data_source_text} data ({pricing_mode_text} pricing)")
+                                    
+                                    if auto_select_new and newly_added_symbols:
+                                        st.success(f"🎯 Auto-selected {len(newly_added_symbols)} new stocks for display: {', '.join(newly_added_symbols)}")
+                                
+                                if skipped_count > 0:
+                                    st.info(f"ℹ️ Skipped {skipped_count} stocks (already exist)")
+                                if error_count > 0:
+                                    st.warning(f"⚠️ Failed to add {error_count} stocks (check logs)")
+                                
+                                if added_count > 0:
+                                    time.sleep(1)
+                                    st.rerun()
+                                    
+                    except Exception as e:
+                        st.error(f"Error processing bulk symbols: {str(e)}")
+                        logger.exception("Error in bulk add operation")
+        
+        # Single add option
         with st.form("add_stock_form"):
             new_symbol = st.text_input("Stock Symbol", key="new_stock_symbol")
             is_default = st.checkbox("Add as Default Stock", key="new_stock_default")
+            auto_select_single = st.checkbox(
+                "Auto-select for display", 
+                value=True, 
+                key="auto_select_single",
+                help="Automatically add this stock to the current display selection"
+            )
             
-            submit_button = st.form_submit_button("Add Stock")
+            submit_button = st.form_submit_button("Add Single Stock")
             
             if submit_button and new_symbol:
                 try:
@@ -2154,6 +2270,18 @@ def main():
                         else:
                             add_wem_stock(db_session, symbol, is_default)
                             st.success(f"Added {symbol} to WEM stocks")
+                            
+                            # Auto-select the new stock if requested
+                            if auto_select_single:
+                                # Initialize selected_symbols if it doesn't exist
+                                if 'selected_symbols' not in st.session_state:
+                                    st.session_state.selected_symbols = []
+                                
+                                # Add to current selection if not already there
+                                if symbol not in st.session_state.selected_symbols:
+                                    st.session_state.selected_symbols.append(symbol)
+                                    st.success(f"🎯 Auto-selected {symbol} for display")
+                            
                             # Calculate WEM values for the new stock
                             with st.spinner(f"Calculating WEM for {symbol}..."):
                                 new_data = calculate_expected_move(db_session, {'symbol': symbol}, regular_hours_only, use_friday_close)
@@ -2173,6 +2301,92 @@ def main():
         
         # Remove stock section
         st.write("**Remove Stock**")
+        
+        # Bulk remove non-default stocks
+        if available_symbols:
+            non_default_symbols = [s for s in available_symbols if s not in default_symbols]
+            if non_default_symbols:
+                st.write("**Bulk Remove Non-Default Stocks**")
+                st.caption(f"Found {len(non_default_symbols)} custom stocks: {', '.join(non_default_symbols[:5])}{' ...' if len(non_default_symbols) > 5 else ''}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🗑️ Remove All Custom Stocks", type="secondary"):
+                        # Double confirmation for safety
+                        if 'confirm_bulk_remove' not in st.session_state:
+                            st.session_state.confirm_bulk_remove = True
+                            st.warning(f"⚠️ This will remove ALL {len(non_default_symbols)} custom stocks! Click 'Confirm Bulk Removal' to proceed.")
+                            st.rerun()
+                
+                with col2:
+                    # Show confirm button only if we're in confirmation state
+                    if st.session_state.get('confirm_bulk_remove'):
+                        if st.button("✅ Confirm Bulk Removal", type="primary"):
+                            try:
+                                with get_db_connection() as db_session:
+                                    removed_count = 0
+                                    error_count = 0
+                                    
+                                    # Progress bar for bulk removal
+                                    progress_bar = st.progress(0)
+                                    status_text = st.empty()
+                                    
+                                    for i, symbol in enumerate(non_default_symbols):
+                                        status_text.text(f"Removing {symbol}... ({i+1}/{len(non_default_symbols)})")
+                                        progress_bar.progress((i + 1) / len(non_default_symbols))
+                                        
+                                        try:
+                                            if remove_wem_stock(db_session, symbol):
+                                                removed_count += 1
+                                                logger.info(f"Removed custom stock {symbol}")
+                                                
+                                                # Remove from current selection if selected
+                                                if 'selected_symbols' in st.session_state and symbol in st.session_state.selected_symbols:
+                                                    st.session_state.selected_symbols.remove(symbol)
+                                            else:
+                                                error_count += 1
+                                                logger.warning(f"Failed to remove {symbol} - not found")
+                                        except Exception as e:
+                                            error_count += 1
+                                            logger.error(f"Error removing {symbol}: {str(e)}")
+                                    
+                                    # Clear progress indicators
+                                    progress_bar.empty()
+                                    status_text.empty()
+                                    
+                                    # Clear confirmation state
+                                    if 'confirm_bulk_remove' in st.session_state:
+                                        del st.session_state.confirm_bulk_remove
+                                    
+                                    # Show results
+                                    if removed_count > 0:
+                                        st.success(f"✅ Successfully removed {removed_count} custom stocks")
+                                    if error_count > 0:
+                                        st.warning(f"⚠️ Failed to remove {error_count} stocks (check logs)")
+                                    
+                                    # Rerun to refresh the UI
+                                    if removed_count > 0:
+                                        time.sleep(1)
+                                        st.rerun()
+                                        
+                            except Exception as e:
+                                st.error(f"Error during bulk removal: {str(e)}")
+                                logger.exception("Error in bulk remove operation")
+                                
+                                # Clear confirmation state on error
+                                if 'confirm_bulk_remove' in st.session_state:
+                                    del st.session_state.confirm_bulk_remove
+                
+                # Add cancel option
+                if st.session_state.get('confirm_bulk_remove'):
+                    if st.button("❌ Cancel", type="secondary"):
+                        del st.session_state.confirm_bulk_remove
+                        st.rerun()
+                
+                st.divider()
+        
+        # Individual stock removal
+        st.write("**Remove Individual Stock**")
         if available_symbols:
             # Create options showing default/custom status
             remove_options = []
