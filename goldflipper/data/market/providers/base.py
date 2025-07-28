@@ -80,9 +80,19 @@ class MarketDataProvider(ABC):
     def get_option_chain(
         self,
         symbol: str,
-        expiration_date: Optional[str] = None
+        expiration_date: Optional[str] = None,
+        date: Optional[str] = None
     ) -> Dict[str, pd.DataFrame]:
-        """Get option chain data"""
+        """Get option chain data
+        
+        Args:
+            symbol: Underlying symbol
+            expiration_date: Filter by expiration date (YYYY-MM-DD)
+            date: Historical date for option chain (YYYY-MM-DD). If None, gets current data
+            
+        Returns:
+            Dictionary with 'calls' and 'puts' DataFrames
+        """
         pass
         
     @abstractmethod

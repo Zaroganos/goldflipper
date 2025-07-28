@@ -499,9 +499,13 @@ class AlpacaProvider(MarketDataProvider):
     def get_option_chain(
         self,
         symbol: str,
-        expiration_date: Optional[str] = None
+        expiration_date: Optional[str] = None,
+        date: Optional[str] = None
     ) -> Dict[str, pd.DataFrame]:
         """Get option chain data using WebSocket data with REST API fallback"""
+        if date:
+            logging.warning(f"Alpaca provider does not support historical option data. Ignoring date parameter: {date}")
+        
         try:
             # Try WebSocket data first
             chain_data = []

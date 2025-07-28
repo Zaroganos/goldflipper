@@ -160,15 +160,24 @@ class MarketDataManager:
         self.logger.info("Starting new market data cycle")
         self.cache.new_cycle()
         
-    def get_option_chain(self, symbol: str, expiration_date: Optional[str] = None) -> Dict[str, pd.DataFrame]:
-        """Get option chain data with cycle caching"""
+    def get_option_chain(self, symbol: str, expiration_date: Optional[str] = None, date: Optional[str] = None) -> Dict[str, pd.DataFrame]:
+        """Get option chain data with cycle caching
+        
+        Args:
+            symbol: Underlying symbol
+            expiration_date: Filter by expiration date (YYYY-MM-DD)
+            date: Historical date for option chain (YYYY-MM-DD). If None, gets current data
+            
+        Returns:
+            Dictionary with 'calls' and 'puts' DataFrames
+        """
         try:
-            cache_key = f"option_chain:{symbol}:{expiration_date or 'nearest'}"
+            cache_key = f"option_chain:{symbol}:{expiration_date or 'nearest'}:{date or 'current'}"
             if cached_chain := self.cache.get(cache_key):
                 return cached_chain
                 
-            self.logger.info(f"Fetching option chain for {symbol}")
-            chain = self._try_providers('get_option_chain', symbol, expiration_date)
+            self.logger.info(f"Fetching option chain for {symbol}, expiry {expiration_date}, date {date}")
+            chain = self._try_providers('get_option_chain', symbol, expiration_date, date)
             
             if chain is not None:
                 self.cache.set(cache_key, chain)

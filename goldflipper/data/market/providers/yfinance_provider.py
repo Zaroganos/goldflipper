@@ -104,8 +104,12 @@ class YFinanceProvider(MarketDataProvider):
     def get_option_chain(
         self,
         symbol: str,
-        expiration_date: Optional[str] = None
+        expiration_date: Optional[str] = None,
+        date: Optional[str] = None
     ) -> Dict[str, pd.DataFrame]:
+        if date:
+            logging.warning(f"YFinance provider does not support historical option data. Ignoring date parameter: {date}")
+        
         try:
             ticker = yf.Ticker(symbol)
             

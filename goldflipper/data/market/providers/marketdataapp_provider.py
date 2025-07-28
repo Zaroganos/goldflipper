@@ -187,17 +187,35 @@ class MarketDataAppProvider(MarketDataProvider):
     def get_option_chain(
         self,
         symbol: str,
-        expiration_date: Optional[str] = None
+        expiration_date: Optional[str] = None,
+        date: Optional[str] = None
     ) -> Dict[str, pd.DataFrame]:
-        """Get option chain data"""
-        logging.info(f"MarketDataApp: Fetching option chain for {symbol}, expiry {expiration_date}")
+        """Get option chain data (current or historical)
+        
+        Args:
+            symbol: Underlying symbol
+            expiration_date: Filter by expiration date (YYYY-MM-DD)
+            date: Historical date for option chain (YYYY-MM-DD). If None, gets current data
+            
+        Returns:
+            Dictionary with 'calls' and 'puts' DataFrames
+        """
+        logging.info(f"MarketDataApp: Fetching option chain for {symbol}, expiry {expiration_date}, date {date}")
         
         url = f"{self.base_url}/options/chain/{symbol}/"
+        
+        # Build query parameters
+        params = []
         if expiration_date:
-            url += f"?expiration={expiration_date}"
+            params.append(f"expiration={expiration_date}")
+        if date:
+            params.append(f"date={date}")
+        
+        if params:
+            url += f"?{'&'.join(params)}"
             
         response = self._make_request(url)
-        logging.info(f"MarketDataApp: Got response status {response.status_code}")
+        logging.info(f"MarketDataApp: Got response status {response.status_code} for URL: {url}")
         
         if response.status_code in (200, 203):
             data = response.json()
@@ -255,8 +273,17 @@ class MarketDataAppProvider(MarketDataProvider):
                 logging.error("Daily request limit exceeded")
                 raise ValueError("Daily request limit exceeded")
         else:
-            logging.error(f"Failed to get option chain for {symbol}: {response.status_code}")
-            raise ValueError(f"Error fetching option chain for {symbol}")
+            # Improved error handling with actual API response
+            try:
+                error_data = response.json()
+                error_msg = error_data.get('errmsg', 'Unknown error')
+                logging.error(f"Failed to get option chain for {symbol}: {response.status_code} - {error_msg}")
+                logging.error(f"Full API response: {response.text}")
+                raise ValueError(f"Error fetching option chain for {symbol}: {error_msg}")
+            except:
+                logging.error(f"Failed to get option chain for {symbol}: {response.status_code}")
+                logging.error(f"Raw API response: {response.text}")
+                raise ValueError(f"Error fetching option chain for {symbol}: HTTP {response.status_code}")
 
     def get_option_greeks(
         self,
