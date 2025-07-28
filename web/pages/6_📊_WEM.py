@@ -158,6 +158,10 @@ from goldflipper.utils.market_holidays import (
     test_holiday_detection_ui
 )
 
+# Initialize session state for tracking newly added stocks
+if 'newly_added_stocks' not in st.session_state:
+    st.session_state.newly_added_stocks = set()
+
 # Page configuration
 st.set_page_config(
     page_title="Weekly Expected Moves (WEM)",
@@ -383,9 +387,13 @@ def update_wem_stock(session: Session, stock_data: Dict[str, Any]) -> bool:
         if not wem_stock.meta_data:
             wem_stock.meta_data = {}
         
-        # Update all attributes directly - no special handling needed
+        # Update all attributes, but preserve existing values for None stub data
         for key, value in stock_data.items():
             if hasattr(wem_stock, key):
+                # For stub records, don't overwrite existing non-None values with None
+                if value is None and hasattr(wem_stock, key) and getattr(wem_stock, key) is not None:
+                    # Skip setting None over existing value (preserve is_default, etc.)
+                    continue
                 setattr(wem_stock, key, value)
         
         # Commit the changes
@@ -1215,19 +1223,19 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     # Create DataFrame and handle any date/time fields
     df = pd.DataFrame(stocks)
     
-    # Parse the last_updated field if it exists and is a string
-    if 'last_updated' in df.columns and df['last_updated'].dtype == 'object':
-        df['last_updated'] = pd.to_datetime(df['last_updated'])
-        df['last_updated'] = df['last_updated'].dt.strftime('%Y-%m-%d %H:%M')
+    # Keep last_updated in ISO format, only format for display in the column config
     
     # Format numeric columns with specified formatting rules
     def format_number(x, col_name):
         """Format numbers with max digits and minimum 2 decimal places"""
-        if pd.isna(x):
-            return x
+        if pd.isna(x) or x is None:
+            return "—"  # Em dash for missing data (more elegant than blank)
         
         # Convert to float to ensure we can format it
-        num_val = float(x)
+        try:
+            num_val = float(x)
+        except (ValueError, TypeError):
+            return "—"  # Em dash for non-numeric data
         
         # Special handling for percentage columns
         if col_name in ['wem_spread', 'delta_range_pct']:
@@ -1386,13 +1394,15 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
         # Rename index with pretty names
         df.index = [column_display_names.get(idx, idx.replace('_', ' ').title()) for idx in df.index]
         
-        # Configure columns - each stock symbol is a column
+        # Configure columns - each stock symbol is a column (including those with missing data)
         stock_symbols = original_df['symbol'].tolist()
         for symbol in stock_symbols:
+            # For horizontal layout, all stock columns are text type to ensure proper em-dash alignment
             columns.append({
                 "field": symbol,
                 "headerName": symbol,
-                "width": 80  # Reduced from 120 to 80 (1/3 smaller)
+                "width": 80,  # Reduced from 120 to 80 (1/3 smaller)
+                "type": "text"  # Explicitly set as text to avoid right-alignment of em-dashes
             })
     else:  # vertical layout
         # Configure columns - each metric is a column with proper formatting
@@ -1426,6 +1436,48 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     
     logger.info(f"Created table with {df.shape[0]} rows, {df.shape[1]} columns")
     return {"df": df, "columns": columns}
+
+def create_stub_wem_record(symbol: str) -> Dict[str, Any]:
+    """
+    Create a stub WEM record for stocks where calculation failed.
+    This ensures the stock appears in the table with its symbol visible.
+    
+    Args:
+        symbol: Stock symbol
+        
+    Returns:
+        dict: Stub WEM record with symbol and None values for metrics
+    """
+    return {
+        'symbol': symbol,
+        'is_default': None,  # Will be preserved from existing record
+        'atm_price': None,
+        'straddle': None,
+        'strangle': None,
+        'wem_points': None,
+        'wem_spread': None,
+        'expected_range_low': None,
+        'expected_range_high': None,
+        'atm_strike': None,
+        'itm_call_strike': None,
+        'itm_put_strike': None,
+        'straddle_strangle': None,
+        'delta_16_plus': None,
+        'delta_16_minus': None,
+        'delta_range': None,
+        'delta_range_pct': None,
+        'straddle_2': None,
+        'straddle_1': None,
+        'delta_validation_status': "none",  # Use "none" instead of None for display
+        'delta_validation_message': "Market data unavailable",
+        'notes': "Calculation failed - market data unavailable",
+        'meta_data': {
+            'calculation_timestamp': datetime.utcnow().isoformat(),
+            'calculation_failed': True,
+            'failure_reason': 'Market data unavailable or calculation error',
+            'stub_record': True
+        }
+    }
 
 def update_all_wem_stocks(session: Session, regular_hours_only: bool = False, use_friday_close: bool = True, wem_logger=None) -> bool:
     """
@@ -1477,16 +1529,111 @@ def update_all_wem_stocks(session: Session, regular_hours_only: bool = False, us
                     log.error(f"Failed to update {stock.symbol}")
                     error_count += 1
             else:
-                log.warning(f"No market data available for {stock.symbol}")
-                error_count += 1
+                # Create stub record for failed calculation
+                log.warning(f"Creating stub record for {stock.symbol} - market data unavailable")
+                stub_data = create_stub_wem_record(stock.symbol)
+                if update_wem_stock(session, stub_data):
+                    log.info(f"Successfully created stub record for {stock.symbol}")
+                    # Don't count as success since it's incomplete data, but count as processed
+                    error_count += 1
+                else:
+                    log.error(f"Failed to save stub record for {stock.symbol}")
+                    error_count += 1
             
         except Exception as e:
             error_msg = f"Error calculating WEM for {stock.symbol}: {str(e)}"
             log.error(error_msg, exc_info=True)
+            # Create stub record for exception cases too
+            try:
+                stub_data = create_stub_wem_record(stock.symbol)
+                if update_wem_stock(session, stub_data):
+                    log.info(f"Created stub record for {stock.symbol} after exception")
+            except Exception as stub_error:
+                log.error(f"Failed to create stub record for {stock.symbol}: {stub_error}")
             error_count += 1
+    
+    # Clear newly added stocks tracking since we've updated everything
+    if hasattr(st.session_state, 'newly_added_stocks'):
+        st.session_state.newly_added_stocks.clear()
+        log.info("Cleared newly added stocks tracking after update")
     
     log.info(f"WEM update completed: {success_count} succeeded, {error_count} failed")
     return success_count > 0
+
+def check_export_validation(wem_stocks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Check for export validation issues: newly added stocks and stale data.
+    
+    Args:
+        wem_stocks: List of WEM stock dictionaries
+        
+    Returns:
+        dict: Validation results with warnings and recommended actions
+    """
+    validation_result = {
+        'has_warnings': False,
+        'newly_added_count': 0,
+        'stale_data_count': 0,
+        'stale_symbols': [],
+        'warning_type': None,  # 'new_stocks', 'stale_data', 'both'
+        'message': '',
+        'actions': []
+    }
+    
+    # Check for newly added stocks without WEM data
+    newly_added_stocks = getattr(st.session_state, 'newly_added_stocks', set())
+    if newly_added_stocks:
+        validation_result['newly_added_count'] = len(newly_added_stocks)
+        validation_result['has_warnings'] = True
+    
+    # Check for stale data (older than 1 week)
+    week_ago = datetime.now() - timedelta(weeks=1)
+    stale_symbols = []
+    
+    for stock in wem_stocks:
+        last_updated = stock.get('last_updated')
+        if last_updated:
+            try:
+                # Parse ISO format only (everything should be in ISO format now)
+                if isinstance(last_updated, str):
+                    update_time = datetime.fromisoformat(last_updated.replace('Z', '+00:00'))
+                elif isinstance(last_updated, datetime):
+                    update_time = last_updated
+                else:
+                    continue  # Skip if unexpected type
+                
+                # Make timezone-naive for comparison
+                if hasattr(update_time, 'tzinfo') and update_time.tzinfo:
+                    update_time = update_time.replace(tzinfo=None)
+                
+                if update_time < week_ago:
+                    stale_symbols.append(stock['symbol'])
+                    
+            except Exception as e:
+                logger.warning(f"Could not parse last_updated for {stock.get('symbol', 'unknown')}: {e}")
+                # Treat unparseable dates as stale to be safe
+                stale_symbols.append(stock.get('symbol', 'unknown'))
+    
+    if stale_symbols:
+        validation_result['stale_data_count'] = len(stale_symbols)
+        validation_result['stale_symbols'] = stale_symbols
+        validation_result['has_warnings'] = True
+    
+    # Determine warning type and message
+    if validation_result['newly_added_count'] > 0 and validation_result['stale_data_count'] > 0:
+        validation_result['warning_type'] = 'both'
+        validation_result['message'] = f"New ticker symbols have been added and {len(stale_symbols)} stocks have data older than 1 week. Update recommended before export."
+        validation_result['actions'] = ['Update', 'Proceed Anyway', 'Cancel']
+    elif validation_result['newly_added_count'] > 0:
+        validation_result['warning_type'] = 'new_stocks'
+        validation_result['message'] = "New ticker symbols have been added, however, market data has not been updated. Are you sure you wish to continue?"
+        validation_result['actions'] = ['Update', 'Cancel']
+    elif validation_result['stale_data_count'] > 0:
+        validation_result['warning_type'] = 'stale_data'
+        validation_result['message'] = f"{len(stale_symbols)} stocks have data older than 1 week. Update recommended before export."
+        validation_result['actions'] = ['Update', 'Proceed Anyway', 'Cancel']
+    
+    return validation_result
 
 def setup_logging():
     """Set up logging for the WEM module"""
@@ -2166,169 +2313,121 @@ def main():
         # Stock management section
         st.subheader("Stock Management")
         
-        # Add stock section
-        st.write("**Add New Stock**")
+        # Unified add stock section
+        st.write("**Add Stocks**")
         
-        # Bulk add option
-        with st.expander("Bulk Add Stocks", expanded=False):
-            st.write("Add multiple stocks at once (comma or space separated)")
-            bulk_symbols = st.text_area(
+        # Single text area that handles both single and multiple stocks
+        with st.form("add_stocks_form"):
+            stock_symbols = st.text_area(
                 "Stock Symbols",
-                placeholder="SPY, QQQ, TSLA, META, NVDA, AAPL, GOOGL, MSFT, OSCR, LRCX, SMR, RDDT, ADBE, CHWY, SOFI, ARM",
-                height=80,
-                key="bulk_symbols"
-            )
-            bulk_is_default = st.checkbox("Add as Default Stocks", key="bulk_default")
-            auto_select_new = st.checkbox(
-                "Auto-select new stocks for display", 
-                value=True, 
-                key="auto_select_bulk",
-                help="Automatically add newly added stocks to the current display selection"
+                placeholder="Enter one or more symbols (e.g., AAPL or SPY, QQQ, TSLA, META, NVDA)",
+                height=68,
+                key="stock_symbols_input",
+                help="Enter single symbol (AAPL) or multiple symbols separated by commas/spaces"
             )
             
-            if st.button("Add Multiple Stocks", type="primary"):
-                if bulk_symbols:
-                    try:
-                        # Parse symbols from text (handle commas, spaces, newlines)
-                        import re
-                        symbols_to_add = re.findall(r'[A-Za-z]+', bulk_symbols.upper())
-                        symbols_to_add = list(set(symbols_to_add))  # Remove duplicates
-                        
-                        if not symbols_to_add:
-                            st.warning("No valid stock symbols found in input")
-                        else:
-                            with get_db_connection() as db_session:
-                                added_count = 0
-                                skipped_count = 0
-                                error_count = 0
-                                newly_added_symbols = []  # Track newly added symbols for auto-selection
-                                
-                                # Progress bar for bulk operations
+            col1, col2 = st.columns(2)
+            with col1:
+                is_default = st.checkbox("Add as Default Stocks", key="add_default")
+            with col2:
+                auto_select = st.checkbox(
+                    "Auto-select for display", 
+                    value=True, 
+                    key="auto_select",
+                    help="Automatically add newly added stocks to the current display selection"
+                )
+            
+            submit_button = st.form_submit_button("Add Stocks", type="primary")
+            
+            if submit_button and stock_symbols:
+                try:
+                    # Parse symbols from text (handle commas, spaces, newlines)
+                    import re
+                    symbols_to_add = re.findall(r'[A-Za-z]+', stock_symbols.upper())
+                    symbols_to_add = list(set(symbols_to_add))  # Remove duplicates
+                    
+                    if not symbols_to_add:
+                        st.warning("No valid stock symbols found in input")
+                    else:
+                        with get_db_connection() as db_session:
+                            added_count = 0
+                            skipped_count = 0
+                            error_count = 0
+                            newly_added_symbols = []  # Track newly added symbols
+                            
+                            # Show progress for multiple stocks
+                            if len(symbols_to_add) > 1:
                                 progress_bar = st.progress(0)
                                 status_text = st.empty()
-                                
-                                for i, symbol in enumerate(symbols_to_add):
+                            
+                            for i, symbol in enumerate(symbols_to_add):
+                                if len(symbols_to_add) > 1:
                                     status_text.text(f"Processing {symbol}... ({i+1}/{len(symbols_to_add)})")
                                     progress_bar.progress((i + 1) / len(symbols_to_add))
-                                    
-                                    try:
-                                        # Check if stock already exists
-                                        existing = db_session.query(WEMStock).filter_by(symbol=symbol).first()
-                                        if existing:
-                                            logger.info(f"Stock {symbol} already exists, skipping")
-                                            skipped_count += 1
-                                        else:
-                                            add_wem_stock(db_session, symbol, bulk_is_default)
-                                            logger.info(f"Added {symbol} to WEM stocks")
-                                            added_count += 1
-                                            newly_added_symbols.append(symbol)  # Track for auto-selection
-                                            
-                                            # Calculate WEM values for the new stock
-                                            try:
-                                                new_data = calculate_expected_move(db_session, {'symbol': symbol}, regular_hours_only, use_friday_close)
-                                                if new_data:
-                                                    update_data = {'symbol': symbol, **new_data}
-                                                    update_wem_stock(db_session, update_data)
-                                                    logger.info(f"WEM data calculated for {symbol}")
-                                            except Exception as calc_error:
-                                                logger.warning(f"Failed to calculate WEM for {symbol}: {calc_error}")
-                                                # Continue adding other stocks even if WEM calculation fails
-                                    except Exception as stock_error:
-                                        logger.error(f"Error adding stock {symbol}: {stock_error}")
-                                        error_count += 1
                                 
-                                # Clear progress indicators
+                                try:
+                                    # Check if stock already exists
+                                    existing = db_session.query(WEMStock).filter_by(symbol=symbol).first()
+                                    if existing:
+                                        logger.info(f"Stock {symbol} already exists, skipping")
+                                        skipped_count += 1
+                                    else:
+                                        add_wem_stock(db_session, symbol, is_default)
+                                        logger.info(f"Added {symbol} to WEM stocks")
+                                        added_count += 1
+                                        newly_added_symbols.append(symbol)
+                                        
+                                        # Track newly added stocks for export validation
+                                        st.session_state.newly_added_stocks.add(symbol)
+                                        
+                                except Exception as stock_error:
+                                    logger.error(f"Error adding stock {symbol}: {stock_error}")
+                                    error_count += 1
+                            
+                            # Clear progress indicators if shown
+                            if len(symbols_to_add) > 1:
                                 progress_bar.empty()
                                 status_text.empty()
-                                
-                                # Auto-select newly added stocks if requested
-                                if auto_select_new and newly_added_symbols:
-                                    # Initialize selected_symbols if it doesn't exist
-                                    if 'selected_symbols' not in st.session_state:
-                                        st.session_state.selected_symbols = []
-                                    
-                                    # Add newly added symbols to current selection (avoid duplicates)
-                                    current_selection = set(st.session_state.selected_symbols)
-                                    new_symbols_set = set(newly_added_symbols)
-                                    updated_selection = list(current_selection.union(new_symbols_set))
-                                    st.session_state.selected_symbols = updated_selection
-                                    
-                                    logger.info(f"Auto-selected {len(newly_added_symbols)} newly added stocks for display")
-                                
-                                # Show summary
-                                if added_count > 0:
-                                    data_source_text = "Friday Close" if use_friday_close else "Most Recent"
-                                    pricing_mode_text = "regular hours" if regular_hours_only else "extended hours"
-                                    st.success(f"✅ Added {added_count} new stocks with WEM data using {data_source_text} data ({pricing_mode_text} pricing)")
-                                    
-                                    if auto_select_new and newly_added_symbols:
-                                        st.success(f"🎯 Auto-selected {len(newly_added_symbols)} new stocks for display: {', '.join(newly_added_symbols)}")
-                                
-                                if skipped_count > 0:
-                                    st.info(f"ℹ️ Skipped {skipped_count} stocks (already exist)")
-                                if error_count > 0:
-                                    st.warning(f"⚠️ Failed to add {error_count} stocks (check logs)")
-                                
-                                if added_count > 0:
-                                    time.sleep(1)
-                                    st.rerun()
-                                    
-                    except Exception as e:
-                        st.error(f"Error processing bulk symbols: {str(e)}")
-                        logger.exception("Error in bulk add operation")
-        
-        # Single add option
-        with st.form("add_stock_form"):
-            new_symbol = st.text_input("Stock Symbol", key="new_stock_symbol")
-            is_default = st.checkbox("Add as Default Stock", key="new_stock_default")
-            auto_select_single = st.checkbox(
-                "Auto-select for display", 
-                value=True, 
-                key="auto_select_single",
-                help="Automatically add this stock to the current display selection"
-            )
-            
-            submit_button = st.form_submit_button("Add Single Stock")
-            
-            if submit_button and new_symbol:
-                try:
-                    symbol = new_symbol.strip().upper()
-                    with get_db_connection() as db_session:
-                        # Check if stock already exists
-                        existing = db_session.query(WEMStock).filter_by(symbol=symbol).first()
-                        if existing:
-                            st.warning(f"Stock {symbol} already exists. Not adding.")
-                        else:
-                            add_wem_stock(db_session, symbol, is_default)
-                            st.success(f"Added {symbol} to WEM stocks")
                             
-                            # Auto-select the new stock if requested
-                            if auto_select_single:
+                            # Auto-select newly added stocks if requested
+                            if auto_select and newly_added_symbols:
                                 # Initialize selected_symbols if it doesn't exist
                                 if 'selected_symbols' not in st.session_state:
                                     st.session_state.selected_symbols = []
                                 
-                                # Add to current selection if not already there
-                                if symbol not in st.session_state.selected_symbols:
-                                    st.session_state.selected_symbols.append(symbol)
-                                    st.success(f"🎯 Auto-selected {symbol} for display")
+                                # Add newly added symbols to current selection (avoid duplicates)
+                                current_selection = set(st.session_state.selected_symbols)
+                                new_symbols_set = set(newly_added_symbols)
+                                updated_selection = list(current_selection.union(new_symbols_set))
+                                st.session_state.selected_symbols = updated_selection
+                                
+                                logger.info(f"Auto-selected {len(newly_added_symbols)} newly added stocks for display")
                             
-                            # Calculate WEM values for the new stock
-                            with st.spinner(f"Calculating WEM for {symbol}..."):
-                                new_data = calculate_expected_move(db_session, {'symbol': symbol}, regular_hours_only, use_friday_close)
-                                if new_data:
-                                    update_data = {'symbol': symbol, **new_data}
-                                    update_wem_stock(db_session, update_data)
-                                    data_source_text = "Friday Close" if use_friday_close else "Most Recent"
-                                    pricing_mode_text = "regular hours" if regular_hours_only else "extended hours"
-                                    st.success(f"WEM data calculated for {symbol} using {data_source_text} data with {pricing_mode_text} pricing")
-                    
-                    # Rerun to show the new stock
-                    time.sleep(0.5)
-                    st.rerun()
+                            # Show summary
+                            if added_count > 0:
+                                symbols_text = ', '.join(newly_added_symbols)
+                                if len(newly_added_symbols) == 1:
+                                    st.success(f"✅ Added {symbols_text} to WEM stocks")
+                                else:
+                                    st.success(f"✅ Added {added_count} new stocks: {symbols_text}")
+                                
+                                if auto_select and newly_added_symbols:
+                                    st.success(f"🎯 Auto-selected new stocks for display")
+                                
+                                st.info("💡 Remember to click 'Update WEM Data' to calculate market data for new stocks")
+                            
+                            if skipped_count > 0:
+                                st.info(f"ℹ️ Skipped {skipped_count} stocks (already exist)")
+                            if error_count > 0:
+                                st.warning(f"⚠️ Failed to add {error_count} stocks (check logs)")
+                            
+                            if added_count > 0:
+                                time.sleep(0.5)
+                                st.rerun()
+                                
                 except Exception as e:
-                    st.error(f"Error adding stock: {str(e)}")
-                    logger.exception(f"Error adding stock {new_symbol}")
+                    st.error(f"Error processing symbols: {str(e)}")
+                    logger.exception("Error in add stocks operation")
         
         # Remove stock section
         st.write("**Remove Stock**")
@@ -2706,11 +2805,32 @@ def main():
                 symbols=symbols
             )
             
+            # Debug logging for missing stocks
+            if symbols:
+                found_symbols = {stock['symbol'] for stock in wem_stocks}
+                missing_symbols = set(symbols) - found_symbols
+                if missing_symbols:
+                    logger.warning(f"Selected symbols not found in database: {missing_symbols}")
+                    logger.info(f"Found symbols: {found_symbols}")
+                    logger.info(f"Selected symbols: {set(symbols)}")
+            
             if not wem_stocks:
                 st.warning("No WEM data found. Please update the data first.")
             else:
                 # Convert to list of dictionaries
                 stocks_data = wem_stocks  # Already a list of dictionaries
+                
+                # If there are selected symbols that aren't in the data, add stub records for them
+                if symbols:
+                    found_symbols = {stock['symbol'] for stock in stocks_data}
+                    missing_symbols = set(symbols) - found_symbols
+                    if missing_symbols:
+                        logger.info(f"Adding stub display records for missing symbols: {missing_symbols}")
+                        for missing_symbol in missing_symbols:
+                            stub_display_record = create_stub_wem_record(missing_symbol)
+                            # Add last_updated in ISO format to match database records
+                            stub_display_record['last_updated'] = datetime.utcnow().isoformat()
+                            stocks_data.append(stub_display_record)
                 
                 # Create WEM table
                 wem_df = create_wem_table(stocks_data, layout=layout, metrics=selected_metrics, sig_figs=sig_figs, max_digits=max_digits)
@@ -2719,54 +2839,127 @@ def main():
         logger.exception("Error getting WEM data")
         wem_df = None
     
-    # Handle export request from sidebar
-    if hasattr(st.session_state, 'export_requested') and st.session_state.export_requested and wem_df is not None:
+    # Handle export request from sidebar with validation
+    if hasattr(st.session_state, 'export_requested') and st.session_state.export_requested:
         st.session_state.export_requested = False  # Reset the flag
         
-        with st.spinner("Preparing export..."):
-            try:
-                # Get the current timestamp for the filename
-                timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M")
-                export_format = getattr(st.session_state, 'export_format', 'CSV')
+        if wem_df is None:
+            st.error("No data available to export. Please update the WEM data first.")
+        else:
+            # Check for export validation issues
+            validation = check_export_validation(wem_stocks if 'wem_stocks' in locals() else [])
+            
+            if validation['has_warnings']:
+                # Show validation warning dialog
+                st.warning("⚠️ Export Validation Warning")
+                st.write(validation['message'])
                 
-                if export_format == "CSV":
-                    # Export to CSV
-                    csv_path = f"./data/exports/{timestamp}_export.csv"
-                    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-                    
-                    wem_df['df'].to_csv(csv_path)
-                    st.success(f"Data exported to {csv_path}")
-                    
-                else:  # Excel
-                    # Export to Excel with template formatting
-                    excel_path = f"./data/exports/{timestamp}_export.xlsx"
-                    os.makedirs(os.path.dirname(excel_path), exist_ok=True)
-                    
-                    try:
-                        export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp)
-                        st.success(f"Data exported to {excel_path}")
-                    except Exception as export_error:
-                        logger.exception("Formatted Excel export failed, falling back to basic export")
-                        # Fallback to basic Excel export if formatted export fails
-                        with pd.ExcelWriter(excel_path) as writer:
-                            wem_df['df'].to_excel(writer, sheet_name='WEM Data')
-                            
-                            # Write notes to second sheet
-                            notes_df = pd.DataFrame({
-                                "Note": ["Generated by Goldflipper WEM Module", 
-                                         f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                                         f"Symbols: {', '.join(symbols) if symbols else 'All'}"]
-                            })
-                            notes_df.to_excel(writer, sheet_name='Notes', index=False)
+                # Show additional details for stale data
+                if validation['stale_symbols']:
+                    with st.expander("View stale data details", expanded=False):
+                        st.write(f"**Stocks with data older than 1 week:** {', '.join(validation['stale_symbols'])}")
+                
+                # Show action buttons based on warning type
+                col_count = len(validation['actions'])
+                cols = st.columns(col_count)
+                
+                with cols[0]:  # Update button (always first)
+                    if st.button("🔄 Update Data", type="primary", key="export_update"):
+                        # Trigger WEM data update
+                        with st.spinner("Updating WEM data..."):
+                            try:
+                                session_logger = setup_wem_logging()
+                                data_source_text = "Friday Close" if st.session_state.get('use_friday_close', True) else "Most Recent"
+                                pricing_mode_text = "regular hours" if st.session_state.get('regular_hours_only', False) else "extended hours"
+                                session_logger.info(f"Starting WEM data update from export validation using {data_source_text} data with {pricing_mode_text} pricing...")
+                                
+                                with get_db_connection() as db_session:
+                                    update_all_wem_stocks(db_session, st.session_state.get('regular_hours_only', False), 
+                                                         st.session_state.get('use_friday_close', True), session_logger)
+                                
+                                session_logger.info(f"WEM data update completed from export validation")
+                                st.success("✅ Data updated successfully! Export will proceed automatically.")
+                                
+                                # Set flag to proceed with export after update
+                                st.session_state.export_after_update = True
+                                time.sleep(1)
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error(f"Update failed: {str(e)}")
+                                if 'session_logger' in locals():
+                                    session_logger.exception("WEM update error during export validation")
+                
+                # Proceed Anyway button (for stale data warnings)
+                if 'Proceed Anyway' in validation['actions']:
+                    with cols[1 if col_count == 3 else -1]:
+                        if st.button("⚠️ Proceed Anyway", type="secondary", key="export_proceed"):
+                            st.session_state.export_forced = True
+                            st.rerun()
+                
+                # Cancel button (always last)
+                with cols[-1]:
+                    if st.button("❌ Cancel", key="export_cancel"):
+                        st.info("Export cancelled.")
+                        st.stop()
                         
-                        st.success(f"Data exported to {excel_path} (basic format)")
-            except Exception as e:
-                st.error(f"Export failed: {str(e)}")
-                logger.exception("Export error")
-    
-    elif hasattr(st.session_state, 'export_requested') and st.session_state.export_requested and wem_df is None:
-        st.session_state.export_requested = False  # Reset the flag
-        st.error("No data available to export. Please update the WEM data first.")
+                # Don't proceed with export if we showed warnings
+                st.stop()
+            
+            # Check if we should proceed after update or forced export
+            proceed_with_export = (
+                not validation['has_warnings'] or 
+                st.session_state.get('export_after_update', False) or 
+                st.session_state.get('export_forced', False)
+            )
+            
+            # Clear the flags
+            if 'export_after_update' in st.session_state:
+                del st.session_state.export_after_update
+            if 'export_forced' in st.session_state:
+                del st.session_state.export_forced
+            
+            if proceed_with_export:
+                with st.spinner("Preparing export..."):
+                    try:
+                        # Get the current timestamp for the filename
+                        timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M")
+                        export_format = getattr(st.session_state, 'export_format', 'CSV')
+                        
+                        if export_format == "CSV":
+                            # Export to CSV
+                            csv_path = f"./data/exports/{timestamp}_export.csv"
+                            os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+                            
+                            wem_df['df'].to_csv(csv_path)
+                            st.success(f"Data exported to {csv_path}")
+                            
+                        else:  # Excel
+                            # Export to Excel with template formatting
+                            excel_path = f"./data/exports/{timestamp}_export.xlsx"
+                            os.makedirs(os.path.dirname(excel_path), exist_ok=True)
+                            
+                            try:
+                                export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp)
+                                st.success(f"Data exported to {excel_path}")
+                            except Exception as export_error:
+                                logger.exception("Formatted Excel export failed, falling back to basic export")
+                                # Fallback to basic Excel export if formatted export fails
+                                with pd.ExcelWriter(excel_path) as writer:
+                                    wem_df['df'].to_excel(writer, sheet_name='WEM Data')
+                                    
+                                    # Write notes to second sheet
+                                    notes_df = pd.DataFrame({
+                                        "Note": ["Generated by Goldflipper WEM Module", 
+                                                 f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                                                 f"Symbols: {', '.join(symbols) if symbols else 'All'}"]
+                                    })
+                                    notes_df.to_excel(writer, sheet_name='Notes', index=False)
+                                
+                                st.success(f"Data exported to {excel_path} (basic format)")
+                    except Exception as e:
+                        st.error(f"Export failed: {str(e)}")
+                        logger.exception("Export error")
 
     # Display the table if data is available
     if 'wem_df' in locals() and wem_df is not None:
@@ -3053,6 +3246,27 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'border_color': '#D3D3D3'
         })
         
+        # Center-aligned formats for em-dashes (missing data)
+        center_format = workbook.add_format({
+            'font_name': 'Aptos Narrow',
+            'font_size': 11,
+            'align': 'center',
+            'font_color': 'black',
+            'bg_color': 'white',
+            'border': 1,
+            'border_color': '#D3D3D3'
+        })
+        
+        center_format_alt = workbook.add_format({
+            'font_name': 'Aptos Narrow',
+            'font_size': 11,
+            'align': 'center',
+            'font_color': 'black',
+            'bg_color': alt_color_2,
+            'border': 1,
+            'border_color': '#D3D3D3'
+        })
+        
         # Notes header format (xl75 equivalent)
         notes_header_format = workbook.add_format({
             'font_name': 'Aptos Narrow',
@@ -3150,19 +3364,24 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
                         if symbol in row_data.index:
                             value = row_data[symbol]
                             if pd.notna(value):
-                                # Apply appropriate formatting with alternating colors
-                                base_format, alt_format = metric_formats[metric_display_name]
-                                cell_format = alt_format if col_idx % 2 == 1 else base_format
-                                
-                                # Convert percentage strings back to numbers for proper Excel formatting
-                                if isinstance(value, str) and '%' in value:
-                                    try:
-                                        numeric_value = float(value.replace('%', '')) / 100
-                                        worksheet.write(row_idx, col_idx + 1, numeric_value, cell_format)
-                                    except:
-                                        worksheet.write(row_idx, col_idx + 1, value, cell_format)
-                                else:
+                                # Check if value is an em-dash (missing data) - use center format
+                                if isinstance(value, str) and value == '—':
+                                    cell_format = center_format_alt if col_idx % 2 == 1 else center_format
                                     worksheet.write(row_idx, col_idx + 1, value, cell_format)
+                                else:
+                                    # Apply appropriate formatting with alternating colors
+                                    base_format, alt_format = metric_formats[metric_display_name]
+                                    cell_format = alt_format if col_idx % 2 == 1 else base_format
+                                    
+                                    # Convert percentage strings back to numbers for proper Excel formatting
+                                    if isinstance(value, str) and '%' in value:
+                                        try:
+                                            numeric_value = float(value.replace('%', '')) / 100
+                                            worksheet.write(row_idx, col_idx + 1, numeric_value, cell_format)
+                                        except:
+                                            worksheet.write(row_idx, col_idx + 1, value, cell_format)
+                                    else:
+                                        worksheet.write(row_idx, col_idx + 1, value, cell_format)
                 
                 row_idx += 1
         
@@ -3183,27 +3402,32 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
                     if field in row.index:
                         value = row[field]
                         if pd.notna(value):
-                            # Determine format based on field type with alternating colors
+                            # Check if value is an em-dash (missing data) - use center format
                             is_alt_row = row_idx % 2 == 1
                             
-                            if field in ['wem_points']:
-                                cell_format = number_format_alt if is_alt_row else number_format
-                            elif field in ['wem_spread']:
-                                cell_format = percent_format_alt if is_alt_row else percent_format
-                            elif field in ['delta_range_pct']:
-                                cell_format = percent_3dec_format_alt if is_alt_row else percent_3dec_format
-                            else:
-                                cell_format = data_format_alt if is_alt_row else data_format
-                            
-                            # Convert percentage strings back to numbers for proper Excel formatting
-                            if isinstance(value, str) and '%' in value:
-                                try:
-                                    numeric_value = float(value.replace('%', '')) / 100
-                                    worksheet.write(row_idx + 1, col_idx, numeric_value, cell_format)
-                                except:
-                                    worksheet.write(row_idx + 1, col_idx, value, cell_format)
-                            else:
+                            if isinstance(value, str) and value == '—':
+                                cell_format = center_format_alt if is_alt_row else center_format
                                 worksheet.write(row_idx + 1, col_idx, value, cell_format)
+                            else:
+                                # Determine format based on field type with alternating colors
+                                if field in ['wem_points']:
+                                    cell_format = number_format_alt if is_alt_row else number_format
+                                elif field in ['wem_spread']:
+                                    cell_format = percent_format_alt if is_alt_row else percent_format
+                                elif field in ['delta_range_pct']:
+                                    cell_format = percent_3dec_format_alt if is_alt_row else percent_3dec_format
+                                else:
+                                    cell_format = data_format_alt if is_alt_row else data_format
+                                
+                                # Convert percentage strings back to numbers for proper Excel formatting
+                                if isinstance(value, str) and '%' in value:
+                                    try:
+                                        numeric_value = float(value.replace('%', '')) / 100
+                                        worksheet.write(row_idx + 1, col_idx, numeric_value, cell_format)
+                                    except:
+                                        worksheet.write(row_idx + 1, col_idx, value, cell_format)
+                                else:
+                                    worksheet.write(row_idx + 1, col_idx, value, cell_format)
         
         # Add Notes section at the bottom
         notes_row = row_idx + 2 if 'row_idx' in locals() else len(df) + 2
