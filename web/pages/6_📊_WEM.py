@@ -57,12 +57,13 @@ HOLIDAY HANDLING:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import yaml
 import time
 import random
 from typing import Any
+from io import StringIO
 
 # Set up logging in a Streamlit-safe way
 project_root = Path(__file__).parent.parent.parent
@@ -262,7 +263,7 @@ def get_default_wem_stocks(session: Session) -> List[Dict[str, Any]]:
 def get_market_data(session: Session, symbol: str, days: int = 30) -> List[MarketData]:
     """Get recent market data for a symbol"""
     repo = MarketDataRepository(session)
-    end_time = datetime.utcnow()
+    end_time = datetime.now(timezone.utc)
     start_time = end_time - timedelta(days=days)
     return repo.get_price_history(symbol, start_time, end_time)
 
@@ -300,7 +301,7 @@ def update_market_data(session: Session, symbol: str, regular_hours_only: bool =
         # Create new market data entry
         market_data = MarketData(
             symbol=symbol,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             close=price,  # Use as close since it's current price
             source=f"{manager.provider.__class__.__name__}_{'regular' if regular_hours_only else 'extended'}"
         )
@@ -694,7 +695,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             'delta_validation_status': delta_validation_status,  # For UI highlighting
             'delta_validation_message': delta_validation_message,  # For tooltips/details
             'meta_data': {
-                'calculation_timestamp': datetime.utcnow().isoformat(),
+                'calculation_timestamp': datetime.now(timezone.utc).isoformat(),
                 'calculation_method': 'automated_full_chain_analysis',
                 'expiration_date': actual_expiration_date.isoformat(),
                 'calculated_expiration_date': next_friday.isoformat(),
@@ -816,7 +817,7 @@ def _get_from_weekly_cache(cache_key: str) -> Any:
                 if 'dataframes' in cached_item:
                     result = {}
                     for df_name, df_data in cached_item['dataframes'].items():
-                        result[df_name] = pd.read_json(df_data, orient='records')
+                        result[df_name] = pd.read_json(StringIO(df_data), orient='records')
                     return result
                 else:
                     return cached_item['data']
@@ -1472,7 +1473,7 @@ def create_stub_wem_record(symbol: str) -> Dict[str, Any]:
         'delta_validation_message': "Market data unavailable",
         'notes': "Calculation failed - market data unavailable",
         'meta_data': {
-            'calculation_timestamp': datetime.utcnow().isoformat(),
+            'calculation_timestamp': datetime.now(timezone.utc).isoformat(),
             'calculation_failed': True,
             'failure_reason': 'Market data unavailable or calculation error',
             'stub_record': True
@@ -2829,7 +2830,7 @@ def main():
                         for missing_symbol in missing_symbols:
                             stub_display_record = create_stub_wem_record(missing_symbol)
                             # Add last_updated in ISO format to match database records
-                            stub_display_record['last_updated'] = datetime.utcnow().isoformat()
+                            stub_display_record['last_updated'] = datetime.now(timezone.utc).isoformat()
                             stocks_data.append(stub_display_record)
                 
                 # Create WEM table
