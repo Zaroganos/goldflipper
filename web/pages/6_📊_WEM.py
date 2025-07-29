@@ -3120,26 +3120,28 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
         alt_color_2 = '#F8F9FA'  # Very light gray
         
         # Define formats matching the template with borders
-        # Header format for stock symbols (xl68 equivalent)
+        # Header format for stock symbols (xl68 equivalent) - slightly enhanced
         header_format = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
+            'bold': True,  # Add bold for ticker symbols
             'align': 'center',
             'valign': 'top',
             'font_color': 'black',
-            'bg_color': 'white',
+            'bg_color': '#E8E8E8',  # Light gray background to distinguish as header
             'border': 1,
             'border_color': '#D3D3D3'
         })
         
-        # Row label format (xl68 equivalent)
+        # Row label format (xl68 equivalent) - subtle header styling
         row_label_format = workbook.add_format({
             'font_name': 'Aptos Narrow', 
             'font_size': 11,
+            'bold': True,  # Add bold for metric names
             'align': 'center',
             'valign': 'top',
             'font_color': 'black',
-            'bg_color': 'white',
+            'bg_color': '#F5F5F5',  # Very light gray background
             'border': 1,
             'border_color': '#D3D3D3'
         })
@@ -3166,7 +3168,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'border_color': '#D3D3D3'
         })
         
-        # Number format with commas (xl71 equivalent)
+        # Number format with commas (xl71 equivalent) - suppress trailing zeros
         number_format = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
@@ -3175,7 +3177,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'bg_color': 'white',
             'border': 1,
             'border_color': '#D3D3D3',
-            'num_format': '#,##0'
+            'num_format': '#,##0.##'  # Suppress trailing zeros in decimals
         })
         
         number_format_alt = workbook.add_format({
@@ -3186,10 +3188,10 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'bg_color': alt_color_2,
             'border': 1,
             'border_color': '#D3D3D3',
-            'num_format': '#,##0'
+            'num_format': '#,##0.##'  # Suppress trailing zeros in decimals
         })
         
-        # Percentage format (xl72 equivalent)
+        # Percentage format (xl72 equivalent) - suppress trailing zeros
         percent_format = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
@@ -3198,7 +3200,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'bg_color': 'white',
             'border': 1,
             'border_color': '#D3D3D3',
-            'num_format': '0%'
+            'num_format': '0.##%'  # Suppress trailing zeros in percentage decimals
         })
         
         percent_format_alt = workbook.add_format({
@@ -3209,10 +3211,10 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'bg_color': alt_color_2,
             'border': 1,
             'border_color': '#D3D3D3',
-            'num_format': '0%'
+            'num_format': '0.##%'  # Suppress trailing zeros in percentage decimals
         })
         
-        # Percentage format with 3 decimals (xl73 equivalent)
+        # 3 decimal percentage format for delta range % - suppress trailing zeros
         percent_3dec_format = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
@@ -3221,7 +3223,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'bg_color': 'white',
             'border': 1,
             'border_color': '#D3D3D3',
-            'num_format': '0.000%'
+            'num_format': '0.###%'  # Suppress trailing zeros up to 3 decimal places
         })
         
         percent_3dec_format_alt = workbook.add_format({
@@ -3232,17 +3234,18 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'bg_color': alt_color_2,
             'border': 1,
             'border_color': '#D3D3D3',
-            'num_format': '0.000%'
+            'num_format': '0.###%'  # Suppress trailing zeros up to 3 decimal places
         })
         
-        # Header formats with alternating colors
+        # Header formats with alternating colors - enhanced for ticker symbols
         header_format_alt = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
+            'bold': True,  # Add bold for ticker symbols
             'align': 'center',
             'valign': 'top',
             'font_color': 'black',
-            'bg_color': alt_color_2,
+            'bg_color': '#ECECEC',  # Slightly different gray for alternating
             'border': 1,
             'border_color': '#D3D3D3'
         })
@@ -3296,6 +3299,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
         if worksheet is None:
             worksheet = workbook.add_worksheet('WEM Data')
         
+
         # Set column widths matching template
         worksheet.set_column(0, 0, 12)  # First column (labels) - wider
         for i in range(1, len(symbols) + 1):
@@ -3389,7 +3393,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
         else:  # Vertical layout
             # Write column headers with alternating colors
             for col_idx, col_info in enumerate(wem_df['columns']):
-                header_fmt = header_format_alt if col_idx % 2 == 1 else header_format
+                header_fmt = row_label_format  # Use row_label_format for metric names
                 # Update ATM column name if it exists
                 header_name = col_info['headerName']
                 if 'ATM (' in header_name and header_name != atm_label:
