@@ -1226,9 +1226,9 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     
     # Keep last_updated in ISO format, only format for display in the column config
     
-    # Format numeric columns with specified formatting rules
+    # Format numeric columns with specified formatting rules and proper significant figures
     def format_number(x, col_name):
-        """Format numbers with max digits and minimum 2 decimal places"""
+        """Format numbers with proper significant figures based on calculation type"""
         if pd.isna(x) or x is None:
             return "—"  # Em dash for missing data (more elegant than blank)
         
@@ -1238,18 +1238,49 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
         except (ValueError, TypeError):
             return "—"  # Em dash for non-numeric data
         
-        # Special handling for percentage columns
-        if col_name in ['wem_spread', 'delta_range_pct']:
-            return f"{num_val*100:.2f}%"
+        # Apply significant figures rules for calculated fields
+        calculated_addition_fields = ['wem_points', 'straddle_1', 'straddle_2', 'delta_range']
+        calculated_division_fields = ['wem_spread', 'delta_range_pct']
         
-        # For all other numeric columns, apply consistent formatting
-        # Max digits before decimal (max_digits), always show 2 decimal places minimum
-        if abs(num_val) >= 10**(max_digits):
-            # Number too large for max_digits, use scientific notation
-            return f"{num_val:.2e}"
+        if col_name in calculated_addition_fields:
+            # Addition/subtraction results: 2 decimal places
+            formatted_val = round(num_val, 2)
+            return f"{formatted_val:.2f}"
+            
+        elif col_name in calculated_division_fields:
+            # Division results (percentages): 4 significant figures
+            if num_val == 0:
+                return "0.00%"
+            
+            import math
+            # Calculate 4 significant figures for the percentage value (after converting to percentage)
+            percentage_val = num_val * 100
+            
+            if abs(percentage_val) >= 1:
+                # For percentages >= 1%, round to appropriate decimal places for 4 sig figs
+                digits = 4 - int(math.floor(math.log10(abs(percentage_val)))) - 1
+                formatted_percentage = round(percentage_val, max(0, digits))
+                
+                # Format with minimal decimal places needed
+                if formatted_percentage == int(formatted_percentage):
+                    return f"{int(formatted_percentage)}%"
+                else:
+                    return f"{formatted_percentage:.{max(0, digits)}f}%"
+            else:
+                # For percentages < 1%, ensure 4 significant figures
+                digits = 4 - int(math.floor(math.log10(abs(percentage_val)))) - 1
+                formatted_percentage = round(percentage_val, digits)
+                return f"{formatted_percentage:.{digits}f}%"
+        
         else:
-            # Standard formatting: always show 2 decimal places minimum
-            return f"{num_val:.2f}"
+            # Fetched values - use original formatting logic
+            # Max digits before decimal (max_digits), always show 2 decimal places minimum
+            if abs(num_val) >= 10**(max_digits):
+                # Number too large for max_digits, use scientific notation
+                return f"{num_val:.2e}"
+            else:
+                # Standard formatting: always show 2 decimal places minimum
+                return f"{num_val:.2f}"
     
     # Format validation status with visual indicators
     def format_validation_status(status):
@@ -3110,6 +3141,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
         timestamp: Timestamp string for notes
     """
     from goldflipper.utils.market_holidays import find_previous_friday
+    from decimal import Decimal
     
     # Create Excel writer with xlsxwriter engine for formatting
     with pd.ExcelWriter(excel_path, engine='xlsxwriter') as writer:
@@ -3191,7 +3223,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'num_format': '#,##0.##'  # Suppress trailing zeros in decimals
         })
         
-        # Percentage format (xl72 equivalent) - suppress trailing zeros
+        # Percentage format using Excel's built-in format (index 9: "0%")
         percent_format = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
@@ -3199,9 +3231,9 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'font_color': 'black',
             'bg_color': 'white',
             'border': 1,
-            'border_color': '#D3D3D3',
-            'num_format': '0.##%'  # Suppress trailing zeros in percentage decimals
+            'border_color': '#D3D3D3'
         })
+        percent_format.set_num_format(9)  # Excel built-in: "0%" format
         
         percent_format_alt = workbook.add_format({
             'font_name': 'Aptos Narrow',
@@ -3210,11 +3242,11 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'font_color': 'black',
             'bg_color': alt_color_2,
             'border': 1,
-            'border_color': '#D3D3D3',
-            'num_format': '0.##%'  # Suppress trailing zeros in percentage decimals
+            'border_color': '#D3D3D3'
         })
+        percent_format_alt.set_num_format(9)  # Excel built-in: "0%" format
         
-        # 3 decimal percentage format for delta range % - suppress trailing zeros
+        # Precise percentage format using Excel's built-in format (index 10: "0.00%")
         percent_3dec_format = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
@@ -3222,9 +3254,9 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'font_color': 'black',
             'bg_color': 'white',
             'border': 1,
-            'border_color': '#D3D3D3',
-            'num_format': '0.###%'  # Suppress trailing zeros up to 3 decimal places
+            'border_color': '#D3D3D3'
         })
+        percent_3dec_format.set_num_format(10)  # Excel built-in: "0.00%" format
         
         percent_3dec_format_alt = workbook.add_format({
             'font_name': 'Aptos Narrow',
@@ -3233,9 +3265,9 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             'font_color': 'black',
             'bg_color': alt_color_2,
             'border': 1,
-            'border_color': '#D3D3D3',
-            'num_format': '0.###%'  # Suppress trailing zeros up to 3 decimal places
+            'border_color': '#D3D3D3'
         })
+        percent_3dec_format_alt.set_num_format(10)  # Excel built-in: "0.00%" format
         
         # Header formats with alternating colors - enhanced for ticker symbols
         header_format_alt = workbook.add_format({
@@ -3314,6 +3346,8 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
             logger.warning(f"Could not determine previous Friday date: {e}")
             atm_label = 'ATM (date)'
         
+
+        
         # Determine if we're working with horizontal or vertical layout
         df = wem_df['df']
         is_horizontal = isinstance(df.index, pd.Index) and not df.index.name == 'symbol'
@@ -3378,10 +3412,13 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
                                     base_format, alt_format = metric_formats[metric_display_name]
                                     cell_format = alt_format if col_idx % 2 == 1 else base_format
                                     
-                                    # Convert percentage strings back to numbers for proper Excel formatting
+                                    # Convert percentage strings to numbers for Excel's built-in percentage formats
                                     if isinstance(value, str) and '%' in value:
                                         try:
-                                            numeric_value = float(value.replace('%', '')) / 100
+                                            percentage_text = value.replace('%', '').strip()
+                                            # Use Decimal for exact arithmetic to avoid floating point errors
+                                            percentage_decimal = Decimal(percentage_text)
+                                            numeric_value = float(percentage_decimal / Decimal('100'))
                                             worksheet.write(row_idx, col_idx + 1, numeric_value, cell_format)
                                         except:
                                             worksheet.write(row_idx, col_idx + 1, value, cell_format)
@@ -3424,10 +3461,13 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
                                 else:
                                     cell_format = data_format_alt if is_alt_row else data_format
                                 
-                                # Convert percentage strings back to numbers for proper Excel formatting
+                                # Convert percentage strings to numbers for Excel's built-in percentage formats
                                 if isinstance(value, str) and '%' in value:
                                     try:
-                                        numeric_value = float(value.replace('%', '')) / 100
+                                        percentage_text = value.replace('%', '').strip()
+                                        # Use Decimal for exact arithmetic to avoid floating point errors
+                                        percentage_decimal = Decimal(percentage_text)
+                                        numeric_value = float(percentage_decimal / Decimal('100'))
                                         worksheet.write(row_idx + 1, col_idx, numeric_value, cell_format)
                                     except:
                                         worksheet.write(row_idx + 1, col_idx, value, cell_format)
@@ -3439,7 +3479,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
         
         # Notes header spanning multiple columns
         num_cols = len(symbols) + 1 if is_horizontal else len(wem_df['columns'])
-        worksheet.merge_range(notes_row, 0, notes_row, num_cols - 1, 'Notes', notes_header_format)
+        worksheet.merge_range(notes_row, 1, notes_row, num_cols - 1, 'Notes', notes_header_format)
         
         # Notes content
         current_datetime = datetime.now()
@@ -3447,7 +3487,15 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
         current_time = current_datetime.strftime('%H:%M')
         notes_content = f"Generated by Goldflipper WEM Module on {current_date} at {current_time}.\n\n1.)"
         
-        worksheet.merge_range(notes_row + 1, 0, notes_row + 5, num_cols - 1, notes_content, notes_content_format)
+        worksheet.merge_range(notes_row + 1, 1, notes_row + 5, num_cols - 1, notes_content, notes_content_format)
+        
+        # Use standard freeze panes for the data table only
+        if is_horizontal:
+            # Freeze the first column (metric labels) for horizontal scrolling
+            worksheet.freeze_panes(1, 1)
+        else:
+            # Freeze the first row (column headers) for vertical scrolling
+            worksheet.freeze_panes(1, 0)
         
         # Set row heights
         worksheet.set_default_row(15)  # 15pt row height matching template
