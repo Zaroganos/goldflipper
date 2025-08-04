@@ -19,107 +19,193 @@ The project is roughly organized into the following directories:
 ```
 goldflipper/
 ├── config/                     # Configuration files and settings
-│   └── config.py
+│   ├── config.py              # Configuration management
+│   └── settings_template.yaml # Configuration template
 ├── data/                      # Data handling modules
 │   ├── greeks/               # Options Greeks calculations
 │   ├── indicators/           # Technical indicators
-│   ├── market/               # Market data handling
-│   │   └── providers/        # Market data providers (Alpaca, yfinance)
+│   ├── market/               # Market data handling and management
+│   │   ├── manager.py        # Market data coordination
+│   │   ├── operations.py     # Business logic operations
+│   │   ├── cache.py          # Data caching system
+│   │   └── providers/        # Market data provider integrations
 │   └── ta/                   # Technical analysis tools
-├── logging/                   # Logging functionality
-│   └── logs/                 # Application logs
-├── plays/                     # Trading plays management
-│   ├── closed/               # Closed trading positions
+├── chart/                     # Charting and visualization
+├── logging/                   # Comprehensive logging system
+│   ├── trade_logger.py       # Core trade logging functionality
+│   ├── trade_logger_ui.py    # Trade logger user interface
+│   └── logs/                 # Application logs storage
+├── plays/                     # Trading plays management (state-based), pre-DB
+│   ├── closed/               # Completed trading positions
 │   ├── expired/              # Expired options
 │   ├── new/                  # New trading opportunities
-│   ├── open/                 # Currently open positions
+│   ├── open/                 # Currently active positions
 │   ├── pending-closing/      # Positions pending closure
 │   ├── pending-opening/      # Positions pending opening
-│   └── temp/                 # Temporary play storage
+│   ├── old/                  # Archived plays
+│   └── temp/                 # Temporary/OSO plays
+├── tools/                     # User-accessible toolkit
+│   ├── auto_play_creator.py  # Automated play generation (for testing purposes)
+│   ├── play_creation_tool.py # Interactive play creation
+│   ├── play-edit-tool.py     # Advanced play editing with safety features
+│   ├── view_plays.py         # Play viewing and management
+│   ├── option_data_fetcher.py # Options data retrieval
+│   ├── get_alpaca_info.py    # Alpaca account information
+│   ├── system_status.py      # System health monitoring
+│   ├── configuration.py      # Configuration management
+│   └── [multiple other tools] # JSON processing, CSV ingestion, etc.
+├── utils/                     # General utility functions
+├── watchdog/                  # System monitoring and health checks
+├── state/                     # System state management and persistence
+├── strategy/                  # Trading strategy definitions
 ├── reference/                 # Reference materials and templates
-├── state/                     # System state management
-├── strategy/                  # Trading strategies
-├── tools/                     # Utility tools
-│   ├── auto_play_creator.py
-│   ├── configuration.py
-│   ├── play_creation_tool.py
-│   └── system_status.py
-├── utils/                     # Utility functions
-├── watchdog/                  # System monitoring
-├── src/                       # Source code
-│   ├── service/              # Service management
-│   └── state/                # State management
-└── tests/                     # Test suite
+├── src/                       # Windows Service code
+│   ├── service/              # Windows service integration
+│   └── state/                # State management components
+└── tests/                     # Test suites and validations
 ```
 
 ## Getting Started
 
 ### Prerequisites
 
-Before you start, ensure you have the following installed on your system:
+Before you start, ensure you have the following:
 
-- Python 3.8 or higher
-- An Alpaca Markets account
-- Required Python libraries listed in requirements.txt
+- **Alpaca Markets account** for brokerage access; multi-broker support is planned with v2
+- **Windows OS** (required for service functionality and batch files); multi-OS support is planned with v2
+- **Git** (required for cloning the repository and keeping it up to date)
+- **Python 3.8 or higher** (Python 3.10+ recommended)
+- **Python libraries** (see Installation section); strongly recommended to use a virtual environment to avoid dependency conflicts. Consider using Poetry as well (directions to be added in time)
+- **Market Data Provider account(s)** (required if not using market data from brokerage):
+  - Yahoo Finance (free, built-in support via yfinance)
 
 ### Installation
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
+1. **Clone the repository:**
+```cmd
+git clone https://github.com/Zaroganos/goldflipper.git
 cd goldflipper
 ```
 
-2. Install the required libraries:
-```bash
+2. **Install Python dependencies:**
+```cmd
 pip install -r requirements.txt
 ```
 
-3. Configure your API keys:
-   - Modify the settings.yaml file with your Alpaca API keys and market data provider API keys
-   - Set up your trading and operating parameters as well
+**Note**: You can also install in development mode using setup.py via:
+```cmd
+pip install -e .
+```
+
+3. **Initial Setup and Configuration:**
+   - Run the system once to generate the configuration template, or upload your existing configuration file if you have one.
+   - This creates `goldflipper/config/settings.yaml` from the template
+   - Edit `settings.yaml` with your API keys and preferences:
+     - **Alpaca API Keys**: Get from [Alpaca Markets](https://app.alpaca.markets)
+     - **Market Data Provider API Keys**: Get from your choice of supported providers. (Currently limited to MarketDataApp)
+     - **Trading parameters**: Set your desired values for risk management, trading behavior, etc.
+     - **System preferences**: Logging levels, watchdog settings, etc.
 
 ### Running the System
 
-The system can be launched in several ways:
+Goldflipper offers multiple interfaces and execution modes:
 
-1. Using the desktop shortcut (recommended):
-   - Double-click the Goldflipper desktop shortcut
-
-2. Using the batch files:
-   - `launch_goldflipper.bat` - Launches the main application (default)
-   - `run_console.bat` - Launches in console mode
-   - `install_service.bat` - Installs the system as a Windows service (experimental)
-
-3. Direct Python execution:
-```bash
-python goldflipper/run.py
+#### 1. **TUI Interface (Recommended)**
+The modern Text User Interface provides an intuitive way to interact with all system features:
+- Double-click the Goldflipper desktop shortcut, or:
+```cmd
+python goldflipper\goldflipper_tui.py
 ```
+
+#### 2. **Console Mode**
+
+#### 3. **Windows Service Mode**
 
 ## Key Features
 
-- Options Greeks calculations and analysis
-- Technical indicators and market data processing
-- Automated trading play creation and management
-- Real-time market data integration with Alpaca
-- System state management and monitoring
-- Comprehensive logging and error tracking
-- Windows service integration for automated operation
+### 🎯 **Core Trading System**
+- **Semi-autonomous options trading** with rules-based execution
+- **Advanced play management** with state-based workflow (new → pending → open → closed)
+- **Multiple order types**: Market, limit at bid/ask/mid/last, contingency orders
+- **Risk management**: Take profit, stop loss, and contingency stop loss orders
+- **Real-time monitoring** with continuous play evaluation
 
-## Directory Overview
+### 📊 **Market Data & Analysis**
+- **Multiple data providers** with automatic failover:
+- **Complete Options Greeks calculations**: Delta, Gamma, Theta, Vega, Rho, and 15+ advanced Greeks
+- **Technical indicators**: EMA, MACD, TTM Squeeze, and custom indicators
+- **Interactive charting** with candlestick charts and overlay indicators
 
-- `config/`: Configuration files and settings management
-- `data/`: Core data handling modules including Greeks calculations and market data
-- `logging/`: Logging functionality and log storage
-- `plays/`: Trading plays management with different states (new, open, closed, etc.)
-- `reference/`: Reference materials and templates for trading
-- `state/`: System state management and persistence
-- `strategy/`: Trading strategy definitions and parameters
-- `tools/`: Utility tools for system management and trading
-- `utils/`: General utility functions
-- `watchdog/`: System monitoring and health checks
-- `src/`: Core source code including service management
-- `tests/`: Test suite for system components
+### 🖥️ **User Interfaces**
+- **Modern TUI (Text User Interface)** built with Textual framework
+- **Console mode** for direct system interaction
+- **Web-based trade logger** with Dash framework for analytics
+- **Windows service integration** for background operation
+
+### 🔧 **Management Tools**
+- **Play creation tool** with guided setup and validation
+- **Play editing system** with safety protections for active trades
+- **Auto play creator** for bulk play generation
+- **System status monitoring** with health checks
+- **Configuration management** with YAML-based settings
+- **Data export capabilities** (CSV, Excel) for analysis
+
+### 🛡️ **System Reliability**
+- **Watchdog system** for automated health monitoring
+- **Comprehensive logging** with structured trade tracking
+- **State persistence** with automatic backup and recovery
+- **Error handling** with graceful degradation and retry logic
+- **Market hours validation** and holiday awareness
+
+## Market Data Providers
+
+Goldflipper supports multiple market data providers for robust and reliable data access:
+
+### **MarketDataApp** (Primary)
+
+### **Alpaca Markets** (Backup)
+
+### **Yahoo Finance** (Backup)
+
+
+## Configuration Guide
+
+### **Basic Configuration**
+The system uses a YAML configuration file (`goldflipper/config/settings.yaml`) with the following key sections:
+
+```yaml
+# Alpaca API Configuration
+alpaca:
+  accounts:
+    paper_1:
+      enabled: true
+      api_key: 'YOUR_PAPER_API_KEY'
+      secret_key: 'YOUR_PAPER_SECRET_KEY'
+      base_url: 'https://paper-api.alpaca.markets/v2'
+  default_account: 'paper_1'
+
+# Market Data Providers
+market_data_providers:
+  providers:
+    marketdataapp:
+      enabled: true
+      api_key: 'YOUR_MARKETDATAAPP_KEY'
+
+# System Configuration
+monitoring:
+  polling_interval: 30  # seconds
+  
+watchdog:
+  enabled: true
+  check_interval: 30
+```
+
+### **Advanced Settings**
+- **Trading parameters**: Risk management, position sizing
+- **Market hours**: Custom trading session definitions
+- **Logging levels**: Debug, info, warning, error
+- **Display options**: Chart settings, option chain columns
+- **File paths**: Custom directory structures
 
 ## License
 
