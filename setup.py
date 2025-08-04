@@ -6,10 +6,10 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='goldflipper',
-    version='0.1.2',
+    version='0.2.1',
     author='Yaroshevskiy, Iliya',
     author_email='purpleafmanagement@gmail.com',
-    description='A Python program for semi-autonomous options trading on Alpaca.',
+    description='A semi-autonomous options trading system on Alpaca.',
     long_description=long_description,  # Long description from README.md
     long_description_content_type="text/markdown",  # The format of the long description
     url='https://github.com/Zaroganos/goldflipper',
@@ -31,12 +31,12 @@ setup(
     },
 
     # Python version compatibility
-    python_requires='>=3.9',
+    python_requires='>=3.10',
 
     # Dependencies required
     install_requires=[
         'alpaca-py>=0.8.0', # Alpaca trading API v2
-        'yfinance==0.2.37', # Yahoo Finance API for market data !! KEEP AT THIS VERSION !! latest version is not working (fix in progress)
+        'yfinance>=0.2.54', # Yahoo Finance API for market data
         'pandas>=2.0.0',  # Data analysis and manipulation library
         'numpy>=1.24.0',  # Numerical computing library
         'matplotlib>=3.7.0',  # Data visualization library
@@ -48,6 +48,13 @@ setup(
         'nest-asyncio>=1.5.0', # Asynchronous library
         'pywin32',
         'tkinterdnd2>=0.3.0',  # For drag and drop support in the setup dialog
+        'requests>=2.25.0',  # HTTP library for API communication
+        'urllib3>=1.26.0',  # HTTP client with connection pooling
+        'PyYAML>=6.0.1',  # YAML configuration parsing
+        'colorama>=0.4.6',  # Terminal color output
+        'rich>=13.0.0',  # Enhanced terminal output
+        'mplfinance>=0.12.0',  # Financial plotting
+        'XlsxWriter>=3.1.0',  # Excel file creation
     ],
 
     # Entry points to create command-line tools or scripts
@@ -60,7 +67,7 @@ setup(
     classifiers=[
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: Proprietary. Copyright Iliya Yaroshevskiy. All rights reserved.',
-        'Operating System :: OS Independent',
+        'Operating System :: Microsoft :: Windows',
         'Development Status :: 4 - Beta',
         'Intended Audience :: Internal Use Only',
         'Intended Audience :: Retail and Institutional Options Traders',
