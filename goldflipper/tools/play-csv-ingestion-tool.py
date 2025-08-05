@@ -18,6 +18,27 @@ from goldflipper.config.config import config
 
 # --- Constants and Fixed Index Ranges ---
 # These ranges assume that the final header row splits calls and puts via a blank separator column.
+#
+# OCO/OSO COLUMN FORMAT:
+# The OCO/OSO column (index 5) supports enhanced conditional trading:
+# 
+# OCO (One-Cancels-Other) Examples:
+#   "1"       - Simple OCO group 1
+#   "1,2,3"   - Multiple OCO groups (this play cancels/is cancelled by groups 1, 2, and 3)
+#   "1;2;3"   - Same as above (semicolon separator also supported)
+#
+# OSO (One-Sends-Other) Examples:
+#   "+1"      - OSO parent: when this play executes, it triggers OSO child group 1
+#   "-1"      - OSO child: this play is triggered when OSO parent group 1 executes
+#   "+1,-1"   - This play is both parent and child (triggers others AND gets triggered)
+#
+# Mixed Examples:
+#   "1,+2,-3" - OCO group 1, OSO parent group 2, OSO child group 3
+#   "1,2,+5"  - OCO groups 1&2, OSO parent group 5
+#
+# Cross-Section Support:
+#   OCO relationships now work across calls/puts (not limited to same option type)
+#   OSO relationships also work across calls/puts
 CALLS_START = 0
 CALLS_END = 24   # Calls section covers indices 0 to 23; index 24 is a separator.
 PUTS_START = 25  # Puts section starts at index 25.
@@ -27,7 +48,7 @@ CALLS_ENTRY = {
     "symbol": 2,       # "Ticket" column (3rd column in calls section)
     "expiration_date": 3,  # "Expiration (Contract)"
     "gtd": 4,          # "GTD" column
-    "oco": 5,          # "OCO" column - new column
+    "oco": 5,          # "OCO/OSO" column - supports: "1,2,3" (OCO), "+1,-1" (OSO), "1,+2,-2" (mixed)
     "entry_stock_price": 11, # "Share Price (Buy)"
     "contracts": 13,   # "# of Con"
     "strike_price": 8,   # "Strike Price" column
@@ -54,7 +75,7 @@ PUTS_ENTRY = {
     "symbol": 2,       # Same relative position in puts section
     "expiration_date": 3,
     "gtd": 4,
-    "oco": 5,          # "OCO" column - new column
+    "oco": 5,          # "OCO/OSO" column - supports: "1,2,3" (OCO), "+1,-1" (OSO), "1,+2,-2" (mixed)
     "entry_stock_price": 11,
     "contracts": 13,
     "strike_price": 8,
@@ -298,6 +319,47 @@ def clean_ticker_symbol(symbol):
     """
     return symbol.strip().lstrip('$').upper()
 
+def parse_conditional_values(value_str, row_num, section, errors):
+    """
+    Parse OCO/OSO values from CSV cell.
+    Supports:
+    - Multiple values: "1,2,3" or "1;2;3"
+    - OSO notation: "+1,-1" (parent/child pairs)
+    - Mixed: "1,+2,-2,3"
+    
+    Returns dict with 'oco', 'oso_parent', 'oso_child' lists
+    """
+    result = {'oco': [], 'oso_parent': [], 'oso_child': []}
+    
+    if not value_str or not value_str.strip():
+        return result
+    
+    # Split on comma or semicolon
+    raw_values = re.split('[,;]', value_str.strip())
+    
+    for raw_val in raw_values:
+        val = raw_val.strip()
+        if not val:
+            continue
+            
+        try:
+            if val.startswith('+'):
+                # OSO parent (triggers child)
+                number = int(val[1:])
+                result['oso_parent'].append(number)
+            elif val.startswith('-'):
+                # OSO child (triggered by parent)
+                number = int(val[1:])
+                result['oso_child'].append(number)
+            else:
+                # Regular OCO
+                number = int(val)
+                result['oco'].append(number)
+        except ValueError:
+            errors.append(f"Row {row_num} ({section}): Invalid conditional value '{val}'. Use numbers, +numbers, or -numbers.")
+    
+    return result
+
 # --- Core Processing Function ---
 
 def create_play_from_data(section, data_row, section_headers, section_range_start, strike_rel_index, row_num):
@@ -335,14 +397,17 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     if not re.match(r"\d{2}/\d{2}/\d{4}$", exp_date):
         errors.append(f"Row {row_num} ({section}): Expiration date '{exp_date}' is not in MM/DD/YYYY format.")
 
-    # Extract OCO value
+    # Extract OCO/OSO values (supports comma/semicolon separated, +/- prefixes)
     oco_value = get_cell(mapping["oco"])
-    oco_number = None
+    oco_numbers = []
+    oso_parent_numbers = []
+    oso_child_numbers = []
+    
     if oco_value:
-        try:
-            oco_number = int(oco_value)
-        except ValueError:
-            errors.append(f"Row {row_num} ({section}): Invalid OCO value '{oco_value}'. Must be a number.")
+        parsed_values = parse_conditional_values(oco_value, row_num, section, errors)
+        oco_numbers = parsed_values['oco']
+        oso_parent_numbers = parsed_values['oso_parent']  
+        oso_child_numbers = parsed_values['oso_child']
 
     entry_stock_value = get_cell(mapping["entry_stock_price"])
     if not entry_stock_value:
@@ -508,7 +573,9 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
         "play_expiration_date": gtd_date,
         "stop_loss": stop_loss if stop_loss else None,
         "take_profit": take_profit if take_profit else None,
-        "oco_number": oco_number  # Store the OCO number for later processing
+        "oco_numbers": oco_numbers,  # Store OCO numbers for later processing
+        "oso_parent_numbers": oso_parent_numbers,  # Store OSO parent numbers
+        "oso_child_numbers": oso_child_numbers  # Store OSO child numbers
     }
 
     return play, errors
@@ -516,10 +583,15 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
 def save_play(play, section):
     """
     Save the play as a JSON file in the appropriate plays directory.
-    SIMPLE plays are saved to plays/new; OTO plays to plays/temp.
+    SIMPLE plays are saved to plays/new; OTO plays and OSO child plays to plays/temp.
     """
     base_dir = os.path.join(project_root, "goldflipper", "plays")
-    target_dir = os.path.join(base_dir, "temp" if play.get("play_class", "SIMPLE") == "OTO" else "new")
+    
+    # OSO child plays go to temp directory
+    is_oso_child = len(play.get("oso_child_numbers", [])) > 0
+    is_oto_play = play.get("play_class", "SIMPLE") == "OTO"
+    
+    target_dir = os.path.join(base_dir, "temp" if (is_oto_play or is_oso_child) else "new")
     os.makedirs(target_dir, exist_ok=True)
     filename = re.sub(r"[^\w\-]", "_", play["play_name"]) + ".json"
     filepath = os.path.join(target_dir, filename)
@@ -609,39 +681,59 @@ def main():
                 valid_plays.append(("puts", play_puts))
             all_errors.extend(errors_puts)
 
-    # Second pass: Process OCO relationships
-    # Group plays by OCO number
+    # Second pass: Process OCO and OSO relationships
+    # Group plays by OCO numbers (cross-section: calls and puts together)
     oco_groups = {}
     for section, play in valid_plays:
-        oco_number = play.get("oco_number")
-        if oco_number is not None:
+        oco_numbers = play.get("oco_numbers", [])
+        for oco_number in oco_numbers:
             if oco_number not in oco_groups:
                 oco_groups[oco_number] = []
             oco_groups[oco_number].append((section, play))
     
-    # Set up OCO relationships
+    # Group plays by OSO numbers
+    oso_groups = {}
+    for section, play in valid_plays:
+        # Group OSO parents
+        for parent_num in play.get("oso_parent_numbers", []):
+            if parent_num not in oso_groups:
+                oso_groups[parent_num] = {'parents': [], 'children': []}
+            oso_groups[parent_num]['parents'].append((section, play))
+        
+        # Group OSO children
+        for child_num in play.get("oso_child_numbers", []):
+            if child_num not in oso_groups:
+                oso_groups[child_num] = {'parents': [], 'children': []}
+            oso_groups[child_num]['children'].append((section, play))
+    
+    # Set up OCO relationships (works across calls/puts)
     for oco_number, plays in oco_groups.items():
         if len(plays) > 1:
-            # Group by section (calls/puts)
-            calls_plays = [play for section, play in plays if section == "calls"]
-            puts_plays = [play for section, play in plays if section == "puts"]
-            
-            # Process calls OCO relationships
-            if len(calls_plays) > 1:
-                for play in calls_plays:
-                    other_plays = [p["play_name"] + ".json" for p in calls_plays if p["play_name"] != play["play_name"]]
-                    play["conditional_plays"]["OCO_triggers"] = other_plays
-            
-            # Process puts OCO relationships
-            if len(puts_plays) > 1:
-                for play in puts_plays:
-                    other_plays = [p["play_name"] + ".json" for p in puts_plays if p["play_name"] != play["play_name"]]
-                    play["conditional_plays"]["OCO_triggers"] = other_plays
+            # Create bidirectional OCO relationships across all plays in group
+            for section, play in plays:
+                other_plays = [p["play_name"] + ".json" for s, p in plays if p["play_name"] != play["play_name"]]
+                # Merge with existing OCO triggers if any
+                existing_oco = play["conditional_plays"].get("OCO_triggers", [])
+                play["conditional_plays"]["OCO_triggers"] = list(set(existing_oco + other_plays))
     
-    # Remove the temporary oco_number field
+    # Set up OSO relationships (One-Sends-Other)
+    for oso_number, oso_data in oso_groups.items():
+        parents = oso_data['parents']
+        children = oso_data['children']
+        
+        # Each parent triggers all children in this OSO group
+        for parent_section, parent_play in parents:
+            child_filenames = [child["play_name"] + ".json" for child_section, child in children]
+            if child_filenames:
+                # Merge with existing OTO triggers if any
+                existing_oto = parent_play["conditional_plays"].get("OTO_triggers", [])
+                parent_play["conditional_plays"]["OTO_triggers"] = list(set(existing_oto + child_filenames))
+    
+    # Remove the temporary conditional number fields
     for section, play in valid_plays:
-        if "oco_number" in play:
-            del play["oco_number"]
+        for field in ["oco_numbers", "oso_parent_numbers", "oso_child_numbers"]:
+            if field in play:
+                del play[field]
     
     # Save all plays
     for section, play in valid_plays:

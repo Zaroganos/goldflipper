@@ -83,3 +83,21 @@ This is a list of things to do for the goldflipper project.
 
 - These changes improve user clarity and ensure that service state actions are performed safely and with the proper permissions.
 
+# API Template Ingestion
+- [x] Enhanced OCO/OSO Conditional Trading System:
+      1. ✓ Cross-section OCO support (calls and puts can cancel each other)
+      2. ✓ Multiple OCO relationships via comma/semicolon separation ("1,2,3" or "1;2;3")
+      3. ✓ OSO (One-Sends-Other) functionality with +/- notation:
+         - "+n" = OSO parent (triggers child group n when executed)
+         - "-n" = OSO child (triggered by parent group n)
+         - Mixed relationships: "1,+2,-3" (OCO group 1, triggers 2, triggered by 3)
+      4. ✓ Smart directory management (OSO children saved to temp/, activated when parent executes)
+      5. ✓ Enhanced CSV parsing with comprehensive error handling
+      6. ✓ Full backward compatibility with existing single OCO numbers
+      7. ✓ Comprehensive documentation and test cases
+      
+      CSV Column Format Requirements:
+      - Column must be formatted as TEXT to preserve +/- signs
+      - Supports: "1" (simple OCO), "1,2,3" (multiple OCO), "+1,-1" (OSO), "1,+2,-3" (mixed)
+      - Cross-section support enables sophisticated conditional strategies
+      
