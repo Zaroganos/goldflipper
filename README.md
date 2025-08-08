@@ -4,8 +4,9 @@ Goldflipper Trading System
 ![goldlfipper](https://github.com/user-attachments/assets/60a7b1c3-40ef-4dd2-9c64-98be7e93f185)
 
 
-## Goldflipper v1 set to Public on Github temporarily
+## Disclaimer
 Although this repository is public and the code is accesible, the use of this code, explicitly permitted according to the author's moral rights, is granted on a case-by-case basis only. For more information please get in touch with the author directly. Otherwise, please note that technical support is neither promised nor available, and bug fix and feature requests of any kind will be addressed solely at the author's discretion. 
+Additionally, please note that this program does not capture or transmit any of your data. The only connections made are to brokerage(s) and market data provider(s). Newer branches also make calls using python libraries solely for the purpose of enhancing function by validating inputs (to address user entry errors) and checking the market calendar. However, please note that in this version, access keys are stored in the settings file in plaintext (or, plain-yaml).
 
 ## Introduction
 
