@@ -98,8 +98,9 @@ pip install -e .
 ```
 
 3. **Initial Setup and Configuration:**
-   - Run the system once to generate the configuration template, or upload your existing configuration file if you have one.
-   - This creates `goldflipper/config/settings.yaml` from the template
+   - Run the system once by executing `launch_goldflipper.bat`
+   - This creates `goldflipper/config/settings.yaml` from the template, or you may upload your existing configuration file of choice.
+   - A desktop shortcut is created if desired.
    - Edit `settings.yaml` with your API keys and preferences:
      - **Alpaca API Keys**: Get from [Alpaca Markets](https://app.alpaca.markets)
      - **Market Data Provider API Keys**: Get from your choice of supported providers. (Currently limited to MarketDataApp)
