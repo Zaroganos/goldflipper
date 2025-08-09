@@ -138,6 +138,7 @@ import numpy as np
 from datetime import timedelta
 import sys
 import os
+import shutil
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 from sqlalchemy.orm import Session
@@ -146,6 +147,7 @@ from sqlalchemy import desc
 # Add the project root to the Python path
 sys.path.append(str(project_root))
 
+from web.utils.settings_manager import SettingsManager
 from goldflipper.database.connection import get_db_connection, init_db
 from goldflipper.database.models import WEMStock, MarketData
 from goldflipper.database.repositories import MarketDataRepository
@@ -158,6 +160,29 @@ from goldflipper.utils.market_holidays import (
     get_expiration_date_candidates,
     test_holiday_detection_ui
 )
+
+# Helpers
+def _get_desktop_dir() -> str:
+    """Best-effort resolution of the user's Desktop folder."""
+    home = os.path.expanduser("~")
+    desktop = os.path.join(home, "Desktop")
+    if os.path.isdir(desktop):
+        return desktop
+    # Handle common OneDrive redirection on Windows
+    onedrive_desktop = os.path.join(home, "OneDrive", "Desktop")
+    if os.path.isdir(onedrive_desktop):
+        return onedrive_desktop
+    return desktop
+
+def _persist_wem_save_to_desktop_setting() -> None:
+    """Persist the WEM 'save to desktop' preference via settings manager (DB -> YAML)."""
+    try:
+        value = bool(st.session_state.get('wem_save_to_desktop', True))
+        with get_db_connection() as db_session:
+            SettingsManager(db_session).update_setting('wem', 'export.save_to_desktop', value)
+        logger.info(f"Persisted setting wem.export.save_to_desktop = {value}")
+    except Exception as e:
+        logger.error(f"Failed to persist 'save to desktop' setting: {e}", exc_info=True)
 
 # Initialize session state for tracking newly added stocks
 if 'newly_added_stocks' not in st.session_state:
@@ -2785,6 +2810,37 @@ def main():
         # Store export format in session state for access outside sidebar
         st.session_state.export_format = export_format
         
+        # Save to Desktop option (persistent)
+        # Determine default from DB/YAML once per session
+        def _coerce_to_bool(value: Any) -> bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.strip().lower() in ("1", "true", "yes", "y", "on")
+            return bool(value)
+
+        default_save_to_desktop = _coerce_to_bool(export_defaults.get('save_to_desktop', False))
+        if 'wem_save_to_desktop' not in st.session_state:
+            try:
+                with get_db_connection() as db_session:
+                    wem_settings_db = SettingsManager(db_session).get_settings('wem')
+                    v = None
+                    if isinstance(wem_settings_db, dict):
+                        v = wem_settings_db.get('export', {}).get('save_to_desktop')
+                    if v is not None:
+                        default_save_to_desktop = _coerce_to_bool(v)
+            except Exception as e:
+                logger.debug(f"Could not read wem.save_to_desktop from DB: {e}")
+            st.session_state.wem_save_to_desktop = default_save_to_desktop
+
+        st.checkbox(
+            "Save to Desktop",
+            value=st.session_state.get('wem_save_to_desktop', default_save_to_desktop),
+            key='wem_save_to_desktop',
+            help="Also copy the exported file to your Desktop",
+            on_change=_persist_wem_save_to_desktop_setting
+        )
+        
         # Export button (will be handled after data is loaded)
         export_data_requested = st.button("Export Data", help="Export WEM data to file")
         if export_data_requested:
@@ -2958,13 +3014,25 @@ def main():
                         timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M")
                         export_format = getattr(st.session_state, 'export_format', 'CSV')
                         
+                        save_to_desktop_pref = bool(st.session_state.get('wem_save_to_desktop', False))
+                        desktop_dir = _get_desktop_dir() if save_to_desktop_pref else None
+
                         if export_format == "CSV":
                             # Export to CSV
                             csv_path = f"./data/exports/{timestamp}_export.csv"
                             os.makedirs(os.path.dirname(csv_path), exist_ok=True)
                             
                             wem_df['df'].to_csv(csv_path)
-                            st.success(f"Data exported to {csv_path}")
+                            # Optionally copy to Desktop
+                            extra_msg = ""
+                            if save_to_desktop_pref and desktop_dir and os.path.isdir(desktop_dir):
+                                try:
+                                    desktop_csv = os.path.join(desktop_dir, os.path.basename(csv_path))
+                                    shutil.copyfile(csv_path, desktop_csv)
+                                    extra_msg = f" and {desktop_csv}"
+                                except Exception as copy_err:
+                                    logger.warning(f"Failed to copy CSV to Desktop: {copy_err}")
+                            st.success(f"Data exported to {csv_path}{extra_msg}")
                             
                         else:  # Excel
                             # Export to Excel with template formatting
@@ -2973,7 +3041,16 @@ def main():
                             
                             try:
                                 export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp)
-                                st.success(f"Data exported to {excel_path}")
+                                # Optionally copy to Desktop
+                                extra_msg = ""
+                                if save_to_desktop_pref and desktop_dir and os.path.isdir(desktop_dir):
+                                    try:
+                                        desktop_xlsx = os.path.join(desktop_dir, os.path.basename(excel_path))
+                                        shutil.copyfile(excel_path, desktop_xlsx)
+                                        extra_msg = f" and {desktop_xlsx}"
+                                    except Exception as copy_err:
+                                        logger.warning(f"Failed to copy Excel to Desktop: {copy_err}")
+                                st.success(f"Data exported to {excel_path}{extra_msg}")
                             except Exception as export_error:
                                 logger.exception("Formatted Excel export failed, falling back to basic export")
                                 # Fallback to basic Excel export if formatted export fails
@@ -2988,7 +3065,16 @@ def main():
                                     })
                                     notes_df.to_excel(writer, sheet_name='Notes', index=False)
                                 
-                                st.success(f"Data exported to {excel_path} (basic format)")
+                                # Optionally copy to Desktop
+                                extra_msg = ""
+                                if save_to_desktop_pref and desktop_dir and os.path.isdir(desktop_dir):
+                                    try:
+                                        desktop_xlsx = os.path.join(desktop_dir, os.path.basename(excel_path))
+                                        shutil.copyfile(excel_path, desktop_xlsx)
+                                        extra_msg = f" and {desktop_xlsx}"
+                                    except Exception as copy_err:
+                                        logger.warning(f"Failed to copy Excel to Desktop: {copy_err}")
+                                st.success(f"Data exported to {excel_path}{extra_msg} (basic format)")
                     except Exception as e:
                         st.error(f"Export failed: {str(e)}")
                         logger.exception("Export error")
