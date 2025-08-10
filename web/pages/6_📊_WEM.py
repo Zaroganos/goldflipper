@@ -424,7 +424,12 @@ def update_wem_stock(session: Session, stock_data: Dict[str, Any]) -> bool:
         
         # Commit the changes
         session.commit()
-        logger.info(f"Successfully updated WEM stock: {symbol}")
+        # Consider an update unsuccessful if key financial fields are still None
+        essential = ['atm_price', 'wem_points', 'straddle', 'strangle']
+        if any(getattr(wem_stock, f) is None for f in essential):
+            logger.warning(f"Updated WEM stock with missing essentials: {symbol}")
+        else:
+            logger.info(f"Successfully updated WEM stock: {symbol}")
         return True
     except Exception as e:
         session.rollback()
@@ -503,21 +508,67 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         
         logger.info(f"Using {data_source} data with {pricing_mode} for {symbol}: ${current_price:.2f}")
         
-        # Step 2: Find next Friday expiration date
-        next_friday = find_next_friday_expiration()
-        logger.info(f"Next Friday expiration: {next_friday}")
+        # Step 2: Determine appropriate expiration date from provider expirations
+        manager = get_market_data_manager()
+        if not manager:
+            logger.error("No market data manager available")
+            return None
+
+        # Handle cached manager instances created before new methods were introduced
+        if not hasattr(manager, 'get_available_expirations'):
+            try:
+                st.cache_resource.clear()  # Clear to rebuild with latest class definition
+                manager = get_market_data_manager()
+            except Exception:
+                pass
+
+        # Determine calendar next Friday once for consistency
+        calendar_next_friday = find_next_friday_expiration()
+
+        provider_expirations = []
+        try:
+            if hasattr(manager, 'get_available_expirations'):
+                provider_expirations = manager.get_available_expirations(symbol) or []
+        except Exception as e:
+            logger.warning(f"Failed to get provider expirations for {symbol}: {e}")
+        if not provider_expirations:
+            # Fallback to calendar-based next Friday if provider expirations unavailable
+            logger.warning(f"No provider expirations for {symbol}. Using calendar next Friday: {calendar_next_friday.date()}")
+            target_expiration = calendar_next_friday
+        else:
+            # Select the earliest provider expiration that is on/after the upcoming trading week target
+            # Compute calendar-guided next Friday first for a reference
+            ref_next_friday = calendar_next_friday.date()
+            # Parse provider strings and pick the first >= ref_next_friday
+            parsed = []
+            for d in provider_expirations:
+                try:
+                    parsed.append(datetime.strptime(d, '%Y-%m-%d').date())
+                except Exception:
+                    continue
+            parsed = sorted(set(parsed))
+            chosen_date = None
+            for d in parsed:
+                if d >= ref_next_friday:
+                    chosen_date = d
+                    break
+            if chosen_date is None:
+                # If all are in the past relative to ref, pick the nearest future anyway
+                chosen_date = parsed[-1] if parsed else ref_next_friday
+            target_expiration = datetime.combine(chosen_date, datetime.min.time())
+            logger.info(f"Selected provider-guided expiration for {symbol}: {target_expiration.date()} (ref Friday {ref_next_friday})")
         
-        # Step 3: Get weekly option chain for next Friday expiration (with holiday adjustment)
-        weekly_option_chain_result = _get_weekly_option_chain(symbol, next_friday, use_friday_close)
+        # Step 3: Get weekly option chain for chosen expiration (with holiday adjustment fallback)
+        weekly_option_chain_result = _get_weekly_option_chain(symbol, target_expiration, use_friday_close)
         
         if not weekly_option_chain_result:
-            logger.error(f"No weekly option chain available for {symbol} - tried multiple expiration dates around {next_friday.date()}")
+            logger.error(f"No weekly option chain available for {symbol} - tried multiple expiration dates around {target_expiration.date()}")
             return None
         
         weekly_option_chain = weekly_option_chain_result
         
         # Extract the actual expiration date used (may be different from calculated Friday due to holidays)
-        actual_expiration_date = next_friday  # Default to calculated date
+        actual_expiration_date = target_expiration  # Default to selected date
         
         # Try to determine actual expiration date from the option chain data
         # This is a best-effort attempt since the API response format may vary
@@ -529,8 +580,8 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                 exp_str = calls.iloc[0]['expiration']
                 if exp_str:
                     actual_expiration_date = datetime.strptime(exp_str, '%Y-%m-%d')
-                    if actual_expiration_date.date() != next_friday.date():
-                        logger.info(f"📅 Detected actual expiration date {actual_expiration_date.date()} differs from calculated {next_friday.date()}")
+                    if actual_expiration_date.date() != target_expiration.date():
+                        logger.info(f"📅 Detected actual expiration date {actual_expiration_date.date()} differs from selected {target_expiration.date()}")
         except Exception as e:
             logger.debug(f"Could not extract actual expiration date from option chain: {e}")
             # Keep the original calculated date
@@ -723,9 +774,9 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                 'calculation_timestamp': datetime.now(timezone.utc).isoformat(),
                 'calculation_method': 'automated_full_chain_analysis',
                 'expiration_date': actual_expiration_date.isoformat(),
-                'calculated_expiration_date': next_friday.isoformat(),
-                'expiration_date_adjusted': actual_expiration_date.date() != next_friday.date(),
-                'adjustment_reason': f"Market holiday adjustment from {next_friday.date()} to {actual_expiration_date.date()}" if actual_expiration_date.date() != next_friday.date() else None,
+                 'calculated_expiration_date': calendar_next_friday.isoformat(),
+                 'expiration_date_adjusted': actual_expiration_date.date() != calendar_next_friday.date(),
+                 'adjustment_reason': f"Market holiday adjustment from {calendar_next_friday.date()} to {actual_expiration_date.date()}" if actual_expiration_date.date() != calendar_next_friday.date() else None,
                 'data_source': data_source.lower().replace(' ', '_'),
                 'data_source_mode': data_source,
                 'pricing_mode': pricing_mode,
@@ -1169,33 +1220,66 @@ def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime
             logger.error("No market data manager available")
             return None
         
-        # Get historical data for the previous Friday
-        # MarketData.app provides historical candle data
-        from goldflipper.data.market.providers.marketdataapp_provider import MarketDataAppProvider
-        
-        # Create a direct provider instance to access historical data
-        project_root = Path(__file__).parent.parent.parent
-        config_path = project_root / 'goldflipper' / 'config' / 'settings.yaml'
-        provider = MarketDataAppProvider(str(config_path))
-        
-        # Get one day of data for the previous Friday
+        # Try providers for one day of data for the previous Friday
         start_date = previous_friday_date
         end_date = previous_friday_date + timedelta(days=1)
-        
-        logger.info(f"Requesting historical data for {symbol} on {previous_friday_date.date()}")
-        historical_data = provider.get_historical_data(symbol, start_date, end_date, interval="1d")
-        
-        if historical_data.empty:
-            logger.warning(f"No historical data available for {symbol} on {previous_friday_date.date()}")
+
+        # Build provider preference list: prefer MarketData.app if available, then primary + fallback order
+        provider_names = []
+        try:
+            if 'marketdataapp' in manager.providers:
+                provider_names.append('marketdataapp')
+            seq = [manager.config.get('primary_provider')] + manager.config.get('fallback', {}).get('order', [])
+            for name in seq:
+                if name and name in manager.providers and name not in provider_names:
+                    provider_names.append(name)
+        except Exception:
+            # Fallback: just use whatever is initialized
+            provider_names = list(manager.providers.keys())
+
+        from goldflipper.data.market.symbol_mappings import translate_symbol
+
+        historical_data = None
+        used_provider = None
+        for prov_name in provider_names:
+            prov = manager.providers.get(prov_name)
+            if prov is None or not hasattr(prov, 'get_historical_data'):
+                continue
+            # Provider-specific symbol mapping
+            sym_for_provider = translate_symbol(prov_name, symbol) if prov_name else symbol
+            try:
+                logger.info(f"Requesting historical data for {symbol} via {prov_name} on {previous_friday_date.date()}")
+                df = prov.get_historical_data(sym_for_provider, start_date, end_date, interval="1d")
+                if df is not None and not df.empty:
+                    historical_data = df
+                    used_provider = prov_name
+                    break
+            except Exception as _e:
+                continue
+
+        if historical_data is None or historical_data.empty:
+            logger.warning(f"No historical data available for {symbol} on {previous_friday_date.date()} from any provider")
             # Fallback to current price if historical data not available
             current_price = manager.get_stock_price(symbol)
             if current_price:
                 logger.warning(f"Using current price as fallback for {symbol}: ${current_price:.2f}")
                 return float(current_price)
             return None
-        
-        # Get the closing price from the Friday data
-        friday_close = float(historical_data.iloc[-1]['close'])
+
+        # Get the closing price from the Friday data (handle different column conventions)
+        if 'close' in historical_data.columns:
+            friday_close = float(historical_data.iloc[-1]['close'])
+        elif 'Close' in historical_data.columns:
+            friday_close = float(historical_data.iloc[-1]['Close'])
+        else:
+            # Attempt first numeric column as last resort
+            numeric_cols = [c for c in historical_data.columns if c.lower() in ('close','adj close','adj_close','c')]
+            if numeric_cols:
+                friday_close = float(historical_data.iloc[-1][numeric_cols[0]])
+            else:
+                logger.warning("Historical data lacks recognizable close column")
+                return None
+        logger.info(f"Retrieved previous Friday close for {symbol} via {used_provider or 'unknown'}: ${friday_close:.2f}")
         logger.info(f"Retrieved previous Friday close for {symbol}: ${friday_close:.2f}")
         
         # Cache the result for weekly reuse ONLY if caching is enabled
@@ -3510,6 +3594,17 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
                                             worksheet.write(row_idx, col_idx + 1, value, cell_format)
                                     else:
                                         worksheet.write(row_idx, col_idx + 1, value, cell_format)
+
+                                    # Highlight flagged cells (warnings/errors) in pale yellow
+                                    try:
+                                        if metric_display_name in ("Delta 16 (+)", "Delta 16 (-)", "Delta Range", "Delta Range %"):
+                                            # We need access to original untransposed dataframe used to build columns
+                                            # Reconstruct a minimal symbol->status map if possible
+                                            if "Δ Status" in wem_df.get('df', pd.DataFrame()).index:
+                                                pass  # horizontal mode uses transposed df; hard to map here reliably
+                                        # Note: robust highlighting is implemented for vertical layout below
+                                    except Exception:
+                                        pass
                 
                 row_idx += 1
         
@@ -3559,6 +3654,22 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
                                         worksheet.write(row_idx + 1, col_idx, value, cell_format)
                                 else:
                                     worksheet.write(row_idx + 1, col_idx, value, cell_format)
+
+                                # Highlight flagged cells (warnings/errors) in pale yellow
+                                try:
+                                    if field in ('delta_16_plus', 'delta_16_minus', 'delta_range', 'delta_range_pct'):
+                                        status_col = 'delta_validation_status'
+                                        if status_col in df.columns:
+                                            status_val = str(row.get(status_col, '')).lower()
+                                            if 'warning' in status_val or 'error' in status_val:
+                                                highlight = workbook.add_format({
+                                                    'bg_color': '#FFF9C4',  # pastel yellow
+                                                    'border': 1,
+                                                    'border_color': '#D3D3D3'
+                                                })
+                                                worksheet.write(row_idx + 1, col_idx, value, highlight)
+                                except Exception:
+                                    pass
         
         # Add Notes section at the bottom
         notes_row = row_idx + 2 if 'row_idx' in locals() else len(df) + 2
@@ -3571,7 +3682,26 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
         current_datetime = datetime.now()
         current_date = current_datetime.strftime('%Y-%m-%d')
         current_time = current_datetime.strftime('%H:%M')
-        notes_content = f"Generated by Goldflipper WEM Module on {current_date} at {current_time}.\n\n1.)"
+        # Build concise validation notes summary
+        try:
+            warn_count = 0
+            err_count = 0
+            if is_horizontal:
+                # In horizontal layout, the status lives in the original non-transposed dataframe
+                # We cannot access it directly here; leave counts as 0
+                pass
+            else:
+                if 'delta_validation_status' in df.columns:
+                    statuses = df['delta_validation_status'].astype(str)
+                    warn_count = (statuses.str.contains('warning', case=False, na=False)).sum()
+                    err_count = (statuses.str.contains('error', case=False, na=False)).sum()
+        except Exception:
+            warn_count = err_count = 0
+
+        suffix = ""
+        if warn_count or err_count:
+            suffix = f"\n\nNote: Δ validation flags — Warnings: {warn_count}, Errors: {err_count}."
+        notes_content = f"Generated by Goldflipper WEM Module on {current_date} at {current_time}." + suffix
         
         worksheet.merge_range(notes_row + 1, 1, notes_row + 5, num_cols - 1, notes_content, notes_content_format)
         

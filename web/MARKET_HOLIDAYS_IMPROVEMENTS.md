@@ -98,6 +98,59 @@ is_holiday = not nyse.valid_days(start_date, end_date).empty
 - Options expiration calendar API integration
 - More sophisticated fallback logic for rare edge cases
 
+---
+
+## Expiration Source Selection Improvements (Latest Update)
+
+### 5. Provider‑Guided Expiration Selection
+- **Goal**: Choose the correct options expiration date per underlying using a data provider’s actual listings, rather than assuming “next Friday” (which breaks on holidays and product exceptions).
+- **What changed**:
+  - Added provider capability `get_available_expirations(symbol)` to list expirations.
+    - **Location**: `goldflipper/data/market/providers/base.py` (abstract method)
+    - Implemented first for `yfinance`:
+      - **Location**: `goldflipper/data/market/providers/yfinance_provider.py`
+      - Returns `Ticker(symbol).options` (YYYY‑MM‑DD strings)
+  - Added manager entrypoint to aggregate/select expirations:
+    - **Location**: `goldflipper/data/market/manager.py` → `get_available_expirations(symbol)`
+    - Uses configured provider first; can fallback per existing provider fallback order
+  - Introduced configuration key to select provider for expirations:
+    - **Location**: `goldflipper/config/settings_template.yaml`
+    - `market_data_providers.expiration_provider: "yfinance"` (default)
+
+### 6. WEM Runtime Behavior Update
+- **Location**: `web/pages/6_📊_WEM.py`
+- **Now WEM does**:
+  1. Queries configured provider for available expirations for the symbol.
+  2. Computes a calendar‑guided reference next Friday (holiday‑aware via market calendar).
+  3. Picks the earliest provider expiration on/after that reference date.
+  4. Fetches the option chain for that chosen expiration.
+  5. If provider expirations aren’t available, falls back to holiday‑aware next Friday and the existing multi‑date retry logic.
+
+This removes the previous guessing/blind fallback and significantly reduces occasional Delta‑16 mismatches caused by fetching the wrong expiration.
+
+### 7. Market Calendar Upgrade with pandas_market_calendars
+- **Location**: `goldflipper/utils/market_holidays.py`
+- **Behavior**:
+  - If `pandas_market_calendars` is available, the system uses NYSE (`XNYS`) schedule to identify the next Friday trading day precisely (early closes/holidays included).
+  - Otherwise, it falls back to the lightweight in‑house holiday logic.
+- **Reference**: [pandas_market_calendars](https://github.com/rsheftel/pandas_market_calendars)
+
+### 8. Configuration
+- `market_data_providers.primary_provider`: unchanged (still controls primary data source)
+- `market_data_providers.expiration_provider`: NEW; controls which provider supplies expiration lists. Default: `yfinance`.
+
+### 9. Current State
+- **Holiday handling**: Robust; holiday‑aware next Friday with `pandas_market_calendars` upgrade when available; existing fallback candidate dates retained.
+- **Expiration selection**: Provider‑guided via `yfinance` by default, with fallback to calendar logic.
+- **Delta‑16 accuracy**: Improved by aligning the chain’s expiration to actual available listings before selection.
+- **Backwards compatibility**: If expiration lists aren’t available, previous behavior remains with better logging.
+
+### 10. Next Steps / To‑Do
+- Implement `get_available_expirations(symbol)` for other providers (MarketData.app, Alpaca) to broaden choices and resilience.
+- Ensure provider chain payloads include an explicit `expiration` column everywhere and verify it matches the selected date at runtime.
+- Consider hardening Delta selection using absolute delta closeness per side (already side‑separated) to guard against provider delta sign anomalies.
+- Optionally expose WEM UI control to choose the expiration provider.
+
 ## Validation Results
 
 ### July 4th, 2025 Test Case

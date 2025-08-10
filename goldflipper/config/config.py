@@ -117,14 +117,16 @@ class Config:
         """
         base_dir = os.path.dirname(os.path.dirname(__file__))
         
-        # Setup data paths
-        self.DATA_DIR = os.path.join(base_dir, self._config['paths']['data_dir'])
-        self.RAW_DATA_DIR = os.path.join(base_dir, self._config['paths']['raw_data_dir'])
-        self.PROCESSED_DATA_DIR = os.path.join(base_dir, self._config['paths']['processed_data_dir'])
+        # Setup data/log paths with safe defaults when 'paths' missing in settings.yaml
+        paths_cfg = self._config.get('paths', {}) if isinstance(self._config, dict) else {}
+        self.DATA_DIR = os.path.join(base_dir, paths_cfg.get('data_dir', 'data'))
+        self.RAW_DATA_DIR = os.path.join(base_dir, paths_cfg.get('raw_data_dir', 'data/raw'))
+        self.PROCESSED_DATA_DIR = os.path.join(base_dir, paths_cfg.get('processed_data_dir', 'data/processed'))
         
         # Setup log paths
-        self.LOG_DIR = os.path.join(base_dir, self._config['paths']['log_dir'])
-        self.LOG_FILE = os.path.join(base_dir, self._config['paths']['log_file'])
+        self.LOG_DIR = os.path.join(base_dir, paths_cfg.get('log_dir', 'logs'))
+        default_log_file = os.path.join('logs', 'app.log')
+        self.LOG_FILE = os.path.join(base_dir, paths_cfg.get('log_file', default_log_file))
         
         # Create directories if they don't exist
         for directory in [self.DATA_DIR, self.RAW_DATA_DIR, self.PROCESSED_DATA_DIR, self.LOG_DIR]:

@@ -1,9 +1,0 @@
-# This file is deprecated. Using pyproject.toml instead.
-
-streamlit>=1.32.0
-pandas>=2.2.0
-plotly>=5.18.0
-numpy>=1.26.0
-python-dotenv>=1.0.0
-pyyaml>=6.0.1 
-tkinterdnd2

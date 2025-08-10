@@ -140,6 +140,22 @@ class YFinanceProvider(MarketDataProvider):
             logging.error(f"Error getting option chain for {symbol}: {str(e)}")
             return {'calls': pd.DataFrame(), 'puts': pd.DataFrame()}
 
+    def get_available_expirations(self, symbol: str) -> list[str]:
+        """Return available option expiration dates for a symbol using yfinance.
+
+        Returns a list of date strings in 'YYYY-MM-DD' format (already provided by yfinance).
+        """
+        try:
+            ticker = yf.Ticker(symbol)
+            dates = ticker.options or []
+            # Ensure strings and sorted ascending
+            result = sorted({str(d) for d in dates})
+            logging.info(f"YFinance: {symbol} available expirations: {len(result)}")
+            return result
+        except Exception as e:
+            logging.error(f"YFinance error getting expirations for {symbol}: {e}")
+            return []
+
     def get_option_quote(self, contract_symbol: str, strike_price: float = None) -> pd.DataFrame:
         """Get option quote with proper Pandas filtering"""
         try:

@@ -7,10 +7,13 @@ from .providers.base import MarketDataProvider
 from .providers.marketdataapp_provider import MarketDataAppProvider
 from .providers.yfinance_provider import YFinanceProvider
 from .providers.alpaca_provider import AlpacaProvider
+from .symbol_mappings import translate_symbol
 from .cache import CycleCache
 from .errors import *
 from goldflipper.utils.display import TerminalDisplay as display
 import pandas as pd
+from sqlalchemy import text as sql_text
+from goldflipper.database.connection import get_db_connection
 
 class MarketDataManager:
     """Central manager for market data operations"""
@@ -22,20 +25,61 @@ class MarketDataManager:
         package_dir = os.path.dirname(os.path.dirname(current_dir))  # /goldflipper
         project_root = os.path.dirname(package_dir)  # project root
         
-        self.config_path = os.path.join(project_root, 'goldflipper', 'config', 'settings.yaml')
-        self.config = self._load_config(self.config_path)
+        # Load provider config strictly from DuckDB (no YAML)
+        self.config = self._load_config(None)
         self.cache = CycleCache(self.config)
         self.providers = self._initialize_providers()
         self.provider = provider or self.providers[self.config['primary_provider']]
         
     def _load_config(self, config_path: str) -> dict:
-        """Load market data provider configuration"""
+        """Load market data provider configuration from DuckDB only (no YAML fallbacks)."""
         try:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-            return config['market_data_providers']
+            # Read flattened settings from DB
+            with get_db_connection() as session:
+                rows = session.execute(
+                    sql_text("SELECT key, value FROM user_settings WHERE category = :cat"),
+                    {"cat": "market_data_providers"}
+                ).fetchall()
+
+            if not rows:
+                raise KeyError("No 'market_data_providers' settings found in DuckDB.user_settings")
+
+            import json
+            cfg: Dict[str, Any] = {}
+            for key, raw_val in rows:
+                # Decode JSON values when possible; keep raw otherwise
+                val: Any = raw_val
+                if isinstance(raw_val, str):
+                    try:
+                        val = json.loads(raw_val)
+                    except Exception:
+                        pass
+
+                # Support nested dot-keys: providers.yfinance.enabled -> cfg['providers']['yfinance']['enabled']
+                parts = key.split('.') if key else []
+                if not parts:
+                    # If key is empty, merge object if applicable
+                    if isinstance(val, dict):
+                        cfg.update(val)
+                    continue
+                cursor = cfg
+                for part in parts[:-1]:
+                    cursor = cursor.setdefault(part, {})
+                cursor[parts[-1]] = val
+
+            # Validate required top-level keys
+            missing: List[str] = []
+            for req in ("primary_provider", "providers", "fallback", "expiration_provider"):
+                if req not in cfg or (req in ("providers", "fallback") and not isinstance(cfg.get(req), dict)):
+                    missing.append(req)
+            if missing:
+                raise KeyError(
+                    f"Missing required market_data_providers keys in DB: {missing}. Present keys: {list(cfg.keys())}"
+                )
+
+            return cfg
         except Exception as e:
-            self.logger.error(f"Failed to load config from {config_path}: {str(e)}")
+            self.logger.error(f"Failed to load market data provider config from DB: {e}")
             raise
         
     def _initialize_providers(self) -> Dict[str, MarketDataProvider]:
@@ -51,10 +95,12 @@ class MarketDataManager:
             if settings.get('enabled', False) and name in provider_classes:
                 try:
                     provider_class = provider_classes[name]
-                    if name == 'alpaca':
-                        providers[name] = provider_class()  # No config_path
-                    else:
-                        providers[name] = provider_class(self.config_path)
+                    if name == 'marketdataapp':
+                        providers[name] = provider_class(settings)
+                    elif name == 'yfinance':
+                        providers[name] = provider_class()
+                    elif name == 'alpaca':
+                        providers[name] = provider_class()
                     self.logger.info(f"Initialized {name} provider")
                 except Exception as e:
                     self.logger.error(f"Failed to initialize {name} provider: {str(e)}")
@@ -153,6 +199,49 @@ class MarketDataManager:
         except Exception as e:
             self.logger.error(f"Error getting option quote for {contract_symbol}: {str(e)}")
             display.error(f"Error getting option quote for {contract_symbol}: {str(e)}")
+            return None
+
+    def get_available_expirations(self, symbol: str) -> Optional[list[str]]:
+        """Get available option expiration dates for a symbol using configured provider.
+
+        Selection is controlled by config['expiration_provider'] with fallback order
+        under config['fallback'] when enabled.
+        """
+        try:
+            provider_name = self.config.get('expiration_provider', 'yfinance')
+            # Try chosen provider first
+            if provider_name in self.providers:
+                provider = self.providers[provider_name]
+                try:
+                    sym = translate_symbol(provider_name, symbol)
+                    expirations = provider.get_available_expirations(sym)
+                    if expirations:
+                        return expirations
+                except Exception as e:
+                    self.logger.warning(f"Expiration provider {provider_name} failed: {e}")
+
+            # Fallback if enabled: try other providers that implement the method
+            if self.config['fallback']['enabled']:
+                for name in self.config['fallback']['order']:
+                    if name == provider_name:
+                        continue
+                    if name not in self.providers:
+                        continue
+                    provider = self.providers[name]
+                    if not hasattr(provider, 'get_available_expirations'):
+                        continue
+                    try:
+                        sym = translate_symbol(name, symbol)
+                        expirations = provider.get_available_expirations(sym)
+                        if expirations:
+                            return expirations
+                    except Exception:
+                        continue
+
+            self.logger.error(f"No expirations available for {symbol} from any provider")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error getting expirations for {symbol}: {e}")
             return None
         
     def start_new_cycle(self):

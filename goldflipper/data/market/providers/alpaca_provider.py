@@ -101,14 +101,12 @@ class AlpacaProvider(MarketDataProvider):
         'in_the_money': 'in_the_money'
     }
     
-    def __init__(self):
-        # Load settings from YAML
-        self.settings = self._load_settings()
-        
-        # Get credentials from settings
-        self.api_key = self.settings['alpaca']['api_key']
-        self.secret_key = self.settings['alpaca']['secret_key']
-        self.base_url = self.settings['alpaca']['base_url']
+    def __init__(self, provider_settings: Optional[Dict[str, Any]] = None):
+        """Initialize provider with settings from DB. No YAML."""
+        settings = provider_settings or {}
+        self.api_key = settings.get('api_key', '')
+        self.secret_key = settings.get('secret_key', '')
+        self.base_url = settings.get('base_url', 'https://paper-api.alpaca.markets')
         
         # Use v2 endpoints for data and streaming
         self.data_url = 'https://data.alpaca.markets'
@@ -144,9 +142,8 @@ class AlpacaProvider(MarketDataProvider):
         self._health_check_task = None
         
         # Initialize cache and rate limiter
-        provider_settings = self.settings['market_data_providers']['providers']['alpaca']
-        cache_settings = provider_settings['cache']
-        rate_limit_settings = provider_settings['rate_limiting']
+        cache_settings = (settings.get('cache') or {'enabled': False, 'max_size': 1024})
+        rate_limit_settings = (settings.get('rate_limiting') or {'enabled': False, 'quotes_per_minute': 150, 'buffer_percent': 10})
         
         if cache_settings['enabled']:
             self.cache = LRUCache(max_size=cache_settings['max_size'])
@@ -176,12 +173,7 @@ class AlpacaProvider(MarketDataProvider):
         self.option_stream.subscribe_trades(self._handle_option_trade)
         self.option_stream.subscribe_quotes(self._handle_option_quote)
     
-    def _load_settings(self) -> dict:
-        """Load settings from YAML file"""
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-        config_path = os.path.join(project_root, 'config', 'settings.yaml')
-        with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
+    # YAML loading removed; settings come from DB via manager
     
     async def _init_websocket(self):
         """Initialize WebSocket connection"""

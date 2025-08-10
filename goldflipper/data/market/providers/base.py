@@ -54,6 +54,17 @@ class MarketDataProvider(ABC):
         """Standardize column names using the provider's mapping"""
         # We want to map FROM provider's columns TO our standard columns
         return df.rename(columns=self.COLUMN_MAPPING)
+
+    def get_available_expirations(self, symbol: str) -> List[str]:
+        """Return available option expiration dates for a symbol.
+
+        Default implementation indicates the provider does not support this.
+        Providers that can retrieve expiration lists should override this.
+
+        Returns:
+            List of expiration date strings in 'YYYY-MM-DD' format.
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement get_available_expirations")
     
     @abstractmethod
     def get_stock_price(self, symbol: str, regular_hours_only: bool = False) -> Optional[float]:

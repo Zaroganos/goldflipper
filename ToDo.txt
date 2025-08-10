@@ -1,6 +1,39 @@
 This is a list of tasks to do and features to implement for the goldflipper project.
 Place new tasks on top.
 
+### 6.1 Session 2025-08-10 Wrap-up (Delta-16 + Settings + VIX)
+
+- **Delta-16 accuracy hardening (in progress)**: WEM now chooses the actual expiration date from provider listings (when available) before chain fetch. Remaining task: extract and enhance `validate_delta_16_quality()` into its own module with stronger checks (absolute-delta closeness per side, sign normalization, bounds/monotonicity, optional cross‑provider checks, theoretical‑delta fallback).
+- **Strict DB-only settings migration**:
+  - All market data configuration is now loaded from DuckDB `user_settings` only. No YAML fallbacks.
+  - Settings UI (`web/pages/4_⚙️_Settings.py`) reads/writes keys under `market_data_providers.*` using DELETE→INSERT upserts with JSON-encoded values.
+  - Fixed duplicate Streamlit element IDs; improved error messaging to list failing keys.
+- **Unified database pathing**:
+  - Default DB base dir anchored to repo root `data/` via environment `GOLDFLIPPER_DATA_DIR` and `.env.bat` sourcing in launch scripts.
+  - Added runtime support to change base dir (code supports `set_data_dir()`), pending UI.
+- **MarketData.app integration**:
+  - Implemented `get_option_chain` with explicit `side=call|put` and `expiration` per docs/Postman; `get_available_expirations` added.
+  - `get_historical_data` handles index symbols (e.g., VIX) via `/indices/candles` first.
+- **WEM fixes**:
+  - Corrected metadata bug by using a single `calendar_next_friday` reference to avoid `UnboundLocalError` on `next_friday`.
+  - Logging refined: if essential fields are missing, logs reflect partial/unsuccessful updates rather than success.
+  - Excel export: highlight Delta-16 flagged cells in vertical layout when validation warns/errors.
+- **VIX now works**:
+  - Verified chain/historical retrieval via MarketData.app with correct endpoints and symbol handling.
+
+Key paths/files:
+- `goldflipper/web/pages/6_📊_WEM.py`: provider‑guided expiration, chain usage, Delta‑16 plumbing, metadata fix (`calendar_next_friday`).
+- `goldflipper/web/pages/4_⚙️_Settings.py`: DB‑only settings UI, unique checkbox keys, robust upsert.
+- `goldflipper/goldflipper/data/market/manager.py`: DB‑only config load; `get_available_expirations` entrypoint.
+- `goldflipper/goldflipper/data/market/providers/marketdataapp_provider.py`: expirations, chain with side, indices candles.
+- `.env.bat`, `web/launch_web.bat`, `launch_goldflipper.bat`: centralized env sourcing.
+
+Open next steps:
+- Extract and enhance Delta‑16 validation module; wire highlighting for horizontal layout.
+- Add DB UI to change DB base directory (writes `.env.bat`, calls `set_data_dir()`).
+- Implement expirations for Alpaca; bring yfinance chain as fallback; ensure symbol mapping coverage.
+
+
 - [✓] Fix WEM display and validation issues (2025-06-23):
       1. ✓ Fixed WEM price source bug - mystery $305.95 vs correct Friday close $308.38
          - Root cause: WEM was making live API calls instead of using Friday close cache

@@ -2,12 +2,13 @@ from typing import Optional, Any, Dict
 import logging
 
 class CycleCache:
-    """Cycle-aware cache for market data"""
-    
-    def __init__(self, config: dict):
+    """Cycle-aware cache for market data. Safe defaults if config missing."""
+
+    def __init__(self, config: dict | None):
         self.logger = logging.getLogger(__name__)
-        self.enabled = config['cache']['enabled']
-        self.max_items = config['cache'].get('max_items', 1000)
+        cache_cfg = (config or {}).get('cache') or {}
+        self.enabled = bool(cache_cfg.get('enabled', False))
+        self.max_items = int(cache_cfg.get('max_items', 1000))
         self._cache: Dict[str, Any] = {}
         self._cycle_id = 0
         

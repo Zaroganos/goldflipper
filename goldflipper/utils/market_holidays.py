@@ -33,6 +33,12 @@ from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
+try:
+    import pandas_market_calendars as mcal  # Optional dependency
+    _PMC_AVAILABLE = True
+except Exception:
+    _PMC_AVAILABLE = False
+
 
 def is_market_holiday(date) -> bool:
     """
@@ -117,6 +123,23 @@ def find_next_friday_expiration() -> datetime:
         datetime: Next weekly options expiration date (Friday or preceding Thursday if holiday)
     """
     today = datetime.now().date()
+    # Prefer precise NYSE schedule if pandas_market_calendars is available
+    if _PMC_AVAILABLE:
+        try:
+            nyse = mcal.get_calendar('XNYS')
+            # Compute schedule for the next 14 days
+            end = today + timedelta(days=14)
+            sched = nyse.schedule(start_date=today, end_date=end)
+            # Find the next Friday trading day in the schedule
+            for ts in sched.index:
+                if ts.weekday() == 4:  # Friday
+                    # If there is an early close/holiday, schedule will reflect it; we take that date
+                    return datetime.combine(ts.date(), datetime.min.time())
+            # Fallback to simple logic if none found
+        except Exception as e:
+            logger.debug(f"pandas_market_calendars unavailable or failed: {e}")
+
+    # Simple fallback logic
     days_ahead = 4 - today.weekday()  # Friday is weekday 4 (Monday=0)
     
     if days_ahead <= 0:  # Today is Friday or weekend, get next Friday

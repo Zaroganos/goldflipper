@@ -458,6 +458,8 @@ chart_viewer:
 market_data_providers:
   # Primary provider will be used as the main source for data
   primary_provider: "marketdataapp"  # Options: "alpaca", "yfinance", "marketdataapp"
+  # Which provider to use for listing available option expirations
+  expiration_provider: "yfinance"     # Options: "yfinance", "marketdataapp", "alpaca"
   
   # Enable/disable specific providers
   providers:

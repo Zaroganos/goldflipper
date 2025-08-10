@@ -90,28 +90,55 @@ class DatabaseConfig:
     """
     
     def __init__(self):
-        """Initialize database configuration from environment variables."""
-        # Get data directory from environment or use default
-        data_dir = Path(os.getenv('GOLDFLIPPER_DATA_DIR', 'data'))
-        
-        # Ensure data directory exists
-        data_dir.mkdir(parents=True, exist_ok=True)
-        
+        """Initialize database configuration anchored to project root with env override."""
+        # Resolve project root (repo root): .../goldflipper/goldflipper/database -> parents[3]
+        repo_root = Path(__file__).resolve().parents[3]
+
+        # Determine base data directory
+        env_dir = os.getenv('GOLDFLIPPER_DATA_DIR')
+        if env_dir:
+            base_dir = Path(env_dir)
+            if not base_dir.is_absolute():
+                base_dir = (repo_root / base_dir).resolve()
+        else:
+            base_dir = (repo_root / 'data').resolve()
+
+        self._repo_root = repo_root
+        self.base_dir = base_dir
+
+        # Ensure base directory exists
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+
         # Set up database paths
-        self.db_path = data_dir / 'db' / 'goldflipper.db'
+        self.db_path = self.base_dir / 'db' / 'goldflipper.db'
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Set up backup directory
-        self.backup_dir = data_dir / 'db' / 'backups'
+        self.backup_dir = self.base_dir / 'db' / 'backups'
         self.backup_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Set up temp directory
-        self.temp_dir = data_dir / 'db' / 'temp'
+        self.temp_dir = self.base_dir / 'db' / 'temp'
         self.temp_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Connection pool configuration
         self.pool_size = int(os.getenv('GOLDFLIPPER_DB_POOL_SIZE', '5'))
         self.pool_timeout = int(os.getenv('GOLDFLIPPER_DB_TIMEOUT', '30'))
+
+    def update_base_dir(self, new_base_dir: str) -> None:
+        """Update the base data directory and refresh path attributes."""
+        base = Path(new_base_dir)
+        if not base.is_absolute():
+            base = (self._repo_root / base).resolve()
+        base.mkdir(parents=True, exist_ok=True)
+        self.base_dir = base
+        # Update paths
+        self.db_path = self.base_dir / 'db' / 'goldflipper.db'
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.backup_dir = self.base_dir / 'db' / 'backups'
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        self.temp_dir = self.base_dir / 'db' / 'temp'
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
     
     @property
     def connection_url(self) -> str:
@@ -139,6 +166,22 @@ config = DatabaseConfig()
 
 # Global engine instance
 _engine: Optional[Engine] = None
+
+def set_data_dir(new_base_dir: str) -> None:
+    """Reconfigure the database base directory at runtime.
+
+    Disposes existing engine, updates config paths, and resets engine singleton.
+    """
+    global _engine
+    if _engine is not None:
+        try:
+            _engine.dispose()
+        except Exception:
+            pass
+        _engine = None
+    # Update config and environment for current process
+    config.update_base_dir(new_base_dir)
+    os.environ['GOLDFLIPPER_DATA_DIR'] = str(config.base_dir)
 
 def get_engine() -> Engine:
     """

@@ -8,11 +8,20 @@ from pathlib import Path
 import traceback
 from datetime import datetime
 
-# FIX (2025-06-21): Set the correct data directory to point to the main database
-# This ensures the web app uses the same database as the command-line tools
-# Previously, the web app created its own database in web/data/ causing schema mismatches
 project_root = Path(__file__).parent.parent
-os.environ['GOLDFLIPPER_DATA_DIR'] = str(project_root / 'data')
+
+# Load .env.bat if present to set GOLDFLIPPER_DATA_DIR; don't override if already set
+env_bat = project_root.parent / '.env.bat'
+try:
+    if not os.getenv('GOLDFLIPPER_DATA_DIR') and env_bat.exists():
+        # Use cmd to parse the bat and output the var
+        import subprocess
+        cmd = ["cmd.exe", "/c", f"call \"{env_bat}\" && echo %GOLDFLIPPER_DATA_DIR%"]
+        out = subprocess.check_output(cmd, text=True).strip()
+        if out:
+            os.environ['GOLDFLIPPER_DATA_DIR'] = out
+except Exception:
+    pass
 
 # Add project root to Python path
 sys.path.insert(0, str(project_root))
@@ -25,24 +34,9 @@ def main():
             f.write(f"Starting launch_web.py at {datetime.now()}\n")
             
 
-            # This is a problem area. Make sure the dir actually points to the settings.yaml file!
-            # Get the script directory and project root
+            # Default to hidden console
+            show_console = False
             script_dir = Path(__file__).parent
-            project_root = script_dir.parent  # Go up one level to get to goldflipper directory
-            settings_file = project_root / 'goldflipper' / 'config' / 'settings.yaml'
-            
-            f.write(f"Reading settings from: {settings_file}\n")
-            
-            # Read console visibility setting
-            try:
-                with open(settings_file, 'r') as sf:
-                    settings = yaml.safe_load(sf)
-                    show_console = settings.get('system', {}).get('console', {}).get('visible', False)
-                    f.write(f"Console visibility setting: {show_console}\n")
-                    f.write(f"Full settings: {settings}\n")
-            except Exception as e:
-                f.write(f"Error reading settings: {str(e)}\n")
-                show_console = False
             
             # Check if Poetry is installed
             try:
@@ -73,16 +67,10 @@ def main():
             try:
                 if show_console:
                     # For visible console, let Streamlit output directly
-                    subprocess.Popen(
-                        ['poetry', 'run', 'streamlit', 'run', str(script_dir / "app.py")],
-                        creationflags=subprocess.CREATE_NEW_CONSOLE
-                    )
+                    subprocess.Popen(['poetry', 'run', 'streamlit', 'run', str(script_dir / 'app.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
                     # For hidden console, use Popen with CREATE_NO_WINDOW
-                    subprocess.Popen(
-                        ['poetry', 'run', 'streamlit', 'run', str(script_dir / "app.py")],
-                        creationflags=subprocess.CREATE_NO_WINDOW
-                    )
+                    subprocess.Popen(['poetry', 'run', 'streamlit', 'run', str(script_dir / 'app.py')], creationflags=subprocess.CREATE_NO_WINDOW)
                 
                 f.write("Streamlit app launched successfully\n")
             except Exception as e:

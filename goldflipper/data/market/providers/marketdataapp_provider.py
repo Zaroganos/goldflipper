@@ -30,13 +30,16 @@ class MarketDataAppProvider(MarketDataProvider):
         'rho': 'rho'
     }
 
-    def __init__(self, config_path: str):
-        # Load the configuration file
-        with open(config_path, 'r') as file:
-            config = yaml.safe_load(file)
-        
-        # Extract the API key from the configuration
-        self.api_key = config['market_data_providers']['providers']['marketdataapp']['api_key']
+    def __init__(self, provider_settings: Dict[str, Any]):
+        """Initialize provider using settings from DuckDB (no YAML).
+
+        Args:
+            provider_settings: Dict containing provider configuration, e.g.,
+                {'enabled': True, 'api_key': '...'}
+        """
+        self.api_key = provider_settings.get('api_key')
+        if not self.api_key:
+            raise ValueError("MarketDataAppProvider requires an API key from DB settings (market_data_providers.providers.marketdataapp.api_key)")
         self.base_url = "https://api.marketdata.app/v1"
         self.headers = {
             'Accept': 'application/json',
@@ -89,50 +92,49 @@ class MarketDataAppProvider(MarketDataProvider):
         return self.session.get(url, headers=self.headers, params=params)
 
     def get_stock_price(self, symbol: str, regular_hours_only: bool = False) -> float:
-        """Get current stock price
-        
-        Args:
-            symbol: Stock ticker symbol
-            regular_hours_only: If True, excludes extended hours data and returns
-                               the last primary session close when markets are closed
-        """
-        url = f"{self.base_url}/stocks/quotes/{symbol}/"
-        
-        # Add extended parameter based on regular_hours_only flag
+        """Get current price for stocks or indices."""
+        paths = [f"/stocks/quotes/{symbol}/"]
+        if symbol.upper() in {"VIX", "SPX", "NDX", "RUT", "DJI"}:
+            paths = [
+                f"/indices/quotes/{symbol}/",
+                f"/index/quotes/{symbol}/",
+                f"/stocks/quotes/{symbol}/",
+            ]
+
         params = {}
         if regular_hours_only:
             params['extended'] = 'false'
-        
-        response = self._make_request(url, params)
-        
-        if response.status_code in (200, 203):
-            data = response.json()
-            if data.get('s') == 'ok':
-                # The API returns arrays, so we take the first element
-                if 'last' in data and data['last']:
-                    return float(data['last'][0])
+
+        last_error = None
+        for suffix in paths:
+            url = f"{self.base_url}{suffix}"
+            resp = self._make_request(url, params)
+            try:
+                if resp.status_code in (200, 203):
+                    data = resp.json()
+                    if data.get('s') == 'ok' and 'last' in data and data['last']:
+                        return float(data['last'][0])
+                    last_error = data.get('errmsg', 'no last in payload')
+                    continue
+                elif resp.status_code in (204, 404):
+                    last_error = f"status {resp.status_code}"
+                    continue
+                elif resp.status_code == 429:
+                    if 'Concurrent request limit reached' in resp.text:
+                        raise ValueError("Too many concurrent requests")
+                    else:
+                        raise ValueError("Daily request limit exceeded")
+                elif resp.status_code == 402:
+                    raise ValueError("Plan limit reached or feature not available")
                 else:
-                    logging.error(f"No last price available for {symbol}")
-                    raise ValueError(f"No last price available for {symbol}")
-            else:
-                logging.error(f"API returned error status for {symbol}: {data.get('errmsg', 'Unknown error')}")
-                raise ValueError(f"Error fetching stock price for {symbol}")
-        elif response.status_code == 204:
-            logging.warning(f"No cached data available for {symbol}, retry with live data")
-            raise ValueError(f"No cached data available for {symbol}")
-        elif response.status_code == 429:
-            if 'Concurrent request limit reached' in response.text:
-                logging.error("Concurrent request limit (50) reached")
-                raise ValueError("Too many concurrent requests")
-            else:
-                logging.error("Daily request limit exceeded")
-                raise ValueError("Daily request limit exceeded")
-        elif response.status_code == 402:
-            logging.error("Plan limit reached or feature not available in current plan")
-            raise ValueError("Plan limit reached or feature not available")
-        else:
-            logging.error(f"Failed to get stock price for {symbol}: {response.status_code}")
-            raise ValueError(f"Error fetching stock price for {symbol}")
+                    last_error = f"status {resp.status_code}"
+                    continue
+            except Exception as e:
+                last_error = str(e)
+                continue
+
+        logging.error(f"Failed to get price for {symbol}: {last_error}")
+        raise ValueError(f"Error fetching price for {symbol}")
 
     def get_historical_data(
         self,
@@ -141,48 +143,98 @@ class MarketDataAppProvider(MarketDataProvider):
         end_date: datetime,
         interval: str = "1m"
     ) -> pd.DataFrame:
-        """Get historical price data"""
-        url = f"{self.base_url}/stocks/candles/{interval}/{symbol}/"
+        """Get historical price data for stocks or indices (auto-endpoint selection)."""
+        paths = [f"/stocks/candles/{interval}/{symbol}/"]
+        # If this looks like an index (e.g., VIX), try indices endpoints as well
+        if symbol.upper() in {"VIX", "SPX", "NDX", "RUT", "DJI"}:
+            paths = [
+                f"/indices/candles/{interval}/{symbol}/",
+                f"/index/candles/{interval}/{symbol}/",
+                f"/stocks/candles/{interval}/{symbol}/",
+            ]
+
         params = {
             'from': start_date.strftime('%Y-%m-%d'),
             'to': end_date.strftime('%Y-%m-%d')
         }
-        
-        response = self._make_request(url, params)
-        
-        # Updated status code handling to include 203
-        if response.status_code in (200, 203):
-            data = response.json()
-            if data.get('s') == 'ok':
-                # Create DataFrame from the candle data
-                df = pd.DataFrame({
-                    'timestamp': pd.to_datetime(data['t'], unit='s'),
-                    'open': data['o'],
-                    'high': data['h'],
-                    'low': data['l'],
-                    'close': data['c'],
-                    'volume': data['v']
-                })
-                return df
-            else:
-                logging.error(f"API returned error status for {symbol}: {data.get('errmsg', 'Unknown error')}")
-                raise ValueError(f"Error fetching historical data for {symbol}")
-        elif response.status_code == 204:
-            logging.warning(f"No cached data available for {symbol}, retry with live data")
-            raise ValueError(f"No cached data available for {symbol}")
-        elif response.status_code == 429:
-            if 'Concurrent request limit reached' in response.text:
-                logging.error("Concurrent request limit (50) reached")
-                raise ValueError("Too many concurrent requests")
-            else:
-                logging.error("Daily request limit exceeded")
-                raise ValueError("Daily request limit exceeded")
-        elif response.status_code == 402:
-            logging.error("Plan limit reached or feature not available in current plan")
-            raise ValueError("Plan limit reached or feature not available")
-        else:
-            logging.error(f"Failed to get historical data for {symbol}: {response.status_code}")
-            raise ValueError(f"Error fetching historical data for {symbol}")
+
+        last_error = None
+        for suffix in paths:
+            url = f"{self.base_url}{suffix}"
+            response = self._make_request(url, params)
+            try:
+                if response.status_code in (200, 203):
+                    data = response.json()
+                    if data.get('s') == 'ok' and all(k in data for k in ('t','o','h','l','c','v')):
+                        df = pd.DataFrame({
+                            'timestamp': pd.to_datetime(data['t'], unit='s'),
+                            'open': data['o'],
+                            'high': data['h'],
+                            'low': data['l'],
+                            'close': data['c'],
+                            'volume': data['v']
+                        })
+                        if not df.empty:
+                            return df
+                        last_error = "empty dataframe"
+                        continue
+                    else:
+                        last_error = data.get('errmsg', 'non-ok status or missing fields')
+                        continue
+                elif response.status_code in (204, 404):
+                    last_error = f"status {response.status_code}"
+                    continue
+                elif response.status_code == 429:
+                    if 'Concurrent request limit reached' in response.text:
+                        raise ValueError("Too many concurrent requests")
+                    else:
+                        raise ValueError("Daily request limit exceeded")
+                elif response.status_code == 402:
+                    raise ValueError("Plan limit reached or feature not available")
+                else:
+                    last_error = f"status {response.status_code}"
+                    continue
+            except Exception as e:
+                last_error = str(e)
+                continue
+
+        logging.error(f"Failed to get historical data for {symbol}: {last_error}")
+        return pd.DataFrame()
+
+    def get_available_expirations(self, symbol: str, date: Optional[str] = None, strike: Optional[float] = None) -> list[str]:
+        """Return available option expiration dates for a symbol using MarketData.app.
+
+        Endpoint: /v1/options/expirations/{underlyingSymbol}/ (GET)
+        Optional params: date (ISO/unix), strike (number)
+        Docs: https://www.marketdata.app/docs/api/options/expirations
+        """
+        try:
+            url = f"{self.base_url}/options/expirations/{symbol}/"
+            params = {}
+            if date:
+                params['date'] = date
+            if strike is not None:
+                params['strike'] = strike
+            resp = self._make_request(url, params)
+            if resp.status_code not in (200, 203):
+                logging.warning(f"expirations endpoint status {resp.status_code} for {symbol}")
+                return []
+            data = resp.json()
+            # Common shapes: {'s':'ok','expirations':['YYYY-MM-DD', ...]}
+            if isinstance(data, dict):
+                for key in ("expirations", "expiration", "dates"):
+                    if key in data and isinstance(data[key], list):
+                        return [str(d) for d in data[key]]
+                # Some APIs return a list directly at 'data'
+                if 'data' in data and isinstance(data['data'], list):
+                    return [str(d) for d in data['data']]
+            elif isinstance(data, list):
+                return [str(d) for d in data]
+            logging.warning(f"Unrecognized expirations payload for {symbol}: keys={list(data.keys()) if isinstance(data, dict) else type(data)}")
+            return []
+        except Exception as e:
+            logging.error(f"Error getting expirations for {symbol}: {e}")
+            return []
 
     def get_option_chain(
         self,
@@ -190,100 +242,71 @@ class MarketDataAppProvider(MarketDataProvider):
         expiration_date: Optional[str] = None,
         date: Optional[str] = None
     ) -> Dict[str, pd.DataFrame]:
-        """Get option chain data (current or historical)
-        
+        """Get option chain data (current) using documented HTTP endpoint.
+
         Args:
             symbol: Underlying symbol
-            expiration_date: Filter by expiration date (YYYY-MM-DD)
-            date: Historical date for option chain (YYYY-MM-DD). If None, gets current data
-            
+            expiration_date: Filter by expiration date (YYYY-MM-DD). Required by MarketData.app for precise chains
+            date: Ignored for MarketData.app (current only)
+
         Returns:
             Dictionary with 'calls' and 'puts' DataFrames
         """
-        logging.info(f"MarketDataApp: Fetching option chain for {symbol}, expiry {expiration_date}, date {date}")
-        
-        url = f"{self.base_url}/options/chain/{symbol}/"
-        
-        # Build query parameters
-        params = []
-        if expiration_date:
-            params.append(f"expiration={expiration_date}")
-        if date:
-            params.append(f"date={date}")
-        
-        if params:
-            url += f"?{'&'.join(params)}"
-            
-        response = self._make_request(url)
-        logging.info(f"MarketDataApp: Got response status {response.status_code} for URL: {url}")
-        
-        if response.status_code in (200, 203):
-            data = response.json()
-            logging.info(f"MarketDataApp: Response data keys: {data.keys()}")
-            if data.get('s') == 'ok':
-                logging.info(f"MarketDataApp: Found {len(data.get('optionSymbol', []))} options")
-                
-                # Create DataFrame with all fields including the side field
-                df_data = {
-                    'optionSymbol': data['optionSymbol'],
-                    'side': data['side'],  # Include the side field to distinguish calls from puts
-                    'strike': data['strike'],  # Make sure we include strike
-                    'bid': data['bid'],
-                    'ask': data['ask'],
-                    'last': data['last'],
-                    'volume': data['volume'],
-                    'openInterest': data['openInterest'],
-                    'iv': data['iv'],  # Changed from impliedVolatility to iv
-                    'inTheMoney': data['inTheMoney'],
-                    'delta': data.get('delta', [0] * len(data['optionSymbol'])),
-                    'gamma': data.get('gamma', [0] * len(data['optionSymbol'])),
-                    'theta': data.get('theta', [0] * len(data['optionSymbol'])),
-                    'vega': data.get('vega', [0] * len(data['optionSymbol'])),
-                    'rho': data.get('rho', [0] * len(data['optionSymbol']))
-                }
-                
-                df = pd.DataFrame(df_data)
-                
-                # Split into calls and puts based on the side field (not symbol)
-                # FIX (2025-06-21): Use 'side' field instead of parsing symbols
-                # Previous logic used symbol.contains('C'/'P') which failed because
-                # all option symbols contain 'C' (e.g., SPY250627C00594000, SPY250627P00594000)
-                calls_df = df[df['side'] == 'call'].copy()
-                puts_df = df[df['side'] == 'put'].copy()
-                
-                # Standardize column names
-                calls_df = self.standardize_columns(calls_df)
-                puts_df = self.standardize_columns(puts_df)
-                
-                return {
-                    'calls': calls_df,
-                    'puts': puts_df
-                }
-            else:
-                logging.error(f"API returned error status for {symbol}: {data.get('errmsg', 'Unknown error')}")
-                raise ValueError(f"Error fetching option chain for {symbol}")
-        elif response.status_code == 204:
-            logging.warning(f"No cached data available for {symbol}, retry with live data")
-            raise ValueError(f"No cached data available for {symbol}")
-        elif response.status_code == 429:
-            if 'Concurrent request limit reached' in response.text:
-                logging.error("Concurrent request limit (50) reached")
-                raise ValueError("Too many concurrent requests")
-            else:
-                logging.error("Daily request limit exceeded")
-                raise ValueError("Daily request limit exceeded")
-        else:
-            # Improved error handling with actual API response
-            try:
-                error_data = response.json()
-                error_msg = error_data.get('errmsg', 'Unknown error')
-                logging.error(f"Failed to get option chain for {symbol}: {response.status_code} - {error_msg}")
-                logging.error(f"Full API response: {response.text}")
-                raise ValueError(f"Error fetching option chain for {symbol}: {error_msg}")
-            except:
-                logging.error(f"Failed to get option chain for {symbol}: {response.status_code}")
-                logging.error(f"Raw API response: {response.text}")
-                raise ValueError(f"Error fetching option chain for {symbol}: HTTP {response.status_code}")
+        logging.info(f"MarketDataApp: Fetching option chain for {symbol}, expiry {expiration_date}")
+
+        if not expiration_date:
+            logging.warning("MarketDataApp chain requires expiration_date; returning empty chain")
+            return {'calls': pd.DataFrame(), 'puts': pd.DataFrame()}
+
+        # Build HTTP URL exactly as documented
+        url_calls = f"{self.base_url}/options/chain/{symbol}/?expiration={expiration_date}&side=call"
+        url_puts = f"{self.base_url}/options/chain/{symbol}/?expiration={expiration_date}&side=put"
+
+        def fetch_side(url: str) -> pd.DataFrame:
+            resp = self._make_request(url)
+            if resp.status_code not in (200, 203):
+                logging.warning(f"Chain side request status {resp.status_code} for {url}")
+                return pd.DataFrame()
+            data = resp.json()
+            # Expect arrays per field per MarketData.app
+            if not isinstance(data, dict) or not data.get('optionSymbol'):
+                logging.warning(f"Unexpected chain payload for {url}: keys={list(data.keys()) if isinstance(data, dict) else type(data)}")
+                return pd.DataFrame()
+            length = len(data['optionSymbol'])
+            def safe_list(k, default=0):
+                v = data.get(k)
+                if isinstance(v, list) and len(v) == length:
+                    return v
+                return [default] * length
+            df = pd.DataFrame({
+                'optionSymbol': data['optionSymbol'],
+                'side': safe_list('side', 'call' if 'side=call' in url else 'put'),
+                'strike': safe_list('strike', 0.0),
+                'bid': safe_list('bid', 0.0),
+                'ask': safe_list('ask', 0.0),
+                'last': safe_list('last', 0.0),
+                'volume': safe_list('volume', 0),
+                'openInterest': safe_list('openInterest', 0),
+                'iv': safe_list('iv', 0.0),
+                'inTheMoney': safe_list('inTheMoney', False),
+                'delta': safe_list('delta', 0.0),
+                'gamma': safe_list('gamma', 0.0),
+                'theta': safe_list('theta', 0.0),
+                'vega': safe_list('vega', 0.0),
+                'rho': safe_list('rho', 0.0),
+            })
+            return df
+
+        calls_raw = fetch_side(url_calls)
+        puts_raw = fetch_side(url_puts)
+
+        if calls_raw.empty and puts_raw.empty:
+            return {'calls': pd.DataFrame(), 'puts': pd.DataFrame()}
+
+        # Standardize
+        calls_df = self.standardize_columns(calls_raw) if not calls_raw.empty else pd.DataFrame()
+        puts_df = self.standardize_columns(puts_raw) if not puts_raw.empty else pd.DataFrame()
+        return {'calls': calls_df, 'puts': puts_df}
 
     def get_option_greeks(
         self,
