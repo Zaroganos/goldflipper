@@ -1,6 +1,6 @@
 [tool.poetry]
-name = "goldflipper"
-version = "0.1.2"
+name = "goldflipper-1.5"
+version = "0.1.5"
 description = "A Python program for semi-autonomous options trading on Alpaca."
 authors = ["Iliya Yaroshevskiy <purpleafmanagement@gmail.com>"]
 readme = "README.md"
@@ -11,11 +11,11 @@ packages = [
 ]
 homepage = "https://github.com/Zaroganos/goldflipper"
 repository = "https://github.com/Zaroganos/goldflipper"
-keywords = ["algorithmic trading", "alpaca", "finance", "stocks", "investment"]
+keywords = ["algorithmic trading", "alpaca", "finance", "stocks", "options", "trading"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Proprietary",
-    "Operating System :: OS Independent",
+    "Operating System :: Microsoft :: Windows",
     "Development Status :: 4 - Beta",
     "Intended Audience :: Internal Use Only",
     "Intended Audience :: Retail and Institutional Options Traders",
@@ -52,6 +52,8 @@ duckdb-engine = ">=0.10.0"
 sqlalchemy = ">=2.0.0"
 alembic = ">=1.13.0"
 python-dateutil = ">=2.8.2"
+requests = ">=2.31.0"
+pandas-market-calendars = ">=4.4.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.0.0"
