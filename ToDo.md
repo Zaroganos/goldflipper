@@ -3,6 +3,12 @@ Directions for AI: Place new tasks on top. Remember to use real current date whe
 
 ### 2025-08-11
 - [ ] Add a way to address log size. How to implement functional rotating log files? How to archive old ones?
+ - [x] VIX WEM stabilization:
+   - Implemented provider-guided Wednesday expiration selection with rule-based algorithm fallback
+   - Robust ATM selection for VIX via min |call_mid − put_mid|
+   - Denominator (Friday Close) priority: VX=F via yfinance → ^VIX via yfinance → direct Yahoo Chart API → parity proxy (last resort)
+   - Added base source notes to Excel export; added “Clear WEM Cache” maintenance action
+   - Deprecated vix_utils pricing; removed manager dependency on vix_utils for futures price
 
 ### 2025-08-10 Wrap-up (Delta-16 + Settings + VIX)
 

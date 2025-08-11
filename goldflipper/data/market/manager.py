@@ -14,6 +14,9 @@ from goldflipper.utils.display import TerminalDisplay as display
 import pandas as pd
 from sqlalchemy import text as sql_text
 from goldflipper.database.connection import get_db_connection
+from .providers.vix_utils_adapter import (
+    get_vix_futures_price_for_option_expiry_on_date,
+)
 
 class MarketDataManager:
     """Central manager for market data operations"""
@@ -280,3 +283,63 @@ class MarketDataManager:
             self.logger.error(f"Error getting option chain for {symbol}: {str(e)}")
             display.error(f"Error getting option chain for {symbol}: {str(e)}")
             return {'calls': pd.DataFrame(), 'puts': pd.DataFrame()} 
+
+    # Removed get_vix_futures_price (we only use provider spot/futures or Yahoo chart fallback)
+
+    def get_vix_futures_price_on_date(self, vix_option_expiration: Optional[str], ref_date: Optional[str]) -> Optional[float]:
+        """Get the VIX futures price for a given option expiry as of a reference date (YYYY-MM-DD).
+
+        Strategy:
+        1) Provider-based retrieval via yfinance for VX=F (front-month) close on ref_date.
+        If provider data unavailable, return None.
+        """
+        try:
+            if not vix_option_expiration or not ref_date:
+                return None
+            from datetime import datetime as _dt
+            exp_date = _dt.strptime(vix_option_expiration, '%Y-%m-%d').date()
+            rdate = _dt.strptime(ref_date, '%Y-%m-%d').date()
+            # 1) Try yfinance provider for VX=F close on ref_date
+            self.logger.info(f"VIX VX=F Friday close request: expiry={vix_option_expiration}, ref_date={ref_date}")
+            try:
+                yf_provider = self.providers.get('yfinance')
+                if yf_provider and hasattr(yf_provider, 'get_historical_data'):
+                    # Fetch a small window including ref_date
+                    from datetime import timedelta as _td
+                    start = _dt.combine(rdate - _td(days=2), _dt.min.time())
+                    end = _dt.combine(rdate + _td(days=1), _dt.min.time())
+                    df = yf_provider.get_historical_data('VX=F', start, end, interval='1d')
+                    self.logger.info(f"VX=F yfinance result empty={df is None or getattr(df,'empty',True)}")
+                    if df is not None and not df.empty:
+                        try:
+                            self.logger.info(f"VX=F yfinance rows={len(df)} cols={list(df.columns)}")
+                        except Exception:
+                            pass
+                        # Pick the last row up to ref_date
+                        # Ensure index is datetime
+                        try:
+                            df_idx = df
+                            if 'timestamp' in df.columns:
+                                df_idx = df.set_index('timestamp')
+                            df_idx.index = pd.to_datetime(df_idx.index)
+                            subset = df_idx.loc[df_idx.index.date <= rdate]
+                            self.logger.info(f"VX=F subset rows up to {rdate}: {len(subset)}")
+                            if subset is not None and not subset.empty:
+                                if 'close' in subset.columns:
+                                    val = float(subset.iloc[-1]['close'])
+                                    self.logger.info(f"VX=F close (lowercase) on/before {rdate}: {val}")
+                                    return val
+                                if 'Close' in subset.columns:
+                                    val = float(subset.iloc[-1]['Close'])
+                                    self.logger.info(f"VX=F Close on/before {rdate}: {val}")
+                                    return val
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            # No provider data
+            return None
+        except Exception as e:
+            self.logger.warning(f"Failed to get VIX futures price on {ref_date} for {vix_option_expiration}: {e}")
+            return None

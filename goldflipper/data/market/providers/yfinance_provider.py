@@ -85,20 +85,71 @@ class YFinanceProvider(MarketDataProvider):
         end_date: datetime,
         interval: str = "1m"
     ) -> pd.DataFrame:
-        # Check cache first
+        """Fetch historical data via yfinance with normalized columns.
+
+        Returns a DataFrame with at least these columns when available:
+        - 'timestamp' (datetime index retained; column also added)
+        - 'Open'/'open', 'High'/'high', 'Low'/'low', 'Close'/'close', 'Volume'/'volume'
+        """
+        # Check cache first (only if non-empty)
         cache_key = f"{symbol}_{start_date}_{end_date}_{interval}"
-        if cache_key in self._cache:
-            return self._cache[cache_key]
-            
-        data = yf.download(
-            symbol,
-            start=start_date,
-            end=end_date,
-            interval=interval
-        )
-        
-        # Cache the result
-        self._cache[cache_key] = data
+        cached = self._cache.get(cache_key)
+        if cached is not None and not getattr(cached, 'empty', True):
+            return cached
+
+        try:
+            # Use history() for better control
+            ticker = yf.Ticker(symbol)
+            data = ticker.history(start=start_date, end=end_date, interval=interval, auto_adjust=False)
+            logging.info(f"YFinance.history {symbol} {interval} {start_date.date()}->{end_date.date()} rows={0 if data is None else len(data)}")
+            if data is None or data.empty:
+                # Fallback to download
+                data = yf.download(symbol, start=start_date, end=end_date, interval=interval, progress=False)
+                logging.info(f"YFinance.download(range) {symbol} {interval} rows={0 if data is None else len(data)}")
+        except Exception as e:
+            logging.error(f"YFinance: error fetching historical for {symbol}: {e}")
+            data = pd.DataFrame()
+
+        # Final fallback: pull a broader window by period and filter locally
+        if (data is None or data.empty) and interval in ("1d", "1wk", "1mo"):
+            try:
+                period = "2mo" if interval == "1d" else "6mo"
+                wide = yf.download(symbol, period=period, interval=interval, progress=False)
+                if wide is not None and not wide.empty:
+                    # Filter by date range
+                    try:
+                        wide_idx = wide
+                        if not isinstance(wide_idx.index, pd.DatetimeIndex):
+                            wide_idx.index = pd.to_datetime(wide_idx.index, errors='coerce')
+                        mask = (wide_idx.index >= pd.to_datetime(start_date)) & (wide_idx.index < pd.to_datetime(end_date))
+                        data = wide_idx.loc[mask]
+                        logging.info(f"YFinance.download(period={period}) {symbol} filtered rows={len(data)} total={len(wide)}")
+                    except Exception:
+                        data = wide
+            except Exception as e:
+                logging.warning(f"YFinance: period fallback failed for {symbol}: {e}")
+
+        if data is None or data.empty:
+            # Do not cache empty results
+            return data
+
+        # Ensure datetime index and add 'timestamp' column for consumers that expect it
+        try:
+            if not isinstance(data.index, pd.DatetimeIndex):
+                data.index = pd.to_datetime(data.index, errors='coerce')
+            data['timestamp'] = data.index
+        except Exception:
+            pass
+
+        # Add lowercase duplicates for robustness
+        for col in list(data.columns):
+            low = col.lower() if isinstance(col, str) else col
+            if isinstance(col, str) and low not in data.columns:
+                data[low] = data[col]
+
+        # Cache and return (only non-empty)
+        if not data.empty:
+            self._cache[cache_key] = data
         return data
         
     def get_option_chain(

@@ -206,7 +206,11 @@ class MarketDataAppProvider(MarketDataProvider):
 
         Endpoint: /v1/options/expirations/{underlyingSymbol}/ (GET)
         Optional params: date (ISO/unix), strike (number)
-        Docs: https://www.marketdata.app/docs/api/options/expirations
+        Docs: `https://www.marketdata.app/docs/api/options/expirations`
+
+        Notes for VIX:
+        - VIX expirations are typically on Wednesdays (morning settlement), and
+          MarketData.app returns those dates. We simply pass them through.
         """
         try:
             url = f"{self.base_url}/options/expirations/{symbol}/"

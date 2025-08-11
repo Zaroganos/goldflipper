@@ -58,8 +58,10 @@ HOLIDAY HANDLING:
 
 import logging
 from datetime import datetime, timezone
+from urllib.parse import quote, urlencode
 from pathlib import Path
 import yaml
+import requests
 import time
 import random
 from typing import Any
@@ -285,6 +287,73 @@ def get_default_wem_stocks(session: Session) -> List[Dict[str, Any]]:
     stocks = session.query(WEMStock).filter_by(is_default=True).all()
     return [stock.to_dict() for stock in stocks]
 
+# --- VIX helpers (fallbacks) -------------------------------------------------
+
+def _third_friday(year: int, month: int) -> datetime:
+    """Return date of the third Friday for given year/month."""
+    # First day of target month
+    first = datetime(year, month, 1)
+    # Friday is weekday 4 (Mon=0)
+    days_until_friday = (4 - first.weekday()) % 7
+    first_friday = first + timedelta(days=days_until_friday)
+    third_friday = first_friday + timedelta(weeks=2)
+    return third_friday
+
+
+def _generate_vix_monthly_expirations_for_year(year: int) -> List[datetime]:
+    """Generate VIX monthly settlement dates for a given year using the rule:
+    Wednesday that is 30 days before the third Friday of the following month,
+    adjusted to the prior business day when a holiday intervenes.
+    """
+    expirations: List[datetime] = []
+    for month in range(1, 13):
+        # Third Friday of following month
+        next_month = month + 1
+        next_year = year
+        if next_month == 13:
+            next_month = 1
+            next_year += 1
+        third_fri = _third_friday(next_year, next_month)
+        # Subtract 30 days → expected Wednesday
+        exp_date = (third_fri - timedelta(days=30)).date()
+        # Move to prior business day if holiday/weekend
+        while exp_date.weekday() >= 5 or is_market_holiday(exp_date):
+            exp_date = exp_date - timedelta(days=1)
+        expirations.append(datetime.combine(exp_date, datetime.min.time()))
+    return sorted(expirations)
+
+
+def _get_rule_based_vix_expirations_window() -> List[datetime]:
+    """Return rule-based VIX monthly expirations for current and next year."""
+    today = datetime.now().date()
+    dates = _generate_vix_monthly_expirations_for_year(today.year)
+    dates += _generate_vix_monthly_expirations_for_year(today.year + 1)
+    # Deduplicate and sort
+    uniq = sorted({d for d in dates})
+    return uniq
+
+
+def _robust_mid(option_row: pd.Series) -> Optional[float]:
+    """Compute a robust mid for an option row.
+
+    Preference order: (bid+ask)/2 if both > 0; else last; else ask; else bid; else None.
+    """
+    try:
+        bid = float(option_row.get('bid', 0) or 0)
+        ask = float(option_row.get('ask', 0) or 0)
+        last = float(option_row.get('last', 0) or 0)
+    except Exception:
+        bid = ask = last = 0.0
+    if bid > 0 and ask > 0:
+        return (bid + ask) / 2.0
+    if last > 0:
+        return last
+    if ask > 0:
+        return ask
+    if bid > 0:
+        return bid
+    return None
+
 def get_market_data(session: Session, symbol: str, days: int = 30) -> List[MarketData]:
     """Get recent market data for a symbol"""
     repo = MarketDataRepository(session)
@@ -478,17 +547,23 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
     try:
         # Step 1: Get stock price based on selected data source mode
         if use_friday_close:
-            # Standard mode: Use previous Friday's close price
-            logger.info(f"WEM calculation for {symbol} - using previous Friday close (standard method)")
-            previous_friday_date = find_previous_friday()
-            current_price = _get_previous_friday_close_price(symbol, previous_friday_date, use_cache=True)
-            
-            if current_price is None:
-                logger.error(f"Previous Friday close price not available for {symbol} - WEM calculation cannot proceed")
-                return None
-            
-            pricing_mode = "previous Friday close (regular hours)" if regular_hours_only else "previous Friday close (extended hours)"
-            data_source = "Friday Close"
+            # Standard mode: equities/ETFs use previous Friday close; VIX uses futures base (no Friday fetch)
+            if symbol.upper() == 'VIX':
+                logger.info("WEM calculation for VIX - using VIX futures base as of previous Friday close")
+                pricing_mode = "vix futures friday close"
+                data_source = "VIX Futures"
+                current_price = 0.0  # set after VX price retrieval for previous Friday
+            else:
+                logger.info(f"WEM calculation for {symbol} - using previous Friday close (standard method)")
+                previous_friday_date = find_previous_friday()
+                current_price = _get_previous_friday_close_price(symbol, previous_friday_date, use_cache=True)
+                
+                if current_price is None:
+                    logger.error(f"Previous Friday close price not available for {symbol} - WEM calculation cannot proceed")
+                    return None
+                
+                pricing_mode = "previous Friday close (regular hours)" if regular_hours_only else "previous Friday close (extended hours)"
+                data_source = "Friday Close"
         else:
             # Testing mode: Use most recent market data
             logger.info(f"WEM calculation for {symbol} - using most recent market data (testing mode)")
@@ -506,7 +581,10 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             pricing_mode = "most recent (regular hours)" if regular_hours_only else "most recent (extended hours)"
             data_source = "Most Recent"
         
-        logger.info(f"Using {data_source} data with {pricing_mode} for {symbol}: ${current_price:.2f}")
+        if symbol.upper() == 'VIX' and data_source == 'VIX Futures':
+            logger.info("VIX base price will be resolved from VX futures after expiration selection")
+        else:
+            logger.info(f"Using {data_source} data with {pricing_mode} for {symbol}: ${current_price:.2f}")
         
         # Step 2: Determine appropriate expiration date from provider expirations
         manager = get_market_data_manager()
@@ -522,7 +600,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             except Exception:
                 pass
 
-        # Determine calendar next Friday once for consistency
+        # Determine calendar next Friday once for consistency (non-VIX)
         calendar_next_friday = find_next_friday_expiration()
 
         provider_expirations = []
@@ -531,15 +609,11 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                 provider_expirations = manager.get_available_expirations(symbol) or []
         except Exception as e:
             logger.warning(f"Failed to get provider expirations for {symbol}: {e}")
-        if not provider_expirations:
-            # Fallback to calendar-based next Friday if provider expirations unavailable
-            logger.warning(f"No provider expirations for {symbol}. Using calendar next Friday: {calendar_next_friday.date()}")
-            target_expiration = calendar_next_friday
-        else:
-            # Select the earliest provider expiration that is on/after the upcoming trading week target
-            # Compute calendar-guided next Friday first for a reference
-            ref_next_friday = calendar_next_friday.date()
-            # Parse provider strings and pick the first >= ref_next_friday
+
+        # VIX uses Wednesday morning settlement linked to VIX futures, not Friday
+        if symbol.upper() == 'VIX':
+            # Choose the soonest listed expiration strictly after today
+            today_date = datetime.now(timezone.utc).date()
             parsed = []
             for d in provider_expirations:
                 try:
@@ -549,17 +623,56 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             parsed = sorted(set(parsed))
             chosen_date = None
             for d in parsed:
-                if d >= ref_next_friday:
+                if d > today_date:
                     chosen_date = d
                     break
             if chosen_date is None:
-                # If all are in the past relative to ref, pick the nearest future anyway
-                chosen_date = parsed[-1] if parsed else ref_next_friday
-            target_expiration = datetime.combine(chosen_date, datetime.min.time())
-            logger.info(f"Selected provider-guided expiration for {symbol}: {target_expiration.date()} (ref Friday {ref_next_friday})")
+                # Fallback: use rule-based generator (current and next year), then calendar Friday
+                rb_exp = _get_rule_based_vix_expirations_window()
+                chosen_date2 = None
+                for dt in rb_exp:
+                    if dt.date() > today_date:
+                        chosen_date2 = dt.date()
+                        break
+                if chosen_date2:
+                    logger.warning("Provider returned no future VIX expirations; using rule-based calendar")
+                    target_expiration = datetime.combine(chosen_date2, datetime.min.time())
+                else:
+                    logger.warning("No future VIX expirations from provider or rule-based fallback; using calendar next Friday")
+                    target_expiration = calendar_next_friday
+            else:
+                target_expiration = datetime.combine(chosen_date, datetime.min.time())
+                logger.info(f"Selected VIX expiration (provider): {target_expiration.date()}")
+        else:
+            # Non-VIX: Select the earliest provider expiration that is on/after the upcoming trading week target
+            if not provider_expirations:
+                # Fallback to calendar-based next Friday if provider expirations unavailable
+                logger.warning(f"No provider expirations for {symbol}. Using calendar next Friday: {calendar_next_friday.date()}")
+                target_expiration = calendar_next_friday
+            else:
+                ref_next_friday = calendar_next_friday.date()
+                parsed = []
+                for d in provider_expirations:
+                    try:
+                        parsed.append(datetime.strptime(d, '%Y-%m-%d').date())
+                    except Exception:
+                        continue
+                parsed = sorted(set(parsed))
+                chosen_date = None
+                for d in parsed:
+                    if d >= ref_next_friday:
+                        chosen_date = d
+                        break
+                if chosen_date is None:
+                    chosen_date = parsed[-1] if parsed else ref_next_friday
+                target_expiration = datetime.combine(chosen_date, datetime.min.time())
+                logger.info(f"Selected provider-guided expiration for {symbol}: {target_expiration.date()} (ref Friday {ref_next_friday})")
         
-        # Step 3: Get weekly option chain for chosen expiration (with holiday adjustment fallback)
-        weekly_option_chain_result = _get_weekly_option_chain(symbol, target_expiration, use_friday_close)
+        # Step 3: Get option chain for chosen expiration
+        if symbol.upper() == 'VIX':
+            weekly_option_chain_result = _get_vix_option_chain(symbol, target_expiration)
+        else:
+            weekly_option_chain_result = _get_weekly_option_chain(symbol, target_expiration, use_friday_close)
         
         if not weekly_option_chain_result:
             logger.error(f"No weekly option chain available for {symbol} - tried multiple expiration dates around {target_expiration.date()}")
@@ -639,9 +752,12 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         # Step 5: Calculate Straddle (ATM call + ATM put)
         logger.debug(f"Calculating straddle using ATM strike ${atm_call['strike']}")
         
-        # Calculate mid-prices for ATM options
-        atm_call_mid = (float(atm_call['bid']) + float(atm_call['ask'])) / 2
-        atm_put_mid = (float(atm_put['bid']) + float(atm_put['ask'])) / 2
+        # Calculate mid-prices for ATM options (robust mid to handle zero/one-sided quotes)
+        atm_call_mid = _robust_mid(atm_call)
+        atm_put_mid = _robust_mid(atm_put)
+        if atm_call_mid is None or atm_put_mid is None:
+            logger.error(f"Unable to compute ATM mids for {symbol}")
+            return None
         
         # Straddle = ATM call premium + ATM put premium
         straddle_premium = atm_call_mid + atm_put_mid
@@ -650,9 +766,12 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         # Step 6: Calculate Strangle (ITM call + ITM put at adjacent strikes)
         logger.debug(f"Calculating strangle using ITM options at adjacent strikes")
         
-        # Calculate mid-prices for ITM options
-        itm_call_mid = (float(itm_call['bid']) + float(itm_call['ask'])) / 2
-        itm_put_mid = (float(itm_put['bid']) + float(itm_put['ask'])) / 2
+        # Calculate mid-prices for ITM options (robust mid)
+        itm_call_mid = _robust_mid(itm_call)
+        itm_put_mid = _robust_mid(itm_put)
+        if itm_call_mid is None or itm_put_mid is None:
+            logger.error(f"Unable to compute ITM mids for {symbol}")
+            return None
         
         # Strangle = ITM call premium + ITM put premium
         strangle_premium = itm_call_mid + itm_put_mid
@@ -663,6 +782,9 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         itm_call_strike = float(itm_call['strike'])
         itm_put_strike = float(itm_put['strike'])
         
+        # For VIX, we will only compute a parity proxy if no provider base is available
+        vix_futures_proxy_price = None
+
         # Step 7: Calculate Final WEM Points
         # WEM Points = (Straddle + Strangle) / 2
         wem_points = (straddle_premium + strangle_premium) / 2
@@ -670,31 +792,98 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         
         # Calculate additional metrics based on corrected formulas
         # WEM Spread = WEM Points / (base price for comparison)
-        if use_friday_close:
-            # Standard mode: Use previous Friday's close for WEM Spread calculation
-            previous_friday_date = find_previous_friday()
-            previous_friday_close = _get_previous_friday_close_price(symbol, previous_friday_date, use_cache=True)
-            
-            if previous_friday_close and previous_friday_close > 0:
-                wem_spread = wem_points / previous_friday_close
-                logger.info(f"WEM Spread calculation (Friday close): ${wem_points:.2f} / ${previous_friday_close:.2f} = {wem_spread:.4f}")
-                spread_base_price = previous_friday_close
+        if symbol.upper() == 'VIX':
+            # Choose base price for spread and range calculations
+            base_for_spread = None
+            vix_base_source = None
+            if use_friday_close:
+                # Prefer VX price as of previous Friday close
+                try:
+                    manager = get_market_data_manager()
+                    prev_fri = find_previous_friday().strftime('%Y-%m-%d')
+                    exp_str = actual_expiration_date.strftime('%Y-%m-%d')
+                    base_for_spread = manager.get_vix_futures_price_on_date(exp_str, prev_fri)
+                    if base_for_spread:
+                        vix_base_source = f"vx_friday_close:{prev_fri}"
+                except Exception:
+                    base_for_spread = None
+            # If no VX=F base, fall back to VIX spot (^VIX) Friday close via providers
+            if use_friday_close and not base_for_spread:
+                try:
+                    prev_friday_dt = find_previous_friday()
+                    # Try exact ^VIX via yfinance path first
+                    spot_vix_friday_close = _get_previous_friday_close_price('^VIX', prev_friday_dt, use_cache=False, fallback_to_current=False)
+                    if not spot_vix_friday_close:
+                        # As a fallback, try generic 'VIX' which will route through providers
+                        spot_vix_friday_close = _get_previous_friday_close_price('VIX', prev_friday_dt, use_cache=False, fallback_to_current=False)
+                    if spot_vix_friday_close and spot_vix_friday_close > 0:
+                        base_for_spread = float(spot_vix_friday_close)
+                        vix_base_source = f"vix_spot_friday_close:{prev_friday_dt.strftime('%Y-%m-%d')}"
+                        logger.info(f"Using ^VIX Friday close as fallback base: ${base_for_spread:.4f}")
+                except Exception as e:
+                    logger.warning(f"Failed to obtain ^VIX Friday close fallback: {e}")
+
+            # If still no base, compute parity proxy
+            if not base_for_spread:
+                try:
+                    vix_futures_proxy_price = _estimate_vix_futures_price_from_atm(atm_call_mid, atm_put_mid, atm_strike)
+                    if vix_futures_proxy_price and vix_futures_proxy_price > 0:
+                        base_for_spread = vix_futures_proxy_price
+                        vix_base_source = "parity_proxy"
+                        logger.info(f"Estimated VIX futures proxy price (from ATM parity): ${vix_futures_proxy_price:.4f}")
+                except Exception as e:
+                    logger.warning(f"Failed to estimate VIX futures proxy price: {e}")
+
+            if base_for_spread:
+                wem_spread = wem_points / base_for_spread
+                logger.info(f"WEM Spread calculation (VIX base): ${wem_points:.2f} / ${base_for_spread:.4f} = {wem_spread:.4f}")
+                spread_base_price = base_for_spread
+                # Align displayed price to base used (VX base)
+                current_price = base_for_spread
             else:
-                # Fallback to current price if previous Friday price not available
-                wem_spread = wem_points / current_price
-                logger.warning(f"Previous Friday close not available for {symbol}, using current price for WEM Spread")
-                spread_base_price = current_price
+                wem_spread = None
+                spread_base_price = None
+                logger.warning("VIX base price unavailable from providers; WEM spread and levels will be blank")
+
+            # Persist denominator note for export
+            try:
+                if 'wem_denominator_notes' not in st.session_state:
+                    st.session_state.wem_denominator_notes = {}
+                if vix_base_source:
+                    st.session_state.wem_denominator_notes[symbol] = vix_base_source
+                else:
+                    st.session_state.wem_denominator_notes[symbol] = 'unavailable'
+            except Exception:
+                pass
         else:
-            # Testing mode: Use current price as base for WEM Spread calculation
-            wem_spread = wem_points / current_price
-            logger.info(f"WEM Spread calculation (most recent): ${wem_points:.2f} / ${current_price:.2f} = {wem_spread:.4f}")
-            spread_base_price = current_price
+            if use_friday_close:
+                # Standard mode: Use previous Friday's close for WEM Spread calculation
+                previous_friday_date = find_previous_friday()
+                previous_friday_close = _get_previous_friday_close_price(symbol, previous_friday_date, use_cache=True)
+                
+                if previous_friday_close and previous_friday_close > 0:
+                    wem_spread = wem_points / previous_friday_close
+                    logger.info(f"WEM Spread calculation (Friday close): ${wem_points:.2f} / ${previous_friday_close:.2f} = {wem_spread:.4f}")
+                    spread_base_price = previous_friday_close
+                else:
+                    # Fallback to current price if previous Friday price not available
+                    wem_spread = wem_points / current_price
+                    logger.warning(f"Previous Friday close not available for {symbol}, using current price for WEM Spread")
+                    spread_base_price = current_price
+            else:
+                # Testing mode: Use current price as base for WEM Spread calculation
+                wem_spread = wem_points / current_price
+                logger.info(f"WEM Spread calculation (most recent): ${wem_points:.2f} / ${current_price:.2f} = {wem_spread:.4f}")
+                spread_base_price = current_price
         
-        # Straddle 2 = Stock Price + WEM Points (upper expected range)
-        straddle_2 = current_price + wem_points
-        
-        # Straddle 1 = Stock Price - WEM Points (lower expected range)  
-        straddle_1 = current_price - wem_points
+        # Straddle levels based on base price
+        can_compute_levels = not (symbol.upper() == 'VIX' and use_friday_close and (spread_base_price is None))
+        if can_compute_levels:
+            straddle_2 = current_price + wem_points
+            straddle_1 = current_price - wem_points
+        else:
+            straddle_1 = None
+            straddle_2 = None
         
         # Calculate Delta Range using proper Delta 16 values (if available)
         if delta_16_results:
@@ -715,7 +904,10 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             
             logger.warning(f"Delta 16 values not available for {symbol} - Delta Range will be null")
         
-        logger.info(f"Expected weekly range for {symbol}: ${straddle_1:.2f} - ${straddle_2:.2f}")
+        if straddle_1 is not None and straddle_2 is not None:
+            logger.info(f"Expected weekly range for {symbol}: ${straddle_1:.2f} - ${straddle_2:.2f}")
+        else:
+            logger.info(f"Expected weekly range for {symbol}: unavailable (missing base price)")
         logger.info(f"WEM Points: ${wem_points:.2f}")
         
         # Handle None values in delta range logging
@@ -755,9 +947,9 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             'straddle': float(straddle_premium),
             'strangle': float(strangle_premium),
             'wem_points': float(wem_points),
-            'wem_spread': float(wem_spread),
-            'expected_range_low': float(straddle_1),
-            'expected_range_high': float(straddle_2),
+            'wem_spread': float(wem_spread) if wem_spread is not None else None,
+            'expected_range_low': float(straddle_1) if straddle_1 is not None else None,
+            'expected_range_high': float(straddle_2) if straddle_2 is not None else None,
             'atm_strike': float(atm_strike),
             'itm_call_strike': float(itm_call_strike),
             'itm_put_strike': float(itm_put_strike),
@@ -766,8 +958,8 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             'delta_16_minus': float(delta_16_minus_strike) if delta_16_minus_strike is not None else None,  # Actual Delta 16- strike
             'delta_range': float(delta_range) if delta_range is not None else None,
             'delta_range_pct': float(delta_range_pct) if delta_range_pct is not None else None,
-            'straddle_2': float(straddle_2),  # Stock Price + WEM Points
-            'straddle_1': float(straddle_1),  # Stock Price - WEM Points
+            'straddle_2': float(straddle_2) if straddle_2 is not None else None,  # Stock Price + WEM Points
+            'straddle_1': float(straddle_1) if straddle_1 is not None else None,  # Stock Price - WEM Points
             'delta_validation_status': delta_validation_status,  # For UI highlighting
             'delta_validation_message': delta_validation_message,  # For tooltips/details
             'meta_data': {
@@ -781,6 +973,9 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                 'data_source_mode': data_source,
                 'pricing_mode': pricing_mode,
                 'use_friday_close': use_friday_close,
+                'vix_futures_friday_close': float(spread_base_price) if (symbol.upper() == 'VIX' and spread_base_price is not None) else None,
+                'vix_futures_proxy_price': float(vix_futures_proxy_price) if vix_futures_proxy_price is not None else None,
+                'vix_base_source': vix_base_source if symbol.upper() == 'VIX' else None,
                 'atm_call_premium': float(atm_call_mid),
                 'atm_put_premium': float(atm_put_mid),
                 'itm_call_premium': float(itm_call_mid),
@@ -803,7 +998,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                     'delta_16_minus_accuracy': float(delta_16_results['delta_16_minus']['delta_accuracy']) if delta_16_results else None,
                     'fallback_todo': 'Black-Scholes calculation method (Method 2) to be implemented'
                 },
-                'previous_friday_date': previous_friday_date.isoformat() if use_friday_close else None,
+                'previous_friday_date': previous_friday_date.isoformat() if (use_friday_close and 'previous_friday_date' in locals()) else None,
                 'previous_friday_close': float(previous_friday_close) if use_friday_close and 'previous_friday_close' in locals() and previous_friday_close else None,
                 'option_selection_method': 'atm_and_adjacent_strikes_for_wem_plus_delta_lookup',
                 'formula_notes': {
@@ -976,6 +1171,81 @@ def _cleanup_old_cache_files() -> None:
         logger.warning(f"Error cleaning up old cache files: {str(e)}")
 
 
+def _clear_wem_caches() -> None:
+    """Delete current WEM weekly cache file and reset provider caches in manager."""
+    # Remove weekly cache file
+    try:
+        cache_file = _get_weekly_cache_file()
+        if cache_file.exists():
+            cache_file.unlink()
+            logger.info(f"Deleted WEM weekly cache file: {cache_file.name}")
+    except Exception as e:
+        logger.warning(f"Failed deleting WEM cache file: {e}")
+
+    # Reset MarketDataManager cycle cache and provider-level caches if any
+    try:
+        manager = get_market_data_manager()
+        if manager:
+            # Reset cycle cache
+            manager.start_new_cycle()
+            # Attempt to reset yfinance provider cache if present
+            yf_provider = manager.providers.get('yfinance') if hasattr(manager, 'providers') else None
+            if yf_provider and hasattr(yf_provider, '_cache'):
+                try:
+                    yf_provider._cache.clear()
+                    logger.info("Cleared yfinance provider cache")
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning(f"Failed reseting manager/provider caches: {e}")
+
+
+def _to_unix_day_bounds(dt: datetime) -> tuple[int, int]:
+    """Return UTC unix seconds bounds [start,end) for a given date (00:00 to 00:00 next day)."""
+    start = datetime(dt.year, dt.month, dt.day, 0, 0, 0, tzinfo=timezone.utc)
+    end = start + timedelta(days=1)
+    return int(start.timestamp()), int(end.timestamp())
+
+
+def _yahoo_chart_url(symbol: str, day: datetime, interval: str = '1d') -> str:
+    p1, p2 = _to_unix_day_bounds(day)
+    encoded_symbol = quote(symbol, safe='')  # ensure '^' and others are encoded in path
+    qs = urlencode({
+        'symbol': symbol,
+        'period1': p1,
+        'period2': p2,
+        'interval': interval,
+    })
+    return f"https://query1.finance.yahoo.com/v8/finance/chart/{encoded_symbol}?{qs}"
+
+
+def _get_yahoo_chart_daily_close(symbol: str, day: datetime) -> Optional[float]:
+    """Directly query Yahoo chart API for a single day's daily close.
+
+    Args:
+        symbol: e.g., '^VIX'
+        day: date for which to pull the bar
+    Returns:
+        float close, or None
+    """
+    try:
+        url = _yahoo_chart_url(symbol, day, '1d')
+        resp = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        result = (data or {}).get('chart', {}).get('result')
+        if not result:
+            return None
+        quote = result[0].get('indicators', {}).get('quote', [{}])[0]
+        closes = quote.get('close') or []
+        if closes and closes[0] is not None:
+            return float(closes[0])
+        return None
+    except Exception:
+        return None
+
+
 def _extract_required_options_from_chain(calls: pd.DataFrame, puts: pd.DataFrame, 
                                         current_price: float, symbol: str) -> Optional[Dict[str, Any]]:
     """
@@ -999,6 +1269,34 @@ def _extract_required_options_from_chain(calls: pd.DataFrame, puts: pd.DataFrame
     logger.debug(f"Extracting 4 required options for {symbol} from full chain")
     
     try:
+        def _mid_from_row(row: pd.Series) -> Optional[float]:
+            try:
+                bid = float(row.get('bid', 0) or 0)
+                ask = float(row.get('ask', 0) or 0)
+                last = float(row.get('last', 0) or 0)
+            except Exception:
+                bid = ask = last = 0.0
+            if bid > 0 and ask > 0:
+                return (bid + ask) / 2.0
+            if last > 0:
+                return last
+            if ask > 0:
+                return ask
+            if bid > 0:
+                return bid
+            return None
+
+        def _valid_option(row: pd.Series, is_vix: bool) -> bool:
+            # Require a strike and at least one viable price field
+            if 'strike' not in row or pd.isna(row['strike']):
+                return False
+            if is_vix:
+                return _mid_from_row(row) is not None
+            # Non-VIX strict rule: both sides present and > 0
+            try:
+                return float(row.get('bid', 0) or 0) > 0 and float(row.get('ask', 0) or 0) > 0
+            except Exception:
+                return False
         # Get all available strikes from both calls and puts
         all_strikes = sorted(set(calls['strike'].tolist() + puts['strike'].tolist()))
         logger.debug(f"Available strikes for {symbol}: {len(all_strikes)} strikes from {min(all_strikes)} to {max(all_strikes)}")
@@ -1007,9 +1305,30 @@ def _extract_required_options_from_chain(calls: pd.DataFrame, puts: pd.DataFrame
             logger.error(f"Insufficient strikes available for {symbol}: need at least 3, found {len(all_strikes)}")
             return None
         
-        # Step 1: Find ATM strike (closest to current price)
-        atm_strike = min(all_strikes, key=lambda x: abs(float(x) - current_price))
-        logger.debug(f"ATM strike for {symbol}: ${atm_strike} (current price: ${current_price:.2f})")
+        # Step 1: Determine ATM strike
+        if symbol.upper() == 'VIX':
+            # For VIX, choose strike where call and put mid-prices are closest (reflecting ATM-forward)
+            try:
+                # Compute one mid per strike using first row per strike with robust mid
+                def _group_mid(df: pd.DataFrame) -> Optional[float]:
+                    if df.empty:
+                        return None
+                    return _mid_from_row(df.iloc[0])
+                call_mids = calls.groupby('strike').apply(_group_mid).dropna().to_dict()
+                put_mids = puts.groupby('strike').apply(_group_mid).dropna().to_dict()
+                common_strikes = sorted(set(call_mids.keys()) & set(put_mids.keys()))
+                if not common_strikes:
+                    logger.error("No common strikes between calls and puts for VIX")
+                    return None
+                atm_strike = min(common_strikes, key=lambda k: abs(float(call_mids[k]) - float(put_mids[k])))
+                logger.debug(f"VIX ATM strike chosen by min |C-P| at strike ${atm_strike}")
+            except Exception as e:
+                logger.warning(f"VIX ATM selection fallback to spot due to error: {e}")
+                atm_strike = min(all_strikes, key=lambda x: abs(float(x) - current_price))
+        else:
+            # Standard: closest to current underlying price
+            atm_strike = min(all_strikes, key=lambda x: abs(float(x) - current_price))
+            logger.debug(f"ATM strike for {symbol}: ${atm_strike} (current price: ${current_price:.2f})")
         
         # Step 2: Find adjacent strikes for ITM options
         atm_index = all_strikes.index(atm_strike)
@@ -1055,25 +1374,22 @@ def _extract_required_options_from_chain(calls: pd.DataFrame, puts: pd.DataFrame
             logger.error(f"No ITM put option found for {symbol} at strike ${itm_put_strike}")
             return None
         
-        # Step 4: Validate that all options have valid bid/ask prices
+        # Step 4: Validate that all options have usable pricing
         atm_call = atm_calls.iloc[0]
         atm_put = atm_puts.iloc[0]
         itm_call = itm_calls.iloc[0]
         itm_put = itm_puts.iloc[0]
-        
-        required_fields = ['bid', 'ask', 'strike']
+
+        is_vix = symbol.upper() == 'VIX'
         for option_name, option_data in [
             ('ATM Call', atm_call), ('ATM Put', atm_put), 
             ('ITM Call', itm_call), ('ITM Put', itm_put)
         ]:
-            for field in required_fields:
-                if field not in option_data or pd.isna(option_data[field]):
-                    logger.error(f"Missing or invalid {field} for {option_name} in {symbol}")
-                    return None
-                    
-            # Check for valid bid/ask prices (must be > 0)
-            if float(option_data['bid']) <= 0 or float(option_data['ask']) <= 0:
-                logger.error(f"Invalid bid/ask prices for {option_name} in {symbol}: bid={option_data['bid']}, ask={option_data['ask']}")
+            if not _valid_option(option_data, is_vix):
+                logger.error(
+                    f"Invalid pricing for {option_name} in {symbol}: "
+                    f"bid={option_data.get('bid')}, ask={option_data.get('ask')}, last={option_data.get('last')}"
+                )
                 return None
         
         # Step 5: Return the extracted options
@@ -1182,9 +1498,74 @@ def _get_weekly_option_chain(symbol: str, expiration_date: datetime, use_friday_
 
 
 
+def _get_vix_option_chain(symbol: str, expiration_date: datetime) -> Dict[str, pd.DataFrame]:
+    """
+    Get VIX option chain for a specific expiration date using provider.
+
+    VIX options settle on Wednesday morning, and are written on the corresponding
+    VIX futures. We rely on provider-listed expirations and fetch that exact date
+    without applying the usual Friday/holiday adjustments.
+
+    Args:
+        symbol: 'VIX'
+        expiration_date: The chosen expiration date (usually a Wednesday)
+
+    Returns:
+        dict: Dictionary with 'calls' and 'puts' DataFrames
+    """
+    try:
+        manager = get_market_data_manager()
+        if not manager:
+            logger.error("No market data manager available for VIX")
+            return None
+
+        expiration_str = expiration_date.strftime('%Y-%m-%d')
+        logger.info(f"Requesting VIX option chain for expiration {expiration_str}")
+
+        chain = manager.get_option_chain(symbol, expiration_str)
+        if not chain or 'calls' not in chain or 'puts' not in chain:
+            logger.error(f"Invalid VIX option chain response for {expiration_str}")
+            return None
+
+        calls_df = chain['calls']
+        puts_df = chain['puts']
+        if calls_df.empty and puts_df.empty:
+            logger.error(f"Empty VIX option chain for {expiration_str}")
+            return None
+
+        logger.info(f"✅ Retrieved VIX chain for {expiration_str}: {len(calls_df)} calls, {len(puts_df)} puts")
+        return chain
+
+    except Exception as e:
+        logger.error(f"Error fetching VIX option chain for {expiration_date.date()}: {e}")
+        return None
 
 
-def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime, use_cache: bool = True) -> Optional[float]:
+def _estimate_vix_futures_price_from_atm(atm_call_mid: float, atm_put_mid: float, atm_strike: float) -> float:
+    """
+    Estimate the VIX futures price implied by the ATM call/put using parity.
+
+    For VIX options (European, cash-settled on VIX futures), the ATM call and put
+    at the same strike have a premium relationship that roughly reflects the forward
+    price of the VIX future near ATM. A simple proxy is:
+
+        F ≈ K + (C - P)
+
+    where K is the ATM strike, C is ATM call mid, P is ATM put mid.
+
+    This is a proxy, not an exact futures quote, but sufficient for WEM spread base.
+    """
+    return float(atm_strike) + float(atm_call_mid) - float(atm_put_mid)
+
+
+
+
+def _get_previous_friday_close_price(
+    symbol: str,
+    previous_friday_date: datetime,
+    use_cache: bool = True,
+    fallback_to_current: bool = True,
+) -> Optional[float]:
     """
     Get the closing price for a stock on the previous Friday using MarketData.app.
     
@@ -1245,8 +1626,11 @@ def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime
             prov = manager.providers.get(prov_name)
             if prov is None or not hasattr(prov, 'get_historical_data'):
                 continue
-            # Provider-specific symbol mapping
-            sym_for_provider = translate_symbol(prov_name, symbol) if prov_name else symbol
+            # Provider-specific symbol mapping; allow '^VIX' to pass directly
+            if symbol.upper() in ('^VIX',):
+                sym_for_provider = symbol
+            else:
+                sym_for_provider = translate_symbol(prov_name, symbol) if prov_name else symbol
             try:
                 logger.info(f"Requesting historical data for {symbol} via {prov_name} on {previous_friday_date.date()}")
                 df = prov.get_historical_data(sym_for_provider, start_date, end_date, interval="1d")
@@ -1259,7 +1643,19 @@ def _get_previous_friday_close_price(symbol: str, previous_friday_date: datetime
 
         if historical_data is None or historical_data.empty:
             logger.warning(f"No historical data available for {symbol} on {previous_friday_date.date()} from any provider")
-            # Fallback to current price if historical data not available
+            # Final fallback: direct Yahoo Finance chart API for indices/futures-like symbols
+            try:
+                yahoo_symbol = symbol if symbol.startswith('^') else f'^{symbol}' if symbol.upper() == 'VIX' else symbol
+                yahoo_close = _get_yahoo_chart_daily_close(yahoo_symbol, previous_friday_date)
+                if yahoo_close is not None:
+                    logger.info(f"Yahoo chart fallback close for {symbol} on {previous_friday_date.date()}: ${yahoo_close:.4f}")
+                    return float(yahoo_close)
+            except Exception as e:
+                logger.debug(f"Yahoo chart fallback failed for {symbol}: {e}")
+
+            if not fallback_to_current:
+                return None
+            # Fallback to current price if allowed
             current_price = manager.get_stock_price(symbol)
             if current_price:
                 logger.warning(f"Using current price as fallback for {symbol}: ${current_price:.2f}")
@@ -2893,7 +3289,7 @@ def main():
         
         # Store export format in session state for access outside sidebar
         st.session_state.export_format = export_format
-        
+
         # Save to Desktop option (persistent)
         # Determine default from DB/YAML once per session
         def _coerce_to_bool(value: Any) -> bool:
@@ -2929,11 +3325,21 @@ def main():
         export_data_requested = st.button("Export Data", help="Export WEM data to file")
         if export_data_requested:
             st.session_state.export_requested = True
-        
-        # Initialize wem_df as None so we can check if it exists before export
-        wem_df = None
+
+        # Maintenance tools at bottom of sidebar
+        st.subheader("Maintenance")
+        if st.button("🧹 Clear WEM Cache", help="Delete weekly WEM cache file(s) and reset provider caches"):
+            try:
+                _clear_wem_caches()
+                st.success("Cleared WEM caches and reset providers")
+            except Exception as e:
+                st.error(f"Failed to clear caches: {e}")
+                logger.error(f"Failed to clear caches: {e}")
         
     # Main content setup - Get data within context manager
+    # Initialize wem_df as None so we can check it before export later
+    wem_df = None
+
     try:
         # Get WEM stocks from database within a context manager
         with get_db_connection() as db_session:
@@ -3701,6 +4107,18 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
         suffix = ""
         if warn_count or err_count:
             suffix = f"\n\nNote: Δ validation flags — Warnings: {warn_count}, Errors: {err_count}."
+        # Append denominator derivation notes (e.g., VIX base source)
+        try:
+            denom_notes = getattr(st.session_state, 'wem_denominator_notes', {})
+            if isinstance(denom_notes, dict) and denom_notes:
+                parts = []
+                for sym, src in denom_notes.items():
+                    parts.append(f"{sym}: {src}")
+                src_text = "; ".join(parts)
+                suffix += f"\nBase price sources: {src_text}."
+        except Exception:
+            pass
+
         notes_content = f"Generated by Goldflipper WEM Module on {current_date} at {current_time}." + suffix
         
         worksheet.merge_range(notes_row + 1, 1, notes_row + 5, num_cols - 1, notes_content, notes_content_format)
