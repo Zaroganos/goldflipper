@@ -1,5 +1,5 @@
 """
-Configuration Management Module for GoldFlipper
+Configuration Management Module for Goldflipper
 
 This module provides a centralized configuration management system using a singleton pattern.
 It loads settings from a YAML file and provides both object-oriented and traditional access
@@ -58,7 +58,7 @@ config = load_config()
 
 class Config:
     """
-    Singleton configuration class that manages all GoldFlipper settings.
+    Singleton configuration class that manages all Goldflipper settings.
     
     This class provides:
     - Singleton pattern implementation

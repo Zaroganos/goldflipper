@@ -145,7 +145,7 @@ class WelcomeScreen(Screen):
         # Check if settings were just created using the global flag
         if settings_just_created:
             self.notify(
-                "Welcome to GoldFlipper! Your settings file has been created. Please configure your settings before launching the trading system.",
+                "Welcome to Goldflipper! Your settings file has been created. Please configure your settings before launching the trading system.",
                 title="New Configuration Created",
                 timeout=10,
                 severity="information"
@@ -351,14 +351,14 @@ class WelcomeScreen(Screen):
         try:
             import win32serviceutil
             # If QueryServiceStatus succeeds, the service is installed.
-            win32serviceutil.QueryServiceStatus("GoldFlipperService")
+            win32serviceutil.QueryServiceStatus("GoldflipperService")
             service_installed = True
         except Exception:
             service_installed = False
 
         if service_installed:
             message = (
-                "You are about to STOP and UNINSTALL the GoldFlipper Service.\n"
+                "You are about to STOP and UNINSTALL the Goldflipper Service.\n"
                 "This will stop the running service and uninstall it.\n"
                 "This requires administrative privileges and will launch an elevated process.\n"
                 "Note: Changes made will not take effect until you reboot.\n"
@@ -377,10 +377,10 @@ class WelcomeScreen(Screen):
         def perform_action():
             if mode == "install":
                 final_command = (
-                    "python -m goldflipper.run --mode install; Start-Sleep -Seconds 2; net start GoldFlipperService"
+                    "python -m goldflipper.run --mode install; Start-Sleep -Seconds 2; net start GoldflipperService"
                 )
             else:
-                final_command = "net stop GoldFlipperService; python -m goldflipper.run --mode remove"
+                final_command = "net stop GoldflipperService; python -m goldflipper.run --mode remove"
             ps_command = f"Start-Process powershell -ArgumentList '-NoProfile -Command \"{final_command}\"' -Verb RunAs"
             subprocess.Popen(["powershell", "-Command", ps_command])
             self.notify(f"{'Uninstallation' if service_installed else 'Installation'} initiated. Changes will require a reboot to apply.")

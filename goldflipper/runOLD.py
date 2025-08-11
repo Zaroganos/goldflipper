@@ -54,7 +54,7 @@ def setup_logging():
 
 def initialize_system():
     """Initialize the trading system and perform startup checks."""
-    display.header("Initializing GoldFlipper Trading System")
+    display.header("Initializing Goldflipper Trading System")
     
     # Run startup self-tests
     test_results = run_startup_tests()
@@ -90,8 +90,8 @@ def main():
     # Now we can use both systems:
     # - display.info() for terminal output
     # - logging.info() for file logging
-    logging.info("Starting GoldFlipper trading system")
-    display.info("Starting GoldFlipper trading system")
+    logging.info("Starting Goldflipper trading system")
+    display.info("Starting Goldflipper trading system")
     
     if initialize_system():
         monitor_plays_continuously()

@@ -71,15 +71,15 @@ This is a list of things to do for the goldflipper project.
 
 -- Service Management Enhancements --
 
-- Added a "Manage Service" button to the GoldFlipper TUI (goldflipper_tui.py).
+- Added a "Manage Service" button to the Goldflipper TUI (goldflipper_tui.py).
   - This button now presents a confirmation dialog with centered text.
   - The dialog clearly warns that administrative privileges are required and that changes (install/uninstall) will not take effect until a system reboot.
 
 - For service installation:
-  - The elevated process installs the service and automatically starts it (via a PowerShell command that executes "python -m goldflipper.run --mode install" followed by "net start GoldFlipperService").
+  - The elevated process installs the service and automatically starts it (via a PowerShell command that executes "python -m goldflipper.run --mode install" followed by "net start GoldflipperService").
 
 - For service uninstallation:
-  - The elevated process stops the running service before uninstalling it (via a PowerShell command that executes "net stop GoldFlipperService" followed by "python -m goldflipper.run --mode remove").
+  - The elevated process stops the running service before uninstalling it (via a PowerShell command that executes "net stop GoldflipperService" followed by "python -m goldflipper.run --mode remove").
 
 - These changes improve user clarity and ensure that service state actions are performed safely and with the proper permissions.
 

@@ -12,7 +12,7 @@ def is_trading_system_running():
         try:
             import win32serviceutil
             import win32service
-            status = win32serviceutil.QueryServiceStatus("GoldFlipperService")
+            status = win32serviceutil.QueryServiceStatus("GoldflipperService")
             if status[1] == win32service.SERVICE_RUNNING:
                 return True
         except Exception:

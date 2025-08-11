@@ -1,7 +1,7 @@
 # Market Data System Architecture
 
 ## Overview
-The Market Data System is designed to provide a flexible, maintainable, and provider-agnostic way to handle market data in the GoldFlipper trading system. It follows clean architecture principles and enables easy switching between different data providers.
+The Market Data System is designed to provide a flexible, maintainable, and provider-agnostic way to handle market data in the Goldflipper trading system. It follows clean architecture principles and enables easy switching between different data providers.
 
 ## Architecture Diagram 
 mermaid
