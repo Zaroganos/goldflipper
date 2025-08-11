@@ -17,8 +17,8 @@ from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 import json
 from goldflipper.tools.option_data_fetcher import calculate_greeks
-from Goldflipper.utils.atomic_io import atomic_write_json
-from Goldflipper.trailing import has_trailing_enabled, update_trailing_levels
+from goldflipper.utils.atomic_io import atomic_write_json
+from goldflipper.trailing import has_trailing_enabled, update_trailing_levels
 from uuid import UUID
 from typing import Optional, Dict, Any
 from goldflipper.data.market.manager import MarketDataManager  # Add this import
@@ -465,7 +465,7 @@ def evaluate_closing_strategy(symbol, play):
 
     # Consider trailing conditions if enabled
     try:
-        from Goldflipper.trailing import trailing_tp_enabled, trailing_sl_enabled
+        from goldflipper.trailing import trailing_tp_enabled, trailing_sl_enabled
         tp_trail = (play.get('take_profit') or {}).get('trail_state') or {}
         sl_trail = (play.get('stop_loss') or {}).get('trail_state') or {}
 
