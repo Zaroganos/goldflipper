@@ -1,4 +1,4 @@
-# GoldFlipper UI Migration Notes
+# Goldflipper UI Migration Notes
 
 ## Dependencies Management
 - [x] Migrate to Poetry for dependency management:
@@ -9,12 +9,12 @@
   - Updated installation scripts to use Poetry
   - Configured VS Code for Poetry environment
 
-- [ ] Update main `requirements.txt`:
-  - Remove `requirements.txt` (replaced by Poetry)
-  - Keep `setup.py` temporarily as backup
-  - Remove `textual` and related dependencies
-  - Add Streamlit and its dependencies
-  - Update version constraints for shared dependencies
+- [ ] Dependency cleanup checklist:
+  - [x] Removed `requirements.txt` (Poetry-only)
+  - [x] Removed `setup.py` (deprecated)
+  - [ ] Remove any remaining TUI (`textual`) dependencies
+  - [x] Streamlit present in Poetry dependencies
+  - [ ] Review version constraints for shared dependencies
 
 ## IDE Configuration
 - [x] Set up VS Code for Poetry:
@@ -80,6 +80,15 @@
   - Evaluate py2exe vs PyInstaller
   - Consider Docker containerization
   - Plan for cross-platform distribution
+
+## DuckDB with PyInstaller
+
+- The packaged app runs from a read-only temp directory. Do not store the DuckDB database inside the bundle.
+- Set `GOLDFLIPPER_DATA_DIR` to a writable location (for example `%LOCALAPPDATA%\\Goldflipper` on Windows, `~/Library/Application Support/Goldflipper` on macOS, or `$XDG_DATA_HOME/goldflipper`/`~/.local/share/goldflipper` on Linux).
+- The code in `goldflipper/database/connection.py` respects `GOLDFLIPPER_DATA_DIR` and will create `db/goldflipper.db`, `db/backups`, and `db/temp` under that base directory.
+- Ensure launch scripts (e.g., `.env.bat`, `launch_goldflipper.bat`) export `GOLDFLIPPER_DATA_DIR` before starting the app.
+- Build from the Poetry environment, e.g. `poetry run pyinstaller your.spec`.
+- Do not add the DuckDB database file with `--add-data`; it should live outside the bundled app and be writable at runtime.
 
 ## Testing Requirements
 - [ ] Update test suite:

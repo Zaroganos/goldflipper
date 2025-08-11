@@ -1,1 +1,1 @@
-# Tools for the GoldFlipper system
+# Tools for the Goldflipper system

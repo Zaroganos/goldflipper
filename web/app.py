@@ -11,7 +11,7 @@ from goldflipper.config.config import config
 
 # Page configuration
 st.set_page_config(
-    page_title="GoldFlipper",
+    page_title="Goldflipper",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -40,7 +40,7 @@ def main():
         if logo_path.exists():
             st.image(str(logo_path), width=200)
         else:
-            st.title("GoldFlipper")
+            st.title("Goldflipper")
         
         # Navigation
         st.markdown("### Navigation")
@@ -64,11 +64,11 @@ def main():
         # About Section
         st.markdown("---")
         st.markdown("### About")
-        st.markdown("GoldFlipper v1.0.0")
+        st.markdown("Goldflipper v1.0.0")
         st.markdown("A professional trading automation platform")
     
     # Main Content
-    st.title("Welcome to GoldFlipper")
+    st.title("Welcome to Goldflipper")
     
     if page == "Dashboard":
         st.write("Dashboard content coming soon...")

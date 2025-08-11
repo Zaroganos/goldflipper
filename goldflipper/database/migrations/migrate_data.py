@@ -1,5 +1,5 @@
 """
-Data Migration Script for GoldFlipper
+Data Migration Script for Goldflipper
 =================================
 
 This script handles the migration of play data from the legacy JSON file-based

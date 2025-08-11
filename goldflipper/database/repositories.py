@@ -1,9 +1,9 @@
 """
-Database Repositories for GoldFlipper
+Database Repositories for Goldflipper
 =================================
 
 This module implements the Repository pattern for database operations in the
-GoldFlipper trading system. Each repository class provides a high-level interface
+Goldflipper trading system. Each repository class provides a high-level interface
 for performing CRUD operations on specific database entities.
 
 Repository Pattern

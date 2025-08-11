@@ -16,13 +16,13 @@ from goldflipper.tools.get_alpaca_info import test_alpaca_connection
 
 # Page configuration
 st.set_page_config(
-    page_title="GoldFlipper Setup",
+    page_title="Goldflipper Setup",
     page_icon="⚙️",
     layout="wide"
 )
 
 def create_shortcut():
-    """Create desktop shortcut for GoldFlipper"""
+    """Create desktop shortcut for Goldflipper"""
     try:
         desktop = os.path.join(os.path.expanduser("~"), "Desktop")
         package_root = project_root
@@ -82,9 +82,9 @@ async def validate_alpaca_credentials(api_key, api_secret, paper_trading):
         return False, str(e)
 
 def main():
-    st.title("GoldFlipper Setup")
+    st.title("Goldflipper Setup")
     st.markdown("""
-    Welcome to the GoldFlipper setup wizard. This will help you configure your trading accounts and basic settings.
+    Welcome to the Goldflipper setup wizard. This will help you configure your trading accounts and basic settings.
     
     Please fill in the information below to get started.
     """)
@@ -104,7 +104,7 @@ def main():
     if st.session_state.setup_step == 1:
         st.subheader("Step 1: Create Desktop Shortcut")
         st.markdown("""
-        Would you like to create a desktop shortcut for easy access to GoldFlipper?
+        Would you like to create a desktop shortcut for easy access to Goldflipper?
         """)
         
         if st.button("Create Desktop Shortcut"):

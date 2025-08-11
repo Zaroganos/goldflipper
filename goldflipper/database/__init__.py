@@ -1,8 +1,8 @@
 """
-Database Package for GoldFlipper
+Database Package for Goldflipper
 ===============================
 
-This package implements the database layer for the GoldFlipper trading system using DuckDB.
+This package implements the database layer for the Goldflipper trading system using DuckDB.
 DuckDB was chosen for its excellent performance characteristics and embedded nature, making
 it perfect for our use case where we need both transactional and analytical capabilities.
 

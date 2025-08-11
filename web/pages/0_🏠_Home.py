@@ -15,7 +15,7 @@ from goldflipper.config.config import config
 
 # Page configuration
 st.set_page_config(
-    page_title="GoldFlipper Home",
+    page_title="Goldflipper Home",
     page_icon="🏠",
     layout="wide"
 )
@@ -48,7 +48,7 @@ def run_command(cmd):
         st.error(f"Error: {str(e)}")
 
 def main():
-    st.title("Welcome to GoldFlipper")
+    st.title("Welcome to Goldflipper")
     
     # Quick Stats
     col1, col2, col3, col4 = st.columns(4)
@@ -149,9 +149,9 @@ def main():
                 
             try:
                 import win32serviceutil
-                win32serviceutil.QueryServiceStatus("GoldFlipperService")
+                win32serviceutil.QueryServiceStatus("GoldflipperService")
                 service_installed = True
-                message = "You are about to STOP and UNINSTALL the GoldFlipper Service."
+                message = "You are about to STOP and UNINSTALL the Goldflipper Service."
                 mode = "remove"
             except Exception:
                 service_installed = False
@@ -160,9 +160,9 @@ def main():
                 
             if st.button("Confirm Service Action", use_container_width=True):
                 if mode == "install":
-                    final_command = "python -m goldflipper.run --mode install; Start-Sleep -Seconds 2; net start GoldFlipperService"
+                    final_command = "python -m goldflipper.run --mode install; Start-Sleep -Seconds 2; net start GoldflipperService"
                 else:
-                    final_command = "net stop GoldFlipperService; python -m goldflipper.run --mode remove"
+                    final_command = "net stop GoldflipperService; python -m goldflipper.run --mode remove"
                 ps_command = f"Start-Process powershell -ArgumentList '-NoProfile -Command \"{final_command}\"' -Verb RunAs"
                 subprocess.Popen(["powershell", "-Command", ps_command])
                 st.success(f"{'Uninstallation' if service_installed else 'Installation'} initiated. Changes will require a reboot to apply.")

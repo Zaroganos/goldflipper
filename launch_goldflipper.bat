@@ -9,40 +9,28 @@ if exist "%ENV_FILE%" (
   call "%ENV_FILE%"
 )
 
-if not exist "%SETTINGS_FILE%" (
-    echo First time setup: Running setup dialog...
-    python -m goldflipper.first_run_setup
-    if errorlevel 1 (
-        echo Error occurred during setup
-        pause
-        exit /b 1
-    )
+:: Default GOLDFLIPPER_DATA_DIR if not provided (OS-standard path)
+if not defined GOLDFLIPPER_DATA_DIR (
+  if defined LOCALAPPDATA (
+    set "GOLDFLIPPER_DATA_DIR=%LOCALAPPDATA%\Goldflipper"
+  ) else (
+    set "GOLDFLIPPER_DATA_DIR=%USERPROFILE%\AppData\Local\Goldflipper"
+  )
 )
 
-:: First-run DB check (deprecated YAML removed)
+:: Ensure DB directories exist
 set "DB_DIR=%GOLDFLIPPER_DATA_DIR%\db"
 set "DB_FILE=%DB_DIR%\goldflipper.db"
-
-if not defined GOLDFLIPPER_DATA_DIR (
-  echo No GOLDFLIPPER_DATA_DIR set. Running first-run DB setup...
-  python -m goldflipper.first_run_db_setup
-  if errorlevel 1 goto :ERR
-  call "%ENV_FILE%"
-)
-
-if not exist "%DB_FILE%" (
-  echo Database not found at "%DB_FILE%". Running first-run DB setup...
-  python -m goldflipper.first_run_db_setup
-  if errorlevel 1 goto :ERR
-  call "%ENV_FILE%"
-)
+if not exist "%DB_DIR%" mkdir "%DB_DIR%"
+if not exist "%DB_DIR%\backups" mkdir "%DB_DIR%\backups"
+if not exist "%DB_DIR%\temp" mkdir "%DB_DIR%\temp"
 
 :: Launch the application
 cd /d %~dp0
 echo Starting Goldflipper in interactive mode...
 python -m goldflipper.goldflipper_tui
 if errorlevel 1 (
-    echo Error occurred while running GoldFlipper
+    echo Error occurred while running Goldflipper
     pause
     exit /b 1
 )

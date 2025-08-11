@@ -1,5 +1,8 @@
 This is a list of tasks to do and features to implement for the goldflipper project.
-Place new tasks on top.
+Directions for AI: Place new tasks on top. Remember to use real current date when adding a to do or addressing it. Use a tool or MCP if you are unsure what the current date is.
+
+### 2025-08-11
+- [ ] Add a way to address log size. How to implement functional rotating log files? How to archive old ones?
 
 ### 6.1 Session 2025-08-10 Wrap-up (Delta-16 + Settings + VIX)
 
@@ -9,7 +12,7 @@ Place new tasks on top.
   - Settings UI (`web/pages/4_⚙️_Settings.py`) reads/writes keys under `market_data_providers.*` using DELETE→INSERT upserts with JSON-encoded values.
   - Fixed duplicate Streamlit element IDs; improved error messaging to list failing keys.
 - **Unified database pathing**:
-  - Default DB base dir anchored to repo root `data/` via environment `GOLDFLIPPER_DATA_DIR` and `.env.bat` sourcing in launch scripts.
+  - Default DB base dir now uses OS-standard path (Windows: `%LOCALAPPDATA%\\Goldflipper`; macOS: `~/Library/Application Support/Goldflipper`; Linux: `$XDG_DATA_HOME/goldflipper` or `~/.local/share/goldflipper`). Can be overridden via `GOLDFLIPPER_DATA_DIR` and `.env.bat`.
   - Added runtime support to change base dir (code supports `set_data_dir()`), pending UI.
 - **MarketData.app integration**:
   - Implemented `get_option_chain` with explicit `side=call|put` and `expiration` per docs/Postman; `get_available_expirations` added.
@@ -34,35 +37,35 @@ Open next steps:
 - Implement expirations for Alpaca; bring yfinance chain as fallback; ensure symbol mapping coverage.
 
 
-- [✓] Fix WEM display and validation issues (2025-06-23):
-      1. ✓ Fixed WEM price source bug - mystery $305.95 vs correct Friday close $308.38
+- [x] Fix WEM display and validation issues (2025-06-23):
+      1. [x] Fixed WEM price source bug - mystery $305.95 vs correct Friday close $308.38
          - Root cause: WEM was making live API calls instead of using Friday close cache
          - Fixed: Ensured WEM ALWAYS uses previous Friday close price (never live API)
          - Fixed: Removed orphaned market_data.source reference causing errors
-      2. ✓ Improved number formatting in WEM table display
+      2. [x] Improved number formatting in WEM table display
          - Added max_digits parameter (default 5) to limit display width
          - Always show minimum 2 decimal places for consistency
          - Use scientific notation for numbers exceeding max_digits
          - Added both sig_figs and max_digits controls in sidebar
-      3. ✓ Fixed Delta 16+/- validation system timing issue
+      3. [x] Fixed Delta 16+/- validation system timing issue
          - Root cause: Validation config created AFTER Update WEM Data button
          - Fixed: Moved validation controls to top of sidebar (before button)
          - Added debug logging to track validation config usage
          - Validation now properly enables/disables based on user settings
-      4. ✓ Enhanced Friday close data source documentation
+      4. [x] Enhanced Friday close data source documentation
          - Confirmed proper data flow: cache → MarketDataApp historical API → fallback
          - Validated weekly caching strategy and cleanup procedures
 
-- [✓] Fix WEM Delta 16+/- calculation method (2025-01-14):
-      1. ✓ Identified incorrect method using arbitrary adjacent strikes as "Delta 16" values
-      2. ✓ Implemented proper delta-based lookup from deltas.py logic
-      3. ✓ Added calculate_delta_16_values() function for direct option chain lookup
-      4. ✓ Updated WEM calculation to find options with actual delta ≈ ±0.16
-      5. ✓ Removed invalid fallback logic that provided incorrect values
-      6. ✓ Added proper error handling when delta values unavailable (sets to None)
-      7. ✓ Added TODO placeholder for Black-Scholes Method 2 fallback implementation
-      8. ✓ Updated documentation to clarify WEM is primary, Delta 16 is secondary analysis
-      9. ✓ Enhanced logging to show actual delta values and calculation accuracy
+- [x] Fix WEM Delta 16+/- calculation method (2025-01-14):
+      1. [x] Identified incorrect method using arbitrary adjacent strikes as "Delta 16" values
+      2. [x] Implemented proper delta-based lookup from deltas.py logic
+      3. [x] Added calculate_delta_16_values() function for direct option chain lookup
+      4. [x] Updated WEM calculation to find options with actual delta ≈ ±0.16
+      5. [x] Removed invalid fallback logic that provided incorrect values
+      6. [x] Added proper error handling when delta values unavailable (sets to None)
+      7. [x] Added TODO placeholder for Black-Scholes Method 2 fallback implementation
+      8. [x] Updated documentation to clarify WEM is primary, Delta 16 is secondary analysis
+      9. [x] Enhanced logging to show actual delta values and calculation accuracy
       
       BEFORE: Delta 16+ = adjacent_strike_above_ATM (incorrect)
       AFTER: Delta 16+ = actual_option_with_0.16_delta.strike (correct)
@@ -76,51 +79,50 @@ Open next steps:
          - Handle percentage string format in dataframe before pyarrow conversion
          - Consider keeping percentage values as numeric and formatting on display
 
-- [✓] Fix WEM calculation to use real market data:
-      1. ✓ Replace simulated random data with actual options market data
-      2. ✓ Implement proper ATM straddle calculation using real mid prices
-      3. ✓ Add OTM strangle calculation with 16-delta options
-      4. ✓ Calculate proper WEM values based on real market pricing
-      5. ✓ Add comprehensive logging and error handling
+- [x] Fix WEM calculation to use real market data:
+      1. [x] Replace simulated random data with actual options market data
+      2. [x] Implement proper ATM straddle calculation using real mid prices
+      3. [x] Add OTM strangle calculation with 16-delta options
+      4. [x] Calculate proper WEM values based on real market pricing
+      5. [x] Add comprehensive logging and error handling
 
-- [✓] Fix WEM Streamlit module:
-      1. ✓ Fix WEM calculation and display in both vertical and horizontal layouts
-      2. ✓ Implement proper database integration with computed WEM values
-      3. ✓ Improve UI with better filtering and metric selection
-      4. ✓ Add data export functionality for CSV and Excel formats
-      5. ✓ Enhance error handling and logging throughout
+- [x] Fix WEM Streamlit module:
+      1. [x] Fix WEM calculation and display in both vertical and horizontal layouts
+      2. [x] Implement proper database integration with computed WEM values
+      3. [x] Improve UI with better filtering and metric selection
+      4. [x] Add data export functionality for CSV and Excel formats
+      5. [x] Enhance error handling and logging throughout
 
 - [x] Implement settings management in Streamlit UI:
-      1. ✓ Create Settings page in Streamlit UI
-      2. ✓ Add YAML file loading and parsing
-      3. ✓ Implement settings display and editing interface
-      4. ✓ Add save functionality for settings changes
+      1. [x] Create Settings page in Streamlit UI
+      2. [x] Add YAML file loading and parsing
+      3. [x] Implement settings display and editing interface
+      4. [x] Add save functionality for settings changes
       5. [ ] Complete database integration for settings storage
       6. [ ] Implement settings schema validation
 
 - [~] Implement DuckDB integration for settings:
-      1. ✓ Create database migration for settings schema
-      2. ✓ Add settings_schema and user_settings tables
-      3. ✓ Implement SettingsManager class for DB interaction
-      4. ✓ Add YAML import/export functionality
+      1. [x] Create database migration for settings schema
+      2. [x] Add settings_schema and user_settings tables
+      3. [x] Implement SettingsManager class for DB interaction
+      4. [x] Add YAML import/export functionality
       5. [ ] Fix remaining DuckDB compatibility issues
       6. [ ] Complete transaction handling and error recovery
 
 - [ ] Implement Poetry + PyInstaller packaging workflow:
-      1. ✓ Set up Poetry environment and configuration
-      2. ✓ Create pyproject.toml with all dependencies
-      3. ✓ Configure VS Code for Poetry environment
-      4. ✓ Update installation scripts for Poetry
-      5. ✓ Add Poetry-specific files to .gitignore
+      1. [x] Set up Poetry environment and configuration
+      2. [x] Create pyproject.toml with all dependencies
+      3. [x] Configure VS Code for Poetry environment
+      4. [x] Update installation scripts for Poetry
+      5. [x] Add Poetry-specific files to .gitignore
       6. [ ] Update PyInstaller spec for Poetry environment
       7. [ ] Test packaging with Poetry dependencies
       8. [ ] Create Poetry-based deployment scripts
 
 - [ ] Clean up old dependency management:
-      1. [ ] Remove requirements.txt (replaced by Poetry)
-      2. [ ] Archive setup.py as backup
-      3. [ ] Update documentation for Poetry usage
-      4. [ ] Test all scripts with Poetry environment
+      1. [x] Remove requirements.txt (replaced by Poetry)
+      2. [ ] Update documentation for Poetry usage
+      3. [ ] Test all scripts with Poetry environment
 
 - [ ] Fix IDE import resolution:
       1. [ ] Update remaining import paths
@@ -132,11 +134,11 @@ Open next steps:
 - [ ] Implement locking
 
 - [ ] Migrate UI to Streamlit for better performance and maintainability:
-      1. ✓ Set up Streamlit project structure:
-         - ✓ Create web/ directory with app.py and pages/
-         - ✓ Set up components/ directory for reusable UI elements
-         - ✓ Configure proper imports and dependencies
-         - ✓ Add requirements.txt for Streamlit and dependencies
+      1. [x] Set up Streamlit project structure:
+         - [x] Create web/ directory with app.py and pages/
+         - [x] Set up components/ directory for reusable UI elements
+         - [x] Configure proper imports and dependencies
+         - [x] Ensure Streamlit and dependencies are managed via Poetry
       
       2. [ ] Implement core dashboard:
          - [ ] Create main dashboard layout
@@ -149,8 +151,8 @@ Open next steps:
          - [ ] Play creation and management
          - [ ] Trade logging and analysis
          - [ ] Market data visualization
-         - ✓ Configuration management
-         - ✓ Weekly Expected Moves (WEM) analysis
+         - [x] Configuration management
+         - [x] Weekly Expected Moves (WEM) analysis
          - [ ] Chart viewing
       
       4. [ ] Testing and validation:
@@ -166,11 +168,11 @@ Open next steps:
          - [ ] Keep old UI as fallback during transition
 
 - [?] Fix the problem with plays whose limit order is not filled and expires at the end of the day:
-      1. ✓ Implement atomic file operations for all play file writes
-      2. ✓ Add file backups before critical operations
-      3. ✓ Add validation checks before saving play data
-      4. ✓ Add integrity verification for play files
-      5. ✓ Implement proper error handling and recovery for corrupted files
+      1. [x] Implement atomic file operations for all play file writes
+      2. [x] Add file backups before critical operations
+      3. [x] Add validation checks before saving play data
+      4. [x] Add integrity verification for play files
+      5. [x] Implement proper error handling and recovery for corrupted files
       - Additional improvements:
         - Updated directory paths
         - Removed unnecessary order cancellation for GTD orders
@@ -225,25 +227,25 @@ Open next steps:
 
 -- Service Management Enhancements --
 
-- Added a "Manage Service" button to the GoldFlipper TUI (goldflipper_tui.py).
+- Added a "Manage Service" button to the Goldflipper TUI (goldflipper_tui.py).
   - This button now presents a confirmation dialog with centered text.
   - The dialog clearly warns that administrative privileges are required and that changes (install/uninstall) will not take effect until a system reboot.
 
 - For service installation:
-  - The elevated process installs the service and automatically starts it (via a PowerShell command that executes "python -m goldflipper.run --mode install" followed by "net start GoldFlipperService").
+  - The elevated process installs the service and automatically starts it (via a PowerShell command that executes "python -m goldflipper.run --mode install" followed by "net start GoldflipperService").
 
 - For service uninstallation:
-  - The elevated process stops the running service before uninstalling it (via a PowerShell command that executes "net stop GoldFlipperService" followed by "python -m goldflipper.run --mode remove").
+  - The elevated process stops the running service before uninstalling it (via a PowerShell command that executes "net stop GoldflipperService" followed by "python -m goldflipper.run --mode remove").
 
 - These changes improve user clarity and ensure that service state actions are performed safely and with the proper permissions.
 
 - [x] Add limit orders at the 'last' price to the execution flow and play creation:
-      1. ✓ Add price reference choice (bid/last) to play creation tool
-      2. ✓ Update play data structure to store price reference
-      3. ✓ Modify order execution logic to use selected price
-      4. ✓ Add price reference validation in core functions
-      5. ✓ Update logging to show price reference used
-      6. ✓ Maintain backward compatibility for existing plays
+      1. [x] Add price reference choice (bid/last) to play creation tool
+      2. [x] Update play data structure to store price reference
+      3. [x] Modify order execution logic to use selected price
+      4. [x] Add price reference validation in core functions
+      5. [x] Update logging to show price reference used
+      6. [x] Maintain backward compatibility for existing plays
 
 
 - [~] Implementation of DuckDB database and migration to usage from current workflow      
@@ -272,9 +274,9 @@ Open next steps:
    - Migrate existing logs
 
 4. [~] Configuration Management:
-   - ✓ Create settings_schema table
-   - ✓ Create user_settings table
-   - ✓ Implement YAML-to-DB migration
+   - [x] Create settings_schema table
+   - [x] Create user_settings table
+   - [x] Implement YAML-to-DB migration
    - [ ] Add schema validation
    - [ ] Implement complete DB-to-YAML sync
    - [ ] Fix DuckDB compatibility issues
@@ -320,4 +322,5 @@ Open next steps:
    - [ ] Add user management
    - [ ] Create backup interface 
    - [ ] Implement maintenance tools
-   - ✓ Add settings configuration editor
+   - [x] Add settings configuration editor
+

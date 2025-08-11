@@ -1,9 +1,9 @@
 """
-SQLAlchemy Models for GoldFlipper Database
+SQLAlchemy Models for Goldflipper Database
 =======================================
 
 This module defines the SQLAlchemy ORM models that represent the database tables
-in the GoldFlipper trading system. These models provide a Pythonic interface to
+in the Goldflipper trading system. These models provide a Pythonic interface to
 the database and handle data validation, relationships, and type conversions.
 
 Model Structure

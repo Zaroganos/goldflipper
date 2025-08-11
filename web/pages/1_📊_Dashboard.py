@@ -17,7 +17,7 @@ from goldflipper.utils.display import TerminalDisplay as display
 
 # Page configuration
 st.set_page_config(
-    page_title="GoldFlipper Dashboard",
+    page_title="Goldflipper Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -102,7 +102,7 @@ def create_play_status_chart():
     return fig
 
 def main():
-    st.title("GoldFlipper Dashboard")
+    st.title("Goldflipper Dashboard")
     
     # Get accounts with error handling
     accounts = get_accounts()
@@ -120,7 +120,7 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.title("GoldFlipper")
+        st.title("Goldflipper")
         st.markdown("---")
         
         # Account Selection
@@ -147,7 +147,7 @@ def main():
             st.session_state.page = "settings"
     
     # Main Content
-    st.title("GoldFlipper Dashboard")
+    st.title("Goldflipper Dashboard")
     
     # Quick Stats
     col1, col2, col3, col4 = st.columns(4)

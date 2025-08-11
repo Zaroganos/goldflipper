@@ -1,7 +1,7 @@
-# GoldFlipper Database API Reference
+# Goldflipper Database API Reference
 
 ## Overview
-The GoldFlipper database package provides a robust data persistence layer using DuckDB and SQLAlchemy ORM. This document outlines the available models, repositories, and utilities for database operations.
+The Goldflipper database package provides a robust data persistence layer using DuckDB and SQLAlchemy ORM. This document outlines the available models, repositories, and utilities for database operations.
 
 ## Models
 

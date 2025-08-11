@@ -1,4 +1,4 @@
-# GoldFlipper Database Migration Notes
+# Goldflipper Database Migration Notes
 
 ## Overview
 Migration from file-based storage to DuckDB for improved reliability, performance, and maintainability.

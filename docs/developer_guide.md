@@ -1,4 +1,4 @@
-# GoldFlipper Developer Guide
+# Goldflipper Developer Guide
 
 ## Recent Bug Fixes and Improvements
 
@@ -76,7 +76,7 @@ def format_number(x, col_name, max_digits=5):
 ## Database Development Guide
 
 ### Overview
-The GoldFlipper database system uses DuckDB as its primary database engine, accessed through SQLAlchemy ORM. This guide covers development practices, patterns, and common tasks.
+The Goldflipper database system uses DuckDB as its primary database engine, accessed through SQLAlchemy ORM. This guide covers development practices, patterns, and common tasks.
 
 ### Getting Started
 

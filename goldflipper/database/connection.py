@@ -1,9 +1,9 @@
 """
-Database Connection Management for GoldFlipper
+Database Connection Management for Goldflipper
 =========================================
 
 This module handles database connection management and initialization for the
-GoldFlipper trading system. It provides a robust connection pool, transaction
+Goldflipper trading system. It provides a robust connection pool, transaction
 management, and database setup functionality.
 
 Key Features
@@ -55,6 +55,7 @@ backup_database()
 
 import logging
 import os
+import sys
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -66,6 +67,18 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from .models import Base
+
+# Optional imports for resolving application version dynamically
+try:
+    from importlib.metadata import PackageNotFoundError, version as get_dist_version  # Python 3.8+
+except Exception:  # pragma: no cover - compatibility fallback (not expected on >=3.11)
+    get_dist_version = None
+    PackageNotFoundError = Exception
+
+try:  # Python 3.11+
+    import tomllib  # type: ignore
+except Exception:  # pragma: no cover
+    tomllib = None
 
 # Configure logging
 logging.basicConfig(
@@ -90,18 +103,18 @@ class DatabaseConfig:
     """
     
     def __init__(self):
-        """Initialize database configuration anchored to project root with env override."""
-        # Resolve project root (repo root): .../goldflipper/goldflipper/database -> parents[3]
+        """Initialize database configuration using OS-standard default with env override."""
+        # Resolve repository root: .../goldflipper/goldflipper/database -> parents[3]
         repo_root = Path(__file__).resolve().parents[3]
 
-        # Determine base data directory
+        # Determine base data directory (environment variable overrides default)
         env_dir = os.getenv('GOLDFLIPPER_DATA_DIR')
         if env_dir:
             base_dir = Path(env_dir)
             if not base_dir.is_absolute():
                 base_dir = (repo_root / base_dir).resolve()
         else:
-            base_dir = (repo_root / 'data').resolve()
+            base_dir = self._get_default_base_dir()
 
         self._repo_root = repo_root
         self.base_dir = base_dir
@@ -124,6 +137,31 @@ class DatabaseConfig:
         # Connection pool configuration
         self.pool_size = int(os.getenv('GOLDFLIPPER_DB_POOL_SIZE', '5'))
         self.pool_timeout = int(os.getenv('GOLDFLIPPER_DB_TIMEOUT', '30'))
+
+    def _get_default_base_dir(self) -> Path:
+        """Return OS-appropriate default base directory for Goldflipper data.
+
+        Windows: %LOCALAPPDATA%\Goldflipper
+        macOS:   ~/Library/Application Support/Goldflipper
+        Linux:   $XDG_DATA_HOME/goldflipper or ~/.local/share/goldflipper
+        """
+        try:
+            if sys.platform.startswith('win'):
+                local_appdata = os.getenv('LOCALAPPDATA')
+                if not local_appdata:
+                    # Fallback if LOCALAPPDATA not defined
+                    local_appdata = str(Path.home() / 'AppData' / 'Local')
+                return Path(local_appdata) / 'Goldflipper'
+            elif sys.platform == 'darwin':
+                return Path.home() / 'Library' / 'Application Support' / 'Goldflipper'
+            else:
+                xdg_data_home = os.getenv('XDG_DATA_HOME')
+                if xdg_data_home:
+                    return Path(xdg_data_home) / 'goldflipper'
+                return Path.home() / '.local' / 'share' / 'goldflipper'
+        except Exception:
+            # Ultimate fallback to repository-relative data directory
+            return (self._repo_root / 'data').resolve()
 
     def update_base_dir(self, new_base_dir: str) -> None:
         """Update the base data directory and refresh path attributes."""
@@ -200,6 +238,8 @@ def get_engine() -> Engine:
     
     if _engine is None:
         logger.info("Creating new database engine")
+        # Resolve application version for User-Agent
+        app_version = _resolve_app_version(config._repo_root)
         _engine = create_engine(
             config.connection_url,
             poolclass=QueuePool,
@@ -209,7 +249,7 @@ def get_engine() -> Engine:
             connect_args={
                 'database': str(config.db_path),
                 'config': {
-                    'custom_user_agent': 'goldflipper/0.1.2',
+                    'custom_user_agent': f'goldflipper/{app_version}',
                     'access_mode': 'READ_WRITE',
                     'allow_unsigned_extensions': 'true',
                     'threads': config.pool_size,  # Use pool size for thread count
@@ -230,6 +270,44 @@ def get_engine() -> Engine:
             logger.debug("Database connection checked out from pool")
     
     return _engine
+
+
+def _resolve_app_version(repo_root: Path) -> str:
+    """Resolve the application version from installed metadata or pyproject.
+
+    Tries distribution metadata first; falls back to reading pyproject.toml.
+    Returns '0.0.0' if no version could be determined.
+    """
+    # 1) Try installed distributions (Poetry install)
+    possible_names = (
+        'goldflipper',
+        'goldflipper-1.5',  # current project name in pyproject
+    )
+    if get_dist_version is not None:
+        for dist_name in possible_names:
+            try:
+                return get_dist_version(dist_name)
+            except PackageNotFoundError:
+                continue
+
+    # 2) Try reading pyproject.toml from repo
+    pyproject_path = repo_root / 'goldflipper' / 'pyproject.toml'
+    if tomllib is not None and pyproject_path.exists():
+        try:
+            with pyproject_path.open('rb') as f:
+                data = tomllib.load(f)
+            version_str = (
+                data.get('tool', {})
+                    .get('poetry', {})
+                    .get('version')
+            )
+            if isinstance(version_str, str) and version_str.strip():
+                return version_str.strip()
+        except Exception:
+            pass
+
+    # 3) Last-resort fallback
+    return '0.0.0'
 
 @contextmanager
 def get_db_connection() -> Generator[Session, None, None]:

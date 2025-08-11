@@ -14,7 +14,7 @@ from goldflipper.config.config import config
 
 # Page configuration
 st.set_page_config(
-    page_title="GoldFlipper Analysis",
+    page_title="Goldflipper Analysis",
     page_icon="📈",
     layout="wide"
 )

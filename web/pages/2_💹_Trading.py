@@ -13,7 +13,7 @@ from goldflipper.config.config import config
 
 # Page configuration
 st.set_page_config(
-    page_title="GoldFlipper Trading",
+    page_title="Goldflipper Trading",
     page_icon="💹",
     layout="wide"
 )
