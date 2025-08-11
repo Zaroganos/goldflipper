@@ -4,7 +4,7 @@ Directions for AI: Place new tasks on top. Remember to use real current date whe
 ### 2025-08-11
 - [ ] Add a way to address log size. How to implement functional rotating log files? How to archive old ones?
 
-### 6.1 Session 2025-08-10 Wrap-up (Delta-16 + Settings + VIX)
+### 2025-08-10 Wrap-up (Delta-16 + Settings + VIX)
 
 - **Delta-16 accuracy hardening (in progress)**: WEM now chooses the actual expiration date from provider listings (when available) before chain fetch. Remaining task: extract and enhance `validate_delta_16_quality()` into its own module with stronger checks (absolute-delta closeness per side, sign normalization, bounds/monotonicity, optional cross‑provider checks, theoretical‑delta fallback).
 - **Strict DB-only settings migration**:
