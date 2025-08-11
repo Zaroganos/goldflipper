@@ -17,6 +17,8 @@ from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 import json
 from goldflipper.tools.option_data_fetcher import calculate_greeks
+from Goldflipper.utils.atomic_io import atomic_write_json
+from Goldflipper.trailing import has_trailing_enabled, update_trailing_levels
 from uuid import UUID
 from typing import Optional, Dict, Any
 from goldflipper.data.market.manager import MarketDataManager  # Add this import
@@ -316,6 +318,19 @@ def save_play(play, play_file):
         logging.error(f"Error saving play data to {play_file}: {e}")
         display.error(f"Error saving play data to {play_file}: {e}")
 
+
+def save_play_improved(play, play_file):
+    """Improved atomic save for play data (non-breaking: used only by trailing flow)."""
+    try:
+        atomic_write_json(play_file, play, indent=4, encoder=UUIDEncoder)
+        logging.info(f"Play data saved atomically to {play_file}")
+        display.success(f"Play data saved to {play_file}")
+        return True
+    except Exception as e:
+        logging.error(f"Error saving play data to {play_file}: {e}")
+        display.error(f"Error saving play data to {play_file}: {e}")
+        return False
+
 def evaluate_opening_strategy(symbol, play):
     """
     Evaluate if opening conditions are met based on stock price and entry point.
@@ -447,6 +462,42 @@ def evaluate_closing_strategy(symbol, play):
             if sl_type == 'CONTINGENCY' and play['stop_loss'].get('contingency_premium_pct') is not None:
                 contingency_sl_target = play['stop_loss']['contingency_SL_option_prem']
                 contingency_loss_condition = contingency_loss_condition or (current_premium <= contingency_sl_target)
+
+    # Consider trailing conditions if enabled
+    try:
+        from Goldflipper.trailing import trailing_tp_enabled, trailing_sl_enabled
+        tp_trail = (play.get('take_profit') or {}).get('trail_state') or {}
+        sl_trail = (play.get('stop_loss') or {}).get('trail_state') or {}
+
+        if trailing_tp_enabled(play):
+            tp_level = tp_trail.get('current_trail_level')
+            if tp_level is not None:
+                if trade_type == 'CALL':
+                    if last_price <= tp_level:
+                        profit_condition = True
+                        logging.info("Trailing TP condition met")
+                        display.info("Trailing TP condition met")
+                else:  # PUT
+                    if last_price >= tp_level:
+                        profit_condition = True
+                        logging.info("Trailing TP condition met")
+                        display.info("Trailing TP condition met")
+
+        if trailing_sl_enabled(play):
+            sl_level = sl_trail.get('current_trail_level')
+            if sl_level is not None:
+                if trade_type == 'CALL':
+                    if last_price <= sl_level:
+                        loss_condition = True
+                        logging.info("Trailing SL condition met")
+                        display.info("Trailing SL condition met")
+                else:  # PUT
+                    if last_price >= sl_level:
+                        loss_condition = True
+                        logging.info("Trailing SL condition met")
+                        display.info("Trailing SL condition met")
+    except Exception as e:
+        logging.warning(f"Error evaluating trailing conditions: {e}")
 
     # Log conditions
     if profit_condition:
@@ -1124,6 +1175,30 @@ def monitor_and_manage_position(play, play_file):
             logging.info(f"Position {contract_symbol} closed.")
             display.info(f"Position {contract_symbol} closed.")
             return True
+
+        # Update trailing states (no behavior change unless enabled)
+        try:
+            current_price_for_trailing = locals().get('current_price', None)
+            trail_changed = update_trailing_levels(play, current_price_for_trailing, current_premium)
+            # Optional: Log current trailing levels for visibility
+            if has_trailing_enabled(play) and trail_changed:
+                tp_state = (play.get('take_profit') or {}).get('trail_state') or {}
+                sl_state = (play.get('stop_loss') or {}).get('trail_state') or {}
+                tp_level = tp_state.get('current_trail_level')
+                sl_level = sl_state.get('current_trail_level')
+                if tp_level is not None:
+                    logging.info(f"Current trailing TP level: ${tp_level:.2f}")
+                    display.info(f"Current trailing TP level: ${tp_level:.2f}")
+                if sl_level is not None:
+                    logging.info(f"Current trailing SL level: ${sl_level:.2f}")
+                    display.info(f"Current trailing SL level: ${sl_level:.2f}")
+                # Persist trail state immediately to avoid loss on restart (use improved atomic saver)
+                try:
+                    save_play_improved(play, play_file)
+                except Exception as e:
+                    logging.warning(f"Failed to persist trailing state: {e}")
+        except Exception as e:
+            logging.warning(f"Trailing update skipped: {e}")
 
         # Evaluate closing conditions
         close_conditions = evaluate_closing_strategy(underlying_symbol, play)

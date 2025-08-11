@@ -21,7 +21,25 @@
     "premium_pct": 50.0,
     "order_type": "market, or limit at bid/ask/mid/last",
     "TP_option_prem": 0.0,
-    "TP_stock_price_target": 0.0
+    "TP_stock_price_target": 0.0,
+    "trailing_config": {
+      "enabled": false,
+      "trail_type": "percentage",
+      "trail_distance_pct": 2.0,
+      "trail_distance_fixed": 0.0,
+      "atr_multiplier": 2.0,
+      "atr_period": 14,
+      "activation_threshold_pct": 5.0,
+      "min_profit_lock_pct": 2.0,
+      "update_frequency_seconds": 30
+    },
+    "trail_state": {
+      "current_trail_level": null,
+      "highest_favorable_price": null,
+      "last_update_timestamp": null,
+      "trail_activated": false
+    },
+    "trail_history": []
   },
   "stop_loss": {
     "SL_type": "STOP or LIMIT or CONTINGENCY",
@@ -35,7 +53,25 @@
     "SL_option_prem": 0.0,
     "SL_stock_price_target": 0.0,
     "contingency_SL_option_prem": 0.0,
-    "contingency_SL_stock_price_target": 0.0
+    "contingency_SL_stock_price_target": 0.0,
+    "trailing_config": {
+      "enabled": false,
+      "trail_type": "percentage",
+      "trail_distance_pct": 3.0,
+      "trail_distance_fixed": 0.0,
+      "atr_multiplier": 1.5,
+      "atr_period": 14,
+      "breakeven_protection": true,
+      "max_loss_pct": 15.0,
+      "update_frequency_seconds": 30
+    },
+    "trail_state": {
+      "current_trail_level": null,
+      "highest_favorable_price": null,
+      "last_update_timestamp": null,
+      "breakeven_activated": false
+    },
+    "trail_history": []
   },
   "play_class": "SIMPLE, or if conditional: PRIMARY or OTO (if OCO, simply enter it as SIMPLE)",
   "strategy": "string",

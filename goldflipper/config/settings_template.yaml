@@ -27,7 +27,7 @@
 # - Logging Configuration: Configure logging behavior
 # - Market Hours Settings: Configure market hours validation
 #
-# For detailed documentation on all settings, please refer to the GoldFlipper documentation.
+# For detailed documentation on all settings, please refer to the Goldflipper documentation.
 #
 # ===== END GETTING STARTED =====
 
@@ -231,6 +231,32 @@ monitoring:
   max_retries: 3                     # Maximum retry attempts for operations
   retry_delay: 2                     # Delay between retries (seconds)
   polling_interval: 30               # Time between play / position checks (seconds); CYCLE TIME
+
+####################################################################################################
+# Trailing Stops Configuration (Feature Flags & Defaults)
+####################################################################################################
+trailing:
+  enabled: false                     # Master switch for trailing features (overrides per-play flags if false)
+  take_profit:
+    default_enabled: false           # Default for new plays (tools can override per play)
+    trail_type: "percentage"         # Options: percentage | fixed_amount | atr (atr to be implemented later)
+    trail_distance_pct: 2.0          # When trail_type = percentage
+    trail_distance_fixed: 0.0        # When trail_type = fixed_amount
+    atr_multiplier: 2.0              # When trail_type = atr
+    atr_period: 14                   # ATR period when atr is used
+    activation_threshold_pct: 5.0    # Profit % before TP trailing activates
+    min_profit_lock_pct: 2.0         # Minimum profit to lock once activated
+    update_frequency_seconds: 30     # Suggested minimum interval between trail recalculations
+  stop_loss:
+    default_enabled: false           # Default for new plays (tools can override per play)
+    trail_type: "percentage"         # Options: percentage | fixed_amount | atr (atr to be implemented later)
+    trail_distance_pct: 3.0          # When trail_type = percentage
+    trail_distance_fixed: 0.0        # When trail_type = fixed_amount
+    atr_multiplier: 1.5              # When trail_type = atr
+    atr_period: 14                   # ATR period when atr is used
+    breakeven_protection: true       # Move SL to breakeven once profit threshold reached
+    max_loss_pct: 15.0               # Never set trail below this loss level from entry
+    update_frequency_seconds: 30     # Suggested minimum interval between trail recalculations
 
 ####################################################################################################
 # Order Settings
