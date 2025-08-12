@@ -223,3 +223,18 @@ What changed relative to this doc:
 - We used provider expirations and a rule-based VIX monthly expiration method instead of scraping calendars.
 - For pricing, we confirm the note that futures underpin VIX options, but for resiliency we added ^VIX and direct Yahoo HTTP fallbacks to always get a Friday close denominator.
 - The futures symbol (VX codes) is not required for WEM denominator; when VX=F is unavailable, ^VIX close is acceptable and clearly annotated.
+
+
+Implementation Notes (2025-08-12)
+---------------------------------
+- Migrated VIX logic into a shared module `goldflipper/data/market/tickers/VIX/vix_lib.py`:
+  - Rule-based monthly expiration generator (Wed ≈ 30 days before next month’s 3rd Fri, prior business day if holiday).
+  - Cboe VIX EOD CSV fetch (`VIX_History.csv`) with simple schema (DATE, OPEN, HIGH, LOW, CLOSE).
+  - Yahoo Chart API daily close helper (path-encoded symbol, UA header).
+  - VIX chain extraction via robust mids and min |C−P| ATM.
+- Friday Close denominator order for VIX (current):
+  1) Providers (VX=F via yfinance; then ^VIX via providers)
+  2) Cboe CSV close for the target Friday
+  3) Yahoo Chart API
+- Removed the parity proxy fallback for now to avoid ambiguity; may be re‑introduced later and reprioritized if needed.
+- WEM page delegates to `vix_lib` for VIX expirations, EOD close resolution, and chain selection to keep the UI thin.

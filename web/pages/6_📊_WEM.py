@@ -66,6 +66,7 @@ import time
 import random
 from typing import Any
 from io import StringIO
+import io as _io
 
 # Set up logging in a Streamlit-safe way
 project_root = Path(__file__).parent.parent.parent
@@ -161,6 +162,14 @@ from goldflipper.utils.market_holidays import (
     find_previous_friday,
     get_expiration_date_candidates,
     test_holiday_detection_ui
+)
+from goldflipper.data.market.tickers.VIX.vix_lib import (
+    get_cboe_vix_close_for_date,
+    get_yahoo_chart_daily_close,
+    get_rule_based_vix_expirations_window,
+    get_vix_option_chain as vix_get_option_chain,
+    select_vix_required_options_from_chain,
+    robust_mid as vix_robust_mid,
 )
 
 # Helpers
@@ -289,48 +298,9 @@ def get_default_wem_stocks(session: Session) -> List[Dict[str, Any]]:
 
 # --- VIX helpers (fallbacks) -------------------------------------------------
 
-def _third_friday(year: int, month: int) -> datetime:
-    """Return date of the third Friday for given year/month."""
-    # First day of target month
-    first = datetime(year, month, 1)
-    # Friday is weekday 4 (Mon=0)
-    days_until_friday = (4 - first.weekday()) % 7
-    first_friday = first + timedelta(days=days_until_friday)
-    third_friday = first_friday + timedelta(weeks=2)
-    return third_friday
-
-
-def _generate_vix_monthly_expirations_for_year(year: int) -> List[datetime]:
-    """Generate VIX monthly settlement dates for a given year using the rule:
-    Wednesday that is 30 days before the third Friday of the following month,
-    adjusted to the prior business day when a holiday intervenes.
-    """
-    expirations: List[datetime] = []
-    for month in range(1, 13):
-        # Third Friday of following month
-        next_month = month + 1
-        next_year = year
-        if next_month == 13:
-            next_month = 1
-            next_year += 1
-        third_fri = _third_friday(next_year, next_month)
-        # Subtract 30 days → expected Wednesday
-        exp_date = (third_fri - timedelta(days=30)).date()
-        # Move to prior business day if holiday/weekend
-        while exp_date.weekday() >= 5 or is_market_holiday(exp_date):
-            exp_date = exp_date - timedelta(days=1)
-        expirations.append(datetime.combine(exp_date, datetime.min.time()))
-    return sorted(expirations)
-
-
 def _get_rule_based_vix_expirations_window() -> List[datetime]:
-    """Return rule-based VIX monthly expirations for current and next year."""
-    today = datetime.now().date()
-    dates = _generate_vix_monthly_expirations_for_year(today.year)
-    dates += _generate_vix_monthly_expirations_for_year(today.year + 1)
-    # Deduplicate and sort
-    uniq = sorted({d for d in dates})
-    return uniq
+    # shim that calls shared VIX lib
+    return get_rule_based_vix_expirations_window()
 
 
 def _robust_mid(option_row: pd.Series) -> Optional[float]:
@@ -782,8 +752,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         itm_call_strike = float(itm_call['strike'])
         itm_put_strike = float(itm_put['strike'])
         
-        # For VIX, we will only compute a parity proxy if no provider base is available
-        vix_futures_proxy_price = None
+        # VIX parity proxy removed per policy
 
         # Step 7: Calculate Final WEM Points
         # WEM Points = (Straddle + Strangle) / 2
@@ -823,16 +792,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                 except Exception as e:
                     logger.warning(f"Failed to obtain ^VIX Friday close fallback: {e}")
 
-            # If still no base, compute parity proxy
-            if not base_for_spread:
-                try:
-                    vix_futures_proxy_price = _estimate_vix_futures_price_from_atm(atm_call_mid, atm_put_mid, atm_strike)
-                    if vix_futures_proxy_price and vix_futures_proxy_price > 0:
-                        base_for_spread = vix_futures_proxy_price
-                        vix_base_source = "parity_proxy"
-                        logger.info(f"Estimated VIX futures proxy price (from ATM parity): ${vix_futures_proxy_price:.4f}")
-                except Exception as e:
-                    logger.warning(f"Failed to estimate VIX futures proxy price: {e}")
+            # Parity proxy removed per policy; do not compute if still missing
 
             if base_for_spread:
                 wem_spread = wem_points / base_for_spread
@@ -974,7 +934,6 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                 'pricing_mode': pricing_mode,
                 'use_friday_close': use_friday_close,
                 'vix_futures_friday_close': float(spread_base_price) if (symbol.upper() == 'VIX' and spread_base_price is not None) else None,
-                'vix_futures_proxy_price': float(vix_futures_proxy_price) if vix_futures_proxy_price is not None else None,
                 'vix_base_source': vix_base_source if symbol.upper() == 'VIX' else None,
                 'atm_call_premium': float(atm_call_mid),
                 'atm_put_premium': float(atm_put_mid),
@@ -1200,50 +1159,11 @@ def _clear_wem_caches() -> None:
         logger.warning(f"Failed reseting manager/provider caches: {e}")
 
 
-def _to_unix_day_bounds(dt: datetime) -> tuple[int, int]:
-    """Return UTC unix seconds bounds [start,end) for a given date (00:00 to 00:00 next day)."""
-    start = datetime(dt.year, dt.month, dt.day, 0, 0, 0, tzinfo=timezone.utc)
-    end = start + timedelta(days=1)
-    return int(start.timestamp()), int(end.timestamp())
-
-
-def _yahoo_chart_url(symbol: str, day: datetime, interval: str = '1d') -> str:
-    p1, p2 = _to_unix_day_bounds(day)
-    encoded_symbol = quote(symbol, safe='')  # ensure '^' and others are encoded in path
-    qs = urlencode({
-        'symbol': symbol,
-        'period1': p1,
-        'period2': p2,
-        'interval': interval,
-    })
-    return f"https://query1.finance.yahoo.com/v8/finance/chart/{encoded_symbol}?{qs}"
-
+def _get_cboe_vix_close_for_date(day: datetime) -> Optional[float]:
+    return get_cboe_vix_close_for_date(day)
 
 def _get_yahoo_chart_daily_close(symbol: str, day: datetime) -> Optional[float]:
-    """Directly query Yahoo chart API for a single day's daily close.
-
-    Args:
-        symbol: e.g., '^VIX'
-        day: date for which to pull the bar
-    Returns:
-        float close, or None
-    """
-    try:
-        url = _yahoo_chart_url(symbol, day, '1d')
-        resp = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        result = (data or {}).get('chart', {}).get('result')
-        if not result:
-            return None
-        quote = result[0].get('indicators', {}).get('quote', [{}])[0]
-        closes = quote.get('close') or []
-        if closes and closes[0] is not None:
-            return float(closes[0])
-        return None
-    except Exception:
-        return None
+    return get_yahoo_chart_daily_close(symbol, day)
 
 
 def _extract_required_options_from_chain(calls: pd.DataFrame, puts: pd.DataFrame, 
@@ -1269,6 +1189,12 @@ def _extract_required_options_from_chain(calls: pd.DataFrame, puts: pd.DataFrame
     logger.debug(f"Extracting 4 required options for {symbol} from full chain")
     
     try:
+        # Delegate to shared VIX lib for VIX chains
+        if symbol.upper() == 'VIX':
+            result = select_vix_required_options_from_chain(calls, puts)
+            if not result:
+                logger.error("Could not extract required options for VIX from chain")
+            return result
         def _mid_from_row(row: pd.Series) -> Optional[float]:
             try:
                 bid = float(row.get('bid', 0) or 0)
@@ -1522,7 +1448,7 @@ def _get_vix_option_chain(symbol: str, expiration_date: datetime) -> Dict[str, p
         expiration_str = expiration_date.strftime('%Y-%m-%d')
         logger.info(f"Requesting VIX option chain for expiration {expiration_str}")
 
-        chain = manager.get_option_chain(symbol, expiration_str)
+        chain = vix_get_option_chain(manager, symbol, expiration_date)
         if not chain or 'calls' not in chain or 'puts' not in chain:
             logger.error(f"Invalid VIX option chain response for {expiration_str}")
             return None
@@ -1541,21 +1467,7 @@ def _get_vix_option_chain(symbol: str, expiration_date: datetime) -> Dict[str, p
         return None
 
 
-def _estimate_vix_futures_price_from_atm(atm_call_mid: float, atm_put_mid: float, atm_strike: float) -> float:
-    """
-    Estimate the VIX futures price implied by the ATM call/put using parity.
-
-    For VIX options (European, cash-settled on VIX futures), the ATM call and put
-    at the same strike have a premium relationship that roughly reflects the forward
-    price of the VIX future near ATM. A simple proxy is:
-
-        F ≈ K + (C - P)
-
-    where K is the ATM strike, C is ATM call mid, P is ATM put mid.
-
-    This is a proxy, not an exact futures quote, but sufficient for WEM spread base.
-    """
-    return float(atm_strike) + float(atm_call_mid) - float(atm_put_mid)
+# Parity proxy removed per policy
 
 
 
@@ -1643,6 +1555,16 @@ def _get_previous_friday_close_price(
 
         if historical_data is None or historical_data.empty:
             logger.warning(f"No historical data available for {symbol} on {previous_friday_date.date()} from any provider")
+            # Next fallback: Cboe VIX CSV (spot EOD)
+            if symbol.upper() in ("VIX", "^VIX"):
+                try:
+                    cboe_close = _get_cboe_vix_close_for_date(previous_friday_date)
+                    if cboe_close is not None:
+                        logger.info(f"Cboe CSV fallback close for {symbol} on {previous_friday_date.date()}: ${cboe_close:.4f}")
+                        return float(cboe_close)
+                except Exception as e:
+                    logger.debug(f"Cboe CSV fallback failed for {symbol}: {e}")
+
             # Final fallback: direct Yahoo Finance chart API for indices/futures-like symbols
             try:
                 yahoo_symbol = symbol if symbol.startswith('^') else f'^{symbol}' if symbol.upper() == 'VIX' else symbol
@@ -1653,13 +1575,6 @@ def _get_previous_friday_close_price(
             except Exception as e:
                 logger.debug(f"Yahoo chart fallback failed for {symbol}: {e}")
 
-            if not fallback_to_current:
-                return None
-            # Fallback to current price if allowed
-            current_price = manager.get_stock_price(symbol)
-            if current_price:
-                logger.warning(f"Using current price as fallback for {symbol}: ${current_price:.2f}")
-                return float(current_price)
             return None
 
         # Get the closing price from the Friday data (handle different column conventions)

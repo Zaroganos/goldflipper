@@ -1,0 +1,1 @@
+This dir stores code specific to certain ticker symbols
