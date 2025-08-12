@@ -1,6 +1,26 @@
 This is a list of tasks to do and features to implement for the goldflipper project.
 Directions for AI: Place new tasks on top. Remember to use real current date when adding a to do or addressing it. Use a tool or MCP if you are unsure what the current date is.
 
+### 2025-08-12
+- [x] Migrated dependency management to uv
+  - Converted `pyproject.toml` to PEP 621 `[project]` with `[dependency-groups]`
+  - Switched build backend to Hatch (`hatchling`) and configured wheel packages
+  - Replaced Poetry/pip usage in scripts with `uv sync` / `uv run`; added uv auto-install checks
+  - Generated and committed `uv.lock` for reproducible installs
+- [x] Updated documentation and messages to uv
+  - `README.md`: Added “Migrating from Goldflipper Classic” with `uv run goldflipper-migrate`
+  - `docs/developer_guide.md`, `web/MIGRATION_NOTES.md`: updated to uv
+  - Replaced pip install tips with `uv pip install ...` in helper scripts/messages
+- [x] Version resolution improvements
+  - `database/connection.py`: read version from `[project].version` (fallback to Poetry), support normalized dist names
+- [x] Validated environment
+  - Ran `uv lock` and `uv sync`; basic import smoke test succeeded
+- [ ] CI/CD (GitHub Actions) with uv
+  - Research `astral-sh/setup-uv@v6`, caching, `uv sync --locked`, `uv run pytest`, lint/type checks, secrets
+- [ ] Optional follow-ups
+  - Review and clean any remaining Poetry references in historical notes
+  - Consider adding explicit uv check to any other runner scripts if needed
+
 ### 2025-08-11
 - [ ] Add a way to address log size. How to implement functional rotating log files? How to archive old ones?
  - [x] VIX WEM stabilization:
@@ -147,7 +167,7 @@ Open next steps:
          - [x] Create web/ directory with app.py and pages/
          - [x] Set up components/ directory for reusable UI elements
          - [x] Configure proper imports and dependencies
-         - [x] Ensure Streamlit and dependencies are managed via Poetry
+          - [x] Ensure Streamlit and dependencies are managed via uv
       
       2. [ ] Implement core dashboard:
          - [ ] Create main dashboard layout

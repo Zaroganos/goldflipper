@@ -1,1 +1,0 @@
-this dir will contain files to render charts for technical analysis, indicators, etc.

@@ -84,7 +84,7 @@ print(f"Next Friday expiration: {next_friday}")
 ### Pandas Market Calendars Migration
 - **Library**: `pandas-market-calendars`
 - **Benefits**: More comprehensive holiday coverage, international markets, partial trading days
-- **Installation**: `pip install pandas-market-calendars`
+- **Installation**: `uv pip install pandas-market-calendars`
 - **Implementation Example**:
 ```python
 import pandas_market_calendars as mcal

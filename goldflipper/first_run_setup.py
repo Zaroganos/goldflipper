@@ -13,7 +13,7 @@ class FirstRunSetup:
             from tkinterdnd2 import DND_FILES, TkinterDnD
             self.root = TkinterDnD.Tk()  # Use TkinterDnD.Tk() instead of tk.Tk()
         except ImportError:
-            print("TkinterDnD2 not found. Please install it using: pip install tkinterdnd2")
+            print("TkinterDnD2 not found. Please install it using: uv pip install tkinterdnd2")
             sys.exit(1)
             
         self.root.title("Goldflipper First Run Setup")

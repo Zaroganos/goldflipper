@@ -281,7 +281,8 @@ def _resolve_app_version(repo_root: Path) -> str:
     # 1) Try installed distributions (Poetry install)
     possible_names = (
         'goldflipper',
-        'goldflipper-1.5',  # current project name in pyproject
+        'goldflipper-1.5',  # legacy normalization
+        'goldflipper-1-5',  # PEP 503 normalized distribution name
     )
     if get_dist_version is not None:
         for dist_name in possible_names:
@@ -296,11 +297,19 @@ def _resolve_app_version(repo_root: Path) -> str:
         try:
             with pyproject_path.open('rb') as f:
                 data = tomllib.load(f)
-            version_str = (
-                data.get('tool', {})
-                    .get('poetry', {})
-                    .get('version')
-            )
+            # Prefer PEP 621 [project] table, fallback to legacy Poetry table
+            version_str = None
+            project_tbl = data.get('project')
+            if isinstance(project_tbl, dict):
+                raw_version = project_tbl.get('version')
+                if isinstance(raw_version, str) and raw_version.strip():
+                    version_str = raw_version.strip()
+            if not version_str:
+                version_str = (
+                    data.get('tool', {})
+                        .get('poetry', {})
+                        .get('version')
+                )
             if isinstance(version_str, str) and version_str.strip():
                 return version_str.strip()
         except Exception:

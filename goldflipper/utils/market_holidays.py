@@ -11,7 +11,7 @@ For production use, consider migrating to the pandas_market_calendars library:
 - Handles complex holiday rules and international markets  
 - Accounts for partial trading days and early closures
 - Better handling of edge cases and historical changes
-- pip install pandas-market-calendars
+- uv pip install pandas-market-calendars
 
 Example future implementation:
 ```python
@@ -290,7 +290,7 @@ def test_holiday_detection():
     print(f"  • International market support")
     print(f"  • Early close handling (e.g., day after Thanksgiving)")
     print(f"  • Historical holiday rule changes")
-    print(f"  • Installation: pip install pandas-market-calendars")
+    print(f"  • Installation: uv pip install pandas-market-calendars")
 
 
 def test_holiday_detection_ui():

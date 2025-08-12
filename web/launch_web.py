@@ -38,23 +38,24 @@ def main():
             show_console = False
             script_dir = Path(__file__).parent
             
-            # Check if Poetry is installed
+            # Ensure uv is available
             try:
-                subprocess.run(['poetry', '--version'], capture_output=True, check=True)
-                f.write("Poetry is installed\n")
+                subprocess.run(['uv', '--version'], capture_output=True, check=True)
+                f.write("uv is installed\n")
             except subprocess.CalledProcessError:
-                f.write("Installing Poetry...\n")
+                f.write("Installing uv...\n")
                 try:
-                    subprocess.run([sys.executable, "-m", "pip", "install", "poetry"], check=True)
-                    f.write("Poetry installed successfully\n")
+                    # Windows installation via PowerShell script from Astral
+                    subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', 'iwr https://astral.sh/uv/install.ps1 -UseBasicParsing | iex'], check=True)
+                    f.write("uv installed successfully\n")
                 except subprocess.CalledProcessError as e:
-                    f.write(f"Error installing Poetry: {str(e)}\n")
+                    f.write(f"Error installing uv: {str(e)}\n")
                     return
-            
-            # Install dependencies using Poetry
-            f.write("Installing dependencies with Poetry...\n")
+
+            # Install dependencies using uv
+            f.write("Installing dependencies with uv...\n")
             try:
-                subprocess.run(['poetry', 'install'], check=True)
+                subprocess.run(['uv', 'sync'], check=True)
                 f.write("Dependencies installed successfully\n")
             except subprocess.CalledProcessError as e:
                 f.write(f"Error installing dependencies: {str(e)}\n")
@@ -67,10 +68,10 @@ def main():
             try:
                 if show_console:
                     # For visible console, let Streamlit output directly
-                    subprocess.Popen(['poetry', 'run', 'streamlit', 'run', str(script_dir / 'app.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen(['uv', 'run', 'streamlit', 'run', str(script_dir / 'app.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
                     # For hidden console, use Popen with CREATE_NO_WINDOW
-                    subprocess.Popen(['poetry', 'run', 'streamlit', 'run', str(script_dir / 'app.py')], creationflags=subprocess.CREATE_NO_WINDOW)
+                    subprocess.Popen(['uv', 'run', 'streamlit', 'run', str(script_dir / 'app.py')], creationflags=subprocess.CREATE_NO_WINDOW)
                 
                 f.write("Streamlit app launched successfully\n")
             except Exception as e:

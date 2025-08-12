@@ -33,9 +33,9 @@ Migration Process
 
 Usage
 -----
-Run this script using Poetry:
+Run this script via uv:
 ```bash
-poetry run goldflipper-migrate
+uv run goldflipper-migrate
 ```
 
 The script will:
@@ -269,7 +269,7 @@ def run_migration():
     4. Runs the migration
     5. Handles any errors
     
-    The function is registered as a Poetry script entry point.
+    The function is registered as a console script entry point.
     """
     try:
         # Initialize database

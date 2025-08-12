@@ -19,20 +19,20 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Checking Poetry installation...
-poetry --version 2>nul
+echo Checking uv installation...
+uv --version 2>nul
 if errorlevel 1 (
-    echo Installing Poetry...
-    python -m pip install poetry
+    echo Installing uv...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr https://astral.sh/uv/install.ps1 -UseBasicParsing | iex"
     if errorlevel 1 (
-        echo Error installing Poetry
+        echo Error installing uv
         pause
         exit /b 1
     )
 )
 
-echo Installing project dependencies...
-poetry install
+echo Installing project dependencies with uv...
+uv sync
 if errorlevel 1 (
     echo Error installing dependencies
     pause
@@ -44,7 +44,7 @@ mkdir "%ProgramData%\Goldflipper\logs" 2>nul
 icacls "%ProgramData%\Goldflipper" /grant "Users":(OI)(CI)F /T
 
 echo Installing Goldflipper Trading Service...
-poetry run python -m goldflipper.run --startup auto install
+uv run python -m goldflipper.run --startup auto install
 if errorlevel 1 (
     echo Error installing service
     pause

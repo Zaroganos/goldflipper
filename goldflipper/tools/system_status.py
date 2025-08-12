@@ -14,11 +14,11 @@ from goldflipper.alpaca_client import get_alpaca_client
 
 def update_alpaca():
     """
-    Update alpaca-py package using pip
+    Update alpaca-py package using uv (pip-compatible)
     """
     print("\nUpdating alpaca-py package...")
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "alpaca-py"])
+        subprocess.check_call(["uv", "pip", "install", "--upgrade", "alpaca-py"])
         print("alpaca-py updated successfully")
     except subprocess.CalledProcessError as e:
         print(f"Error updating alpaca-py: {e}")

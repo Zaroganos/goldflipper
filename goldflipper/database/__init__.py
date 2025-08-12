@@ -55,7 +55,7 @@ Migration
 --------
 To migrate existing data from JSON files to the database:
 ```bash
-poetry run goldflipper-migrate
+uv run goldflipper-migrate
 ```
 
 Dependencies

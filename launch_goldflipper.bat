@@ -25,10 +25,22 @@ if not exist "%DB_DIR%" mkdir "%DB_DIR%"
 if not exist "%DB_DIR%\backups" mkdir "%DB_DIR%\backups"
 if not exist "%DB_DIR%\temp" mkdir "%DB_DIR%\temp"
 
+:: Ensure uv is available
+where uv >nul 2>&1
+if errorlevel 1 (
+  echo Installing uv...
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr https://astral.sh/uv/install.ps1 -UseBasicParsing | iex"
+  if errorlevel 1 (
+    echo Error installing uv
+    pause
+    exit /b 1
+  )
+)
+
 :: Launch the application
 cd /d %~dp0
 echo Starting Goldflipper in interactive mode...
-python -m goldflipper.goldflipper_tui
+uv run python -m goldflipper.goldflipper_tui
 if errorlevel 1 (
     echo Error occurred while running Goldflipper
     pause
