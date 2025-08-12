@@ -115,20 +115,23 @@ Open next steps:
       5. [ ] Fix remaining DuckDB compatibility issues
       6. [ ] Complete transaction handling and error recovery
 
-- [ ] Implement Poetry + PyInstaller packaging workflow:
-      1. [x] Set up Poetry environment and configuration
-      2. [x] Create pyproject.toml with all dependencies
-      3. [x] Configure VS Code for Poetry environment
-      4. [x] Update installation scripts for Poetry
-      5. [x] Add Poetry-specific files to .gitignore
-      6. [ ] Update PyInstaller spec for Poetry environment
-      7. [ ] Test packaging with Poetry dependencies
-      8. [ ] Create Poetry-based deployment scripts
+- [ ] Implement uv + PyInstaller packaging workflow:
+      1. [x] Convert pyproject to PEP 621 and uv groups
+      2. [x] Update scripts to use `uv sync` and `uv run`
+      3. [ ] Update PyInstaller spec for uv environment
+      4. [ ] Test packaging with uv-managed dependencies
+      5. [ ] Create uv-based deployment scripts
+
+- [ ] CI/CD with uv (GitHub Actions):
+      1. [ ] Research best practices for `astral-sh/setup-uv@v6` and caching strategy
+      2. [ ] Add workflow steps: checkout → setup-uv → `uv sync --locked --dev` → `uv run pytest`
+      3. [ ] Consider linting/type checks (`uv run ruff`, `uv run mypy`) and artifact uploads
+      4. [ ] Ensure secrets handling for any integration tests (e.g., Alpaca sandbox)
 
 - [ ] Clean up old dependency management:
-      1. [x] Remove requirements.txt (replaced by Poetry)
-      2. [ ] Update documentation for Poetry usage
-      3. [ ] Test all scripts with Poetry environment
+      1. [x] Remove requirements.txt (now managed by uv)
+      2. [x] Update documentation for uv usage
+      3. [x] Test all scripts with uv environment
 
 - [ ] Fix IDE import resolution:
       1. [ ] Update remaining import paths

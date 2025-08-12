@@ -1,13 +1,11 @@
 # Goldflipper UI Migration Notes
 
 ## Dependencies Management
-- [x] Migrate to Poetry for dependency management:
-  - Created `pyproject.toml` with all dependencies
-  - Configured development and production dependencies
-  - Set up Poetry scripts for main entry points
-  - Added Poetry-specific files to `.gitignore`
-  - Updated installation scripts to use Poetry
-  - Configured VS Code for Poetry environment
+- [x] Migrate to uv for dependency and environment management:
+  - Converted `pyproject.toml` to PEP 621 `[project]`
+  - Added `[dependency-groups]` for development dependencies
+  - Updated launch scripts to use `uv sync` and `uv run`
+  - uv lockfile (`uv.lock`) ensures reproducible installs
 
 - [ ] Dependency cleanup checklist:
   - [x] Removed `requirements.txt` (Poetry-only)
@@ -17,8 +15,8 @@
   - [ ] Review version constraints for shared dependencies
 
 ## IDE Configuration
-- [x] Set up VS Code for Poetry:
-  - Added `.vscode/settings.json` with Poetry environment path
+- [x] Set up VS Code for uv environments:
+  - Recommend selecting the `.venv` created by `uv sync` as the interpreter
   - Configured Python analysis settings
   - Set up package indexing for goldflipper
   - Added workspace folder to Python path
@@ -42,10 +40,10 @@
   - Add new UI preferences
 
 ## Launch Scripts
-- [x] Update launch scripts for Poetry:
-  - Modified `install_service.bat` to use Poetry
-  - Updated `launch_web.py` to use Poetry environment
-  - Added Poetry installation checks
+- [x] Update launch scripts for uv:
+  - Modified `install_service.bat` to use uv
+  - Updated `launch_web.py` to use uv environment
+  - Added uv installation checks
   - Improved error handling and logging
 
 - [ ] Update `launch_goldflipper.bat`:
@@ -87,7 +85,7 @@
 - Set `GOLDFLIPPER_DATA_DIR` to a writable location (for example `%LOCALAPPDATA%\\Goldflipper` on Windows, `~/Library/Application Support/Goldflipper` on macOS, or `$XDG_DATA_HOME/goldflipper`/`~/.local/share/goldflipper` on Linux).
 - The code in `goldflipper/database/connection.py` respects `GOLDFLIPPER_DATA_DIR` and will create `db/goldflipper.db`, `db/backups`, and `db/temp` under that base directory.
 - Ensure launch scripts (e.g., `.env.bat`, `launch_goldflipper.bat`) export `GOLDFLIPPER_DATA_DIR` before starting the app.
-- Build from the Poetry environment, e.g. `poetry run pyinstaller your.spec`.
+- Build from the project environment, e.g. `uv run pyinstaller your.spec`.
 - Do not add the DuckDB database file with `--add-data`; it should live outside the bundled app and be writable at runtime.
 
 ## Testing Requirements
@@ -146,11 +144,10 @@
   - API development
 
 ## Lessons Learned
-1. Poetry Integration:
-   - Poetry provides better dependency resolution than pip
-   - Virtual environment management is automatic and reliable
-   - Package versioning is more consistent
-   - Development vs production dependencies are clearly separated
+1. uv Integration:
+   - uv provides fast dependency resolution and installation
+   - Project environments are synced from `uv.lock` for reproducibility
+   - Simple commands: `uv sync`, `uv run` replace multiple toolchains
 
 2. IDE Configuration:
    - VS Code needs explicit configuration for Poetry environments
@@ -160,7 +157,7 @@
 
 3. Migration Strategy:
    - Keep old dependency files as backup during transition
-   - Update scripts gradually to use Poetry
+   - Update scripts to use uv
    - Test each component after migration
    - Document all changes for team reference
 

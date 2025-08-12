@@ -81,9 +81,9 @@ The Goldflipper database system uses DuckDB as its primary database engine, acce
 ### Getting Started
 
 #### Environment Setup
-1. Install Poetry dependencies:
+1. Install dependencies:
 ```bash
-poetry install
+uv sync
 ```
 
 2. Set up environment variables:

@@ -57,7 +57,7 @@ Before you start, ensure you have the following installed on your system:
 
 - Python 3.8 or higher
 - An Alpaca trading account with API access
-- Required Python libraries listed in requirements.txt
+- Required Python libraries managed by uv
 
 ### Installation
 
@@ -67,9 +67,9 @@ git clone <repository-url>
 cd goldflipper
 ```
 
-2. Install the required libraries:
+2. Install the required libraries with uv:
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 3. Configure your API keys:
@@ -88,9 +88,9 @@ The system can be launched in several ways:
    - `run_console.bat` - Launches in console mode
    - `install_service.bat` - Installs the system as a Windows service
 
-3. Direct Python execution:
+3. Direct execution via uv:
 ```bash
-python goldflipper/run.py
+uv run python goldflipper/run.py
 ```
 
 ## Key Features
@@ -102,6 +102,20 @@ python goldflipper/run.py
 - System state management and monitoring
 - Comprehensive logging and error tracking
 - Windows service integration for automated operation
+
+## Migrating from Goldflipper Classic
+
+If you're upgrading from Goldflipper Classic to Goldflipper 1.5 and want to import your existing plays:
+
+1. Place your old `plays/` folder (containing `new/`, `open/`, `closed/`, `expired/`, etc.) under the project data directory. By default on Windows this is `%LOCALAPPDATA%\Goldflipper`, but you can set a custom location via the `GOLDFLIPPER_DATA_DIR` environment variable.
+
+2. Run the migration command:
+
+```bash
+uv run goldflipper-migrate
+```
+
+This will initialize the database (DuckDB) and import all plays into the database, creating corresponding status history and trade log entries where applicable. A summary is printed at the end.
 
 ## Directory Overview
 
