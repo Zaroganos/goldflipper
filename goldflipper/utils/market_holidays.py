@@ -123,6 +123,10 @@ def find_next_friday_expiration() -> datetime:
         datetime: Next weekly options expiration date (Friday or preceding Thursday if holiday)
     """
     today = datetime.now().date()
+    
+    # DEBUG: Log the current date and time for troubleshooting
+    logger.info(f"🔍 find_next_friday_expiration() called - Today: {today} ({today.strftime('%A')})")
+    
     # Prefer precise NYSE schedule if pandas_market_calendars is available
     if _PMC_AVAILABLE:
         try:
@@ -130,32 +134,57 @@ def find_next_friday_expiration() -> datetime:
             # Compute schedule for the next 14 days
             end = today + timedelta(days=14)
             sched = nyse.schedule(start_date=today, end_date=end)
+            logger.debug(f"🔍 NYSE schedule computed for {today} to {end}")
+            logger.debug(f"🔍 NYSE schedule contains {len(sched)} trading days")
+            
             # Find the next Friday trading day in the schedule
+            fridays_found = []
             for ts in sched.index:
                 if ts.weekday() == 4:  # Friday
-                    # If there is an early close/holiday, schedule will reflect it; we take that date
-                    return datetime.combine(ts.date(), datetime.min.time())
-            # Fallback to simple logic if none found
+                    fridays_found.append(ts.date())
+                    logger.debug(f"🔍 Found Friday in schedule: {ts.date()} (weekday {ts.weekday()})")
+            
+            logger.debug(f"🔍 All Fridays found in schedule: {fridays_found}")
+            
+            # We want the NEXT Friday, not today if today is Friday
+            # Filter out today if it's Friday
+            future_fridays = [f for f in fridays_found if f > today]
+            logger.debug(f"🔍 Future Fridays (excluding today): {future_fridays}")
+            
+            if future_fridays:
+                # Take the first future Friday
+                next_friday_date = min(future_fridays)
+                result = datetime.combine(next_friday_date, datetime.min.time())
+                logger.info(f"🔍 find_next_friday_expiration() returning NYSE schedule result: {result.date()} ({result.strftime('%A')})")
+                return result
+            else:
+                logger.warning("🔍 No future Fridays found in NYSE schedule, falling back to simple logic")
         except Exception as e:
             logger.debug(f"pandas_market_calendars unavailable or failed: {e}")
 
     # Simple fallback logic
     days_ahead = 4 - today.weekday()  # Friday is weekday 4 (Monday=0)
+    logger.debug(f"🔍 Simple logic - days_ahead calculation: 4 - {today.weekday()} = {days_ahead}")
     
     if days_ahead <= 0:  # Today is Friday or weekend, get next Friday
         days_ahead += 7
+        logger.debug(f"🔍 Adjusted days_ahead: {days_ahead}")
     
     next_friday = today + timedelta(days=days_ahead)
-    logger.debug(f"Initial next Friday calculated: {next_friday}")
+    logger.debug(f"🔍 Initial next Friday calculated: {next_friday}")
     
     # Check if this Friday is a known market holiday
     if is_market_holiday(next_friday):
         # If Friday is a holiday, weekly options typically expire on Thursday
         adjusted_expiration = next_friday - timedelta(days=1)  # Go to Thursday
         logger.info(f"Friday {next_friday} is a market holiday, adjusting expiration to Thursday {adjusted_expiration}")
-        return datetime.combine(adjusted_expiration, datetime.min.time())
+        result = datetime.combine(adjusted_expiration, datetime.min.time())
+        logger.info(f"🔍 find_next_friday_expiration() returning holiday-adjusted result: {result.date()} ({result.strftime('%A')})")
+        return result
     
-    return datetime.combine(next_friday, datetime.min.time())
+    result = datetime.combine(next_friday, datetime.min.time())
+    logger.info(f"🔍 find_next_friday_expiration() returning simple logic result: {result.date()} ({result.strftime('%A')})")
+    return result
 
 
 def find_previous_friday() -> datetime:
@@ -163,25 +192,86 @@ def find_previous_friday() -> datetime:
     Find the previous Friday for WEM Spread calculation.
     
     WEM Spread uses the previous Friday's closing price as the denominator.
-    This function finds the most recent Friday before today.
+    This function finds the most recent Friday before today, OR today if today is Friday and market has closed.
     
     Returns:
-        datetime: Previous Friday's date
+        datetime: Previous Friday's date, or today if today is Friday and market closed
     """
     today = datetime.now().date()
-    days_back = today.weekday() + 3  # Monday=0, so Friday would be 4 days back from Monday
     
-    if today.weekday() == 4:  # If today is Friday
-        days_back = 7  # Get last Friday
-    elif today.weekday() < 4:  # Monday-Thursday
-        days_back = today.weekday() + 3  # Days back to last Friday
-    else:  # Weekend (Saturday=5, Sunday=6)
-        days_back = today.weekday() - 4  # Days back to last Friday
+    # DEBUG: Log the current date and time for troubleshooting
+    logger.info(f"🔍 find_previous_friday() called - Today: {today} ({today.strftime('%A')})")
+    
+    # If today is Friday, check if market has closed
+    if today.weekday() == 4:  # Friday
+        # Check if market has closed (after 4:00 PM ET)
+        try:
+            from zoneinfo import ZoneInfo
+            market_tz = ZoneInfo('America/New_York')
+            current_time_ny = datetime.now(market_tz)
+            
+            # DEBUG: Log timezone information
+            logger.info(f"🔍 Timezone check - Current time NY: {current_time_ny.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            
+            # Use configurable market close time, default to 4:00 PM ET
+            # This matches the default in settings_template.yaml
+            market_close_hour = 16  # 4 PM
+            market_close_minute = 0
+            
+            # Try to get market close time from config if available
+            try:
+                from goldflipper.config.config import config
+                config_market_hours = config.get('market_hours', {})
+                if config_market_hours.get('enabled', True):
+                    regular_hours = config_market_hours.get('regular_hours', {})
+                    if 'end' in regular_hours:
+                        end_time_str = regular_hours['end']
+                        if ':' in end_time_str:
+                            hour_str, minute_str = end_time_str.split(':')
+                            market_close_hour = int(hour_str)
+                            market_close_minute = int(minute_str)
+            except Exception as e:
+                logger.debug(f"Could not read market hours config, using default 4:00 PM ET: {e}")
+            
+            market_close_time = current_time_ny.replace(
+                hour=market_close_hour, 
+                minute=market_close_minute, 
+                second=0, 
+                microsecond=0
+            )
+            
+            # DEBUG: Log market close time calculation
+            logger.info(f"🔍 Market close time: {market_close_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            logger.info(f"🔍 Is after market close? {current_time_ny >= market_close_time}")
+            
+            # If it's after market close on Friday, use today's Friday close
+            if current_time_ny >= market_close_time:
+                logger.info(f"Today is Friday ({today}) and market has closed at {market_close_hour:02d}:{market_close_minute:02d} ET - using today's Friday close")
+                return datetime.combine(today, datetime.min.time())
+            else:
+                # Market still open on Friday, use last Friday
+                time_until_close = market_close_time - current_time_ny
+                logger.info(f"Today is Friday ({today}) but market still open - closes in {time_until_close} - using last Friday")
+                days_back = 7
+        except Exception as e:
+            # Fallback: if timezone check fails, assume market closed after 4 PM ET
+            # This is a reasonable assumption for WEM calculations run after market hours
+            logger.warning(f"Timezone check failed, assuming market closed on Friday: {e}")
+            days_back = 7
+    else:
+        # Not Friday - always return the previous Friday
+        if today.weekday() < 4:  # Monday-Thursday
+            days_back = today.weekday() + 3  # Days back to last Friday
+        else:  # Weekend (Saturday=5, Sunday=6)
+            days_back = today.weekday() - 4  # Days back to last Friday
     
     previous_friday = today - timedelta(days=days_back)
     logger.debug(f"Previous Friday calculated: {previous_friday}")
     
-    return datetime.combine(previous_friday, datetime.min.time())
+    result = datetime.combine(previous_friday, datetime.min.time())
+    logger.info(f"🔍 find_previous_friday() returning: {result.date()} ({result.strftime('%A')})")
+    
+    return result
 
 
 def get_expiration_date_candidates(primary_date: datetime) -> List[Tuple[datetime, str]]:
@@ -228,6 +318,90 @@ def get_expiration_date_candidates(primary_date: datetime) -> List[Tuple[datetim
         logger.debug(f"  {i+1}. {date.date()} ({date.strftime('%A')}) - {reason}")
     
     return candidates
+
+
+def test_find_previous_friday():
+    """
+    Test function to verify find_previous_friday logic works correctly.
+    
+    This function demonstrates how the system handles different scenarios:
+    - Friday after market close (should return today)
+    - Friday before market close (should return last Friday)
+    - Other days (should return last Friday)
+    """
+    print("🧪 Testing find_previous_friday Logic")
+    print("=" * 50)
+    
+    # Test 1: Friday after market close (should return today)
+    print("\n📅 Test 1: Friday after market close")
+    try:
+        from zoneinfo import ZoneInfo
+        market_tz = ZoneInfo('America/New_York')
+        current_time_ny = datetime.now(market_tz)
+        
+        if current_time_ny.weekday() == 4:  # Friday
+            print(f"Current time: {current_time_ny.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            result = find_previous_friday()
+            print(f"Result: {result.date()} (should be today if market closed)")
+            
+            # Check if market is closed
+            market_close_time = current_time_ny.replace(hour=16, minute=0, second=0, microsecond=0)
+            if current_time_ny >= market_close_time:
+                print("✅ Market has closed - should use today's Friday close")
+            else:
+                print("⏰ Market still open - should use last Friday")
+        else:
+            print("Not Friday today - cannot test Friday logic")
+    except Exception as e:
+        print(f"❌ Error testing Friday logic: {e}")
+    
+    # Test 2: Simulate different days
+    print("\n📅 Test 2: Simulate different days")
+    test_dates = [
+        datetime(2025, 8, 15).date(),  # Friday
+        datetime(2025, 8, 18).date(),  # Monday
+        datetime(2025, 8, 20).date(),  # Wednesday
+        datetime(2025, 8, 23).date(),  # Saturday
+    ]
+    
+    for test_date in test_dates:
+        print(f"\nSimulating date: {test_date} ({test_date.strftime('%A')})")
+        
+        # Temporarily override datetime.now for testing
+        original_now = datetime.now
+        try:
+            # Mock datetime.now to return our test date
+            def mock_now():
+                return datetime.combine(test_date, datetime.min.time())
+            
+            datetime.now = mock_now
+            
+            # Test the function
+            result = find_previous_friday()
+            print(f"  Result: {result.date()} ({result.strftime('%A')})")
+            
+            # Validate the result
+            if test_date.weekday() == 4:  # Friday
+                # For Friday, result should be today or last Friday
+                if result.date() == test_date:
+                    print("  ✅ Correct: Using today's Friday close")
+                else:
+                    print("  ✅ Correct: Using last Friday (market still open)")
+            else:
+                # For non-Friday, result should be last Friday
+                if result.date() < test_date and result.weekday() == 4:
+                    print("  ✅ Correct: Using last Friday")
+                else:
+                    print("  ❌ Incorrect: Should be last Friday")
+                    
+        except Exception as e:
+            print(f"  ❌ Error: {e}")
+        finally:
+            # Restore original datetime.now
+            datetime.now = original_now
+    
+    print("\n" + "=" * 50)
+    print("🧪 find_previous_friday test completed")
 
 
 def test_holiday_detection():

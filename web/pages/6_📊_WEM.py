@@ -57,7 +57,7 @@ HOLIDAY HANDLING:
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import quote, urlencode
 from pathlib import Path
 import yaml
@@ -120,6 +120,17 @@ def setup_wem_logging():
     logger.info(f"WEM CALCULATION SESSION STARTED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"Session ID: {session_timestamp}")
     logger.info(f"Log File: wem_{session_timestamp}.log")
+    
+    # Add Friday information for record keeping
+    try:
+        from goldflipper.utils.market_holidays import find_previous_friday, find_next_friday_expiration
+        previous_friday = find_previous_friday()
+        next_friday_expiry = find_next_friday_expiration()
+        logger.info(f"Previous Friday Close: {previous_friday.date().strftime('%Y-%m-%d')} ({previous_friday.strftime('%A')})")
+        logger.info(f"Next Friday Expiry: {next_friday_expiry.date().strftime('%Y-%m-%d')} ({next_friday_expiry.strftime('%A')})")
+    except Exception as e:
+        logger.warning(f"Could not determine Friday dates for header: {e}")
+    
     logger.info("=" * 80)
     
     # Ensure the log gets written to disk immediately
@@ -526,6 +537,14 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             else:
                 logger.info(f"WEM calculation for {symbol} - using previous Friday close (standard method)")
                 previous_friday_date = find_previous_friday()
+                
+                # Log which Friday we're using for clarity
+                today = datetime.now().date()
+                if previous_friday_date.date() == today:
+                    logger.info(f"Using TODAY's Friday close ({today}) for {symbol} - market has closed")
+                else:
+                    logger.info(f"Using PREVIOUS Friday close ({previous_friday_date.date()}) for {symbol} - today is {today.strftime('%A')}")
+                
                 current_price = _get_previous_friday_close_price(symbol, previous_friday_date, use_cache=True)
                 
                 if current_price is None:
@@ -1810,11 +1829,27 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
         'last_updated': 'Last Updated'
     }
     
-    # Dynamically update ATM display name with previous Friday's date (when close price was recorded)
+    # Dynamically update ATM display name with the actual Friday date being used
     try:
-        previous_friday = find_previous_friday()
-        atm_date_str = previous_friday.strftime('%m/%d')  # Format as M/D (e.g., 6/13)
-        column_display_names['atm_price'] = f'ATM ({atm_date_str})'
+        # Get the actual Friday date being used for calculations
+        if st.session_state.get('use_friday_close', True):
+            # Use the find_previous_friday function to get the actual date
+            from goldflipper.utils.market_holidays import find_previous_friday
+            actual_friday_date = find_previous_friday()
+            atm_date_str = actual_friday_date.strftime('%m/%d')  # Format as M/D (e.g., 6/13)
+            
+            # Check if this is today's Friday or previous Friday
+            today = datetime.now().date()
+            if actual_friday_date.date() == today:
+                atm_label = f'ATM ({atm_date_str}) - Today'
+            else:
+                atm_label = f'ATM ({atm_date_str})'
+        else:
+            # Most Recent mode - use current date
+            atm_date_str = datetime.now().strftime('%m/%d')
+            atm_label = f'ATM ({atm_date_str}) - Current'
+            
+        column_display_names['atm_price'] = atm_label
     except Exception as e:
         logger.warning(f"Could not determine previous Friday date: {e}")
         # Keep default ATM name if date calculation fails
@@ -2536,6 +2571,85 @@ def main():
     st.title("📊 Weekly Expected Moves (WEM)")
     st.subheader("Options-derived expected price ranges for the upcoming week")
     
+    # Debug section - always visible to help troubleshoot Friday logic
+    with st.expander("🔍 Debug: Friday Logic Check", expanded=False):
+        st.markdown("**Current Time & Friday Logic Debug**")
+        
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        
+        # Show current time in different timezones
+        current_local = datetime.now()
+        try:
+            market_tz = ZoneInfo('America/New_York')
+            current_ny = datetime.now(market_tz)
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.text(f"Local: {current_local.strftime('%Y-%m-%d %H:%M:%S')}")
+                st.text(f"NY: {current_ny.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                st.text(f"Day: {current_ny.strftime('%A')}")
+                st.text(f"Is Friday: {current_ny.weekday() == 4}")
+            
+            with col2:
+                                # Check market close time
+                market_close_time = current_ny.replace(hour=16, minute=0, second=0, microsecond=0)
+                st.text(f"Market close: {market_close_time.strftime('%H:%M:%S %Z')}")
+                st.text(f"After close: {current_ny >= market_close_time}")
+                
+                # Test find_previous_friday function
+                try:
+                    # Import the function locally to avoid scope issues
+                    from goldflipper.utils.market_holidays import find_previous_friday
+                    friday_result = find_previous_friday()
+                    st.text(f"Function result: {friday_result.date()}")
+                    expected = "Today" if current_ny.weekday() == 4 and current_ny >= market_close_time else "Last Friday"
+                    st.text(f"Expected: {expected}")
+                    
+                    # Show if this matches expectation
+                    if current_ny.weekday() == 4 and current_ny >= market_close_time:
+                        if friday_result.date() == current_ny.date():
+                            st.success("✅ CORRECT: Using today's Friday close")
+                        else:
+                            st.error(f"❌ ISSUE: Using {friday_result.date()} instead of today")
+                    else:
+                        if friday_result.date() < current_ny.date() and friday_result.date().weekday() == 4:
+                            st.success("✅ CORRECT: Using last Friday")
+                        else:
+                            st.error(f"❌ ISSUE: Unexpected result {friday_result.date()}")
+                            
+                except Exception as e:
+                    st.error(f"Function error: {e}")
+                    
+                # Test find_next_friday_expiration function
+                try:
+                    from goldflipper.utils.market_holidays import find_next_friday_expiration
+                    next_friday_result = find_next_friday_expiration()
+                    st.text(f"Next Friday result: {next_friday_result.date()}")
+                    
+                    # Check if this is correct (should be next Friday, not today)
+                    if current_ny.weekday() == 4:  # Today is Friday
+                        if next_friday_result.date() > current_ny.date():
+                            st.success("✅ CORRECT: Next Friday is in the future")
+                        else:
+                            st.error(f"❌ ISSUE: Next Friday should be future, got {next_friday_result.date()}")
+                    else:
+                        # Not Friday, should be next Friday
+                        days_until_friday = (4 - current_ny.weekday()) % 7
+                        if days_until_friday == 0:
+                            days_until_friday = 7  # Next Friday
+                        expected_next_friday = current_ny.date() + timedelta(days=days_until_friday)
+                        if next_friday_result.date() == expected_next_friday:
+                            st.success("✅ CORRECT: Next Friday calculated correctly")
+                        else:
+                            st.error(f"❌ ISSUE: Expected {expected_next_friday}, got {next_friday_result.date()}")
+                        
+                except Exception as e:
+                    st.error(f"Next Friday function error: {e}")
+                    
+        except Exception as e:
+            st.error(f"Timezone error: {e}")
+    
     # Get available symbols from database for the symbol selector (at top level for broader scope)
     try:
         with get_db_connection() as db_session:
@@ -2731,6 +2845,34 @@ def main():
             # Holiday detection test button (debug mode only)
             if st.button("🧪 Test Holiday Detection", help="Test the market holiday detection system (Debug Mode)"):
                 test_holiday_detection_ui()
+            
+            # Friday logic test button (debug mode only)
+            if st.button("🧪 Test Friday Logic", help="Test the find_previous_friday logic (Debug Mode)"):
+                from goldflipper.utils.market_holidays import test_find_previous_friday
+                test_find_previous_friday()
+                st.success("Friday logic test completed - check console/logs for results")
+            
+            # Simple Friday date test (debug mode only)
+            if st.button("🧪 Test Current Friday Date", help="Test what date find_previous_friday returns right now"):
+                from goldflipper.utils.market_holidays import find_previous_friday
+                from datetime import datetime
+                
+                current_date = datetime.now().date()
+                friday_date = find_previous_friday().date()
+                
+                st.info(f"Current date: {current_date} ({current_date.strftime('%A')})")
+                st.info(f"Friday date returned: {friday_date} ({friday_date.strftime('%A')})")
+                
+                if current_date.weekday() == 4:  # Friday
+                    if friday_date == current_date:
+                        st.success("✅ Correct! Using today's Friday close")
+                    else:
+                        st.warning(f"⚠️ Using last Friday ({friday_date}) instead of today")
+                else:
+                    if friday_date < current_date and friday_date.weekday() == 4:
+                        st.success("✅ Correct! Using last Friday")
+                    else:
+                        st.error(f"❌ Unexpected result: {friday_date}")
         
         # Add a button to update WEM data - MOVED AFTER validation config setup
         if st.button("Update WEM Data", help="Fetch latest options data and calculate WEM"):
@@ -3828,11 +3970,19 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
         for i in range(1, len(symbols) + 1):
             worksheet.set_column(i, i, 8)  # Stock symbol columns
         
-        # Get the actual ATM date from previous Friday
+        # Get the actual ATM date being used for calculations
         try:
-            previous_friday = find_previous_friday()
-            atm_date_str = previous_friday.strftime('%m/%d/%y')  # Format as M/D/YY (e.g., 6/13/25)
-            atm_label = f'ATM ({atm_date_str})'
+            # Use the find_previous_friday function to get the actual date
+            from goldflipper.utils.market_holidays import find_previous_friday
+            actual_friday_date = find_previous_friday()
+            atm_date_str = actual_friday_date.strftime('%m/%d/%y')  # Format as M/D/YY (e.g., 6/13/25)
+            
+            # Check if this is today's Friday or previous Friday
+            today = datetime.now().date()
+            if actual_friday_date.date() == today:
+                atm_label = f'ATM ({atm_date_str}) - Today'
+            else:
+                atm_label = f'ATM ({atm_date_str})'
         except Exception as e:
             logger.warning(f"Could not determine previous Friday date: {e}")
             atm_label = 'ATM (date)'
