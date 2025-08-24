@@ -5,12 +5,12 @@ Goldflipper Trading System
 
 
 ## Disclaimer
-Although this repository is public and the code is accesible, the use of this code, explicitly permitted according to the author's moral rights, is granted on a case-by-case basis only. For more information please get in touch with the author directly. Otherwise, please note that technical support is neither promised nor available, and bug fix and feature requests of any kind will be addressed solely at the author's discretion. 
+This repository contains proprietary, source-available code. Please note that technical support is neither promised nor available, and bug fix and feature requests of any kind will be addressed solely at the author's discretion. 
 Additionally, please note that this program does not capture or transmit any of your data. The only connections made are to brokerage(s) and market data provider(s). Newer branches also make calls using python libraries solely for the purpose of enhancing function by validating inputs (to address user entry errors) and checking the market calendar. However, please note that in this version, access keys are stored in the settings file in plaintext (or, plain-yaml).
 
 ## Introduction
 
-Goldflipper v1 is a rules-based semi-autonomous trading system developed in Python. It utilizes a modular, event-driven architecture to automate trading strategy execution, with a current focus on level 2 options trading. The system is designed for customizability, modularity, and offers a feature-rich parameter selection that enables functionality not seen in any other program of its kind. Goldflipper v1 integrates with the Alpaca Markets API for live trading, and has API integrations with market data providers as well in order to provide a modular and robust trading experience with fallbacks for reliability.
+Goldflipper v1 (aka Classic) is a rules-based semi-autonomous trading system developed in Python. It utilizes a modular, event-driven architecture to automate trading strategy execution, with a current focus on level 2 options trading. The system is designed for customizability, modularity, and offers a feature-rich parameter selection that enables functionality not seen in any other program of its kind. Goldflipper v1 integrates with the Alpaca Markets API for live trading, and has API integrations with market data providers as well in order to provide a modular and robust trading experience with fallbacks for reliability.
 
 ## Project Structure
 

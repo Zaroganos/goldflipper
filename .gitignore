@@ -65,3 +65,6 @@ dist/
 # Optional - Temporary files
 *.tmp
 *.swp
+
+# Development notes
+dev-notes/

@@ -33,7 +33,7 @@ import win32service
 import win32event
 import servicemanager
 from goldflipper.watchdog.watchdog_manager import WatchdogManager
-from src.state.state_manager import StateManager
+from ..src.state.state_manager import StateManager
 from datetime import datetime
 import time
 import argparse
