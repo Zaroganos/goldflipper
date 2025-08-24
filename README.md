@@ -5,7 +5,7 @@ Goldflipper Trading System
 
 
 ## Disclaimer
-This repository contains proprietary, source-available code. Please note that technical support is neither promised nor available, and bug fix and feature requests of any kind will be addressed solely at the author's discretion. 
+This repository contains proprietary, source-available code. Please note that technical support is not available, and bug fix and feature requests of any kind will be addressed solely at the author's discretion. 
 Additionally, please note that this program does not capture or transmit any of your data. The only connections made are to brokerage(s) and market data provider(s). Newer branches also make calls using python libraries solely for the purpose of enhancing function by validating inputs (to address user entry errors) and checking the market calendar. However, please note that in this version, access keys are stored in the settings file in plaintext (or, plain-yaml).
 
 ## Introduction
@@ -14,7 +14,7 @@ Goldflipper v1 (aka Classic) is a rules-based semi-autonomous trading system dev
 
 ## Project Structure
 
-The project is roughly organized into the following directories:
+The project is roughly organized into the following directory structure:
 (Simplified for brevity, access the codebase to discover the full content.)
 
 ```
