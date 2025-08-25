@@ -86,7 +86,35 @@ class TradeLoggerUI:
         
         # Refresh button
         ttk.Button(main_frame, text="Refresh Data", 
-                  command=lambda: self.update_summary_stats(stats_frame)).grid(row=4, column=0, pady=5)
+                  command=lambda: self.refresh_all_data(stats_frame)).grid(row=4, column=0, pady=5)
+
+    def refresh_all_data(self, stats_frame):
+        """Refresh all data by re-importing plays and updating statistics"""
+        try:
+            # Show a status message
+            status_label = ttk.Label(stats_frame, text="Refreshing data...")
+            status_label.grid(row=0, column=0, padx=10, pady=5)
+            self.root.update()  # Force UI update
+            
+            # Re-import all closed and expired plays
+            imported_count = self.logger.import_closed_plays()
+            
+            # Remove status message
+            status_label.destroy()
+            
+            # Update the summary statistics
+            self.update_summary_stats(stats_frame)
+            
+            # Show success message
+            messagebox.showinfo("Refresh Complete", f"Successfully refreshed data.\n{imported_count} plays imported.")
+            
+        except Exception as e:
+            # Remove status message if it exists
+            try:
+                status_label.destroy()
+            except:
+                pass
+            messagebox.showerror("Refresh Error", f"Failed to refresh data: {str(e)}")
 
     def update_summary_stats(self, frame):
         """Update the statistics display"""

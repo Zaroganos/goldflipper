@@ -15,8 +15,9 @@ class PlayLogger:
         else:
             self.base_directory = base_directory
         
-        # Main log directory
-        self.log_directory = os.path.join(os.path.dirname(__file__), "logs")
+        # Main log directory - use absolute path to ensure it's in the correct location
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
+        self.log_directory = os.path.join(current_file_dir, "logs")
         
         # Create log directory if it doesn't exist
         if not os.path.exists(self.log_directory):
@@ -33,20 +34,34 @@ class PlayLogger:
             self._create_empty_log()
     
     def _create_empty_log(self):
-        """Initialize empty CSV with columns"""
-        columns = [
-            'play_name', 'symbol', 'trade_type', 'strike_price',
-            'expiration_date', 'contracts',
-            'date_atOpen', 'time_atOpen',  # Split datetime_atOpen
-            'date_atClose', 'time_atClose',  # Split datetime_atClose
-            'price_atOpen', 'price_atClose',
-            'premium_atOpen', 'premium_atClose',
-            'delta_atOpen', 'theta_atOpen',
-            'close_type', 'close_condition',
-            'profit_loss_pct', 'profit_loss',
-            'status'
-        ]
-        df = pd.DataFrame(columns=columns)
+        """Initialize empty CSV with columns and proper dtypes"""
+        # Define columns and their appropriate dtypes to prevent warnings
+        dtype_dict = {
+            'play_name': 'object',
+            'symbol': 'object', 
+            'trade_type': 'object',
+            'strike_price': 'float64',
+            'expiration_date': 'object',
+            'contracts': 'int64',
+            'date_atOpen': 'object',  # String dates
+            'time_atOpen': 'object',  # String times
+            'date_atClose': 'object',  # String dates
+            'time_atClose': 'object',  # String times
+            'price_atOpen': 'float64',
+            'price_atClose': 'float64', 
+            'premium_atOpen': 'float64',
+            'premium_atClose': 'float64',
+            'delta_atOpen': 'float64',
+            'theta_atOpen': 'float64',
+            'close_type': 'object',  # String values like 'SL', 'TP'
+            'close_condition': 'object',  # String values
+            'profit_loss_pct': 'float64',
+            'profit_loss': 'float64',
+            'status': 'object'  # String values like 'closed', 'expired'
+        }
+        
+        columns = list(dtype_dict.keys())
+        df = pd.DataFrame(columns=columns).astype(dtype_dict)
         df.to_csv(self.csv_path, index=False)
     
     def reset_log(self):
@@ -77,17 +92,54 @@ class PlayLogger:
                     try:
                         with open(file_path, 'r') as f:
                             play_data = json.load(f)
-                            self.log_play(play_data, status)
-                            imported_count += 1
+                        
+                        # Validate the play data with enhanced validation
+                        validation_result = self._validate_play_data(play_data, status)
+                        if validation_result['valid']:
+                            try:
+                                self.log_play(play_data, status)
+                                imported_count += 1
+                                # Only show success message every 5 files to reduce spam
+                                if imported_count % 5 == 0 or imported_count <= 5:
+                                    print(f"✓ Successfully logged: {filename}")
+                            except Exception as log_error:
+                                print(f"✗ Error logging {filename}: {str(log_error)}")
+                                import traceback
+                                traceback.print_exc()
+                        else:
+                            print(f"⚠ Skipped {filename}: {validation_result['reason']}")
+                            
                     except Exception as e:
-                        print(f"Error processing {file_path}: {str(e)}")
+                        print(f"✗ Error processing {file_path}: {str(e)}")
         
         print(f"Total plays imported: {imported_count}")
         return imported_count
     
     def log_play(self, play_data: Dict[str, Any], status: str):
-        """Log a single play to CSV"""
+        """Log a single play to CSV with enhanced data extraction from multiple sources"""
         logging_data = play_data.get('logging', {})
+        entry_point = play_data.get('entry_point', {})
+        
+        # Enhanced data extraction with fallback sources
+        def safe_float(value):
+            """Safely convert value to float"""
+            if value is None or value == '':
+                return None
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return None
+        
+        # Extract opening data with fallbacks
+        premium_open = safe_float(logging_data.get('premium_atOpen') or entry_point.get('entry_premium'))
+        price_open = safe_float(logging_data.get('price_atOpen') or entry_point.get('entry_stock_price') or entry_point.get('stock_price'))
+        
+        # For expired plays, we might not have premium data, which is acceptable
+        # They represent trading setups that never executed
+        
+        # Extract closing data (only from logging for now)
+        premium_close = safe_float(logging_data.get('premium_atClose'))
+        price_close = safe_float(logging_data.get('price_atClose'))
         
         # Split datetime strings into date and time if they exist
         datetime_open = logging_data.get('datetime_atOpen', '')
@@ -113,16 +165,6 @@ class PlayLogger:
                 time_close = dt_close.strftime('%H:%M:%S')
             except:
                 pass
-        
-        # Get premium values, checking both direct and nested locations
-        premium_open = logging_data.get('premium_atOpen')
-        premium_close = logging_data.get('premium_atClose')
-        
-        # If not in logging_data, check if they're directly in play_data
-        if premium_open is None and 'premium_atOpen' in play_data:
-            premium_open = play_data['premium_atOpen']
-        if premium_close is None and 'premium_atClose' in play_data:
-            premium_close = play_data['premium_atClose']
             
         # Calculate profit/loss percentage
         pl_pct = 0.0
@@ -143,8 +185,8 @@ class PlayLogger:
             'time_atOpen': time_open,
             'date_atClose': date_close,
             'time_atClose': time_close,
-            'price_atOpen': logging_data.get('price_atOpen'),
-            'price_atClose': logging_data.get('price_atClose'),
+            'price_atOpen': price_open,
+            'price_atClose': price_close,
             'premium_atOpen': premium_open,
             'premium_atClose': premium_close,
             'delta_atOpen': logging_data.get('delta_atOpen'),
@@ -156,63 +198,151 @@ class PlayLogger:
             'status': status
         }
         
-        # Update dtypes
-        dtypes = {
-            'play_name': str,
-            'symbol': str,
-            'trade_type': str,
-            'strike_price': float,
-            'expiration_date': str,
-            'contracts': int,
-            'date_atOpen': str,
-            'time_atOpen': str,
-            'date_atClose': str,
-            'time_atClose': str,
-            'price_atOpen': float,
-            'price_atClose': float,
-            'premium_atOpen': float,
-            'premium_atClose': float,
-            'delta_atOpen': float,
-            'theta_atOpen': float,
-            'close_type': str,
-            'close_condition': str,
-            'profit_loss_pct': float,
-            'profit_loss': float,
-            'status': str
+        # Read existing DataFrame with proper dtypes to prevent warnings
+        # Define the expected dtypes for consistent behavior
+        dtype_dict = {
+            'play_name': 'object',
+            'symbol': 'object', 
+            'trade_type': 'object',
+            'strike_price': 'float64',
+            'expiration_date': 'object',
+            'contracts': 'int64',
+            'date_atOpen': 'object',
+            'time_atOpen': 'object',
+            'date_atClose': 'object',
+            'time_atClose': 'object',
+            'price_atOpen': 'float64',
+            'price_atClose': 'float64',
+            'premium_atOpen': 'float64',
+            'premium_atClose': 'float64',
+            'delta_atOpen': 'float64',
+            'theta_atOpen': 'float64',
+            'close_type': 'object',
+            'close_condition': 'object',
+            'profit_loss_pct': 'float64',
+            'profit_loss': 'float64',
+            'status': 'object'
         }
         
-        # Read existing DataFrame and set dtypes
-        df = pd.read_csv(self.csv_path).astype(dtypes)
+        try:
+            df = pd.read_csv(self.csv_path, dtype=dtype_dict)
+        except (ValueError, TypeError):
+            # Fallback: read without dtype specification if there are issues
+            df = pd.read_csv(self.csv_path)
+            # Convert string columns to object dtype to prevent warnings
+            string_columns = ['date_atOpen', 'time_atOpen', 'date_atClose', 'time_atClose', 
+                            'close_type', 'close_condition', 'status', 'play_name', 'symbol', 
+                            'trade_type', 'expiration_date']
+            for col in string_columns:
+                if col in df.columns:
+                    df[col] = df[col].astype('object')
         
-        # Create new DataFrame with explicit dtypes
-        new_entry = pd.DataFrame([play_entry], dtype=object).astype(dtypes)
+        # Create new DataFrame entry
+        new_entry = pd.DataFrame([play_entry])
         
-        # Concatenate with existing DataFrame
-        df = pd.concat([df, new_entry], ignore_index=True)
+        # Handle DataFrame concatenation to avoid FutureWarning about empty/NA columns
+        # Following pandas best practices to prevent FutureWarning about all-NA columns
+        if df.empty:
+            # If the existing DataFrame is empty, just use the new entry
+            df = new_entry.copy()
+        else:
+            # Ensure column consistency and handle all-NA columns explicitly
+            # Add missing columns to new_entry with appropriate default values
+            for col in df.columns:
+                if col not in new_entry.columns:
+                    new_entry[col] = None
+            
+            # Add any new columns from new_entry to existing df
+            for col in new_entry.columns:
+                if col not in df.columns:
+                    df[col] = None
+            
+            # Ensure both DataFrames have columns in the same order
+            new_entry = new_entry[df.columns]
+            
+            # Use manual row appending to avoid FutureWarning
+            # Since we now create DataFrames with proper dtypes, this should work cleanly
+            new_row_index = len(df)
+            for col in df.columns:
+                df.loc[new_row_index, col] = new_entry.iloc[0][col]
+        
+        # Save to CSV
         df.to_csv(self.csv_path, index=False)
     
     def _calculate_pl(self, play_data: Dict[str, Any]) -> float:
-        """Calculate profit/loss in dollars"""
-        # First check if the data is in the new format (direct in play_data)
-        if 'premium_atOpen' in play_data and 'premium_atClose' in play_data:
-            premium_open = play_data['premium_atOpen']
-            premium_close = play_data['premium_atClose']
-            contracts = play_data['contracts']
-            
-            if premium_open is not None and premium_close is not None and contracts is not None:
-                return (premium_close - premium_open) * contracts * 100
-        
-        # Then check if it's in the old format (nested in logging)
+        """Calculate profit/loss in dollars using enhanced data extraction"""
         logging_data = play_data.get('logging', {})
-        if logging_data.get('premium_atOpen') is not None and logging_data.get('premium_atClose') is not None:
-            premium_open = logging_data['premium_atOpen']
-            premium_close = logging_data['premium_atClose']
-            contracts = play_data['contracts']
-            
-            if premium_open is not None and premium_close is not None and contracts is not None:
-                return (premium_close - premium_open) * contracts * 100
+        entry_point = play_data.get('entry_point', {})
+        contracts = play_data.get('contracts', 0)
+        
+        def safe_float(value):
+            """Safely convert value to float"""
+            if value is None or value == '':
+                return None
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return None
+        
+        # Extract premium data with fallbacks (same logic as log_play)
+        premium_open = safe_float(logging_data.get('premium_atOpen') or entry_point.get('entry_premium'))
+        premium_close = safe_float(logging_data.get('premium_atClose'))
+        
+        # Note: Expired plays might not have premium data, which is acceptable
+        
+        # Calculate P/L if we have both values
+        if premium_open is not None and premium_close is not None and contracts:
+            try:
+                return (premium_close - premium_open) * float(contracts) * 100
+            except (ValueError, TypeError):
+                pass
                 
         return 0.0
+
+    def _validate_play_data(self, play_data: Dict[str, Any], status: str) -> Dict[str, Any]:
+        """Enhanced validation that accepts files with entry_point data as fallback"""
+        required_fields = ['play_name', 'symbol', 'trade_type', 'strike_price', 'expiration_date', 'contracts']
+        
+        # Check required basic fields
+        for field in required_fields:
+            if field not in play_data or play_data[field] is None:
+                return {'valid': False, 'reason': f'Missing required field: {field}'}
+        
+        # Validate numeric fields
+        try:
+            float(play_data['strike_price'])
+        except (ValueError, TypeError):
+            return {'valid': False, 'reason': f'Invalid strike_price: {play_data["strike_price"]}'}
+        
+        try:
+            int(play_data['contracts'])
+        except (ValueError, TypeError):
+            return {'valid': False, 'reason': f'Invalid contracts: {play_data["contracts"]}'}
+        
+        # Enhanced validation for data availability
+        logging_data = play_data.get('logging', {})
+        entry_point = play_data.get('entry_point', {})
+        
+        # Check if we have ANY useful data for opening positions
+        has_logging_open = (logging_data.get('datetime_atOpen') or logging_data.get('premium_atOpen') is not None)
+        has_entry_data = (entry_point.get('entry_premium') is not None or entry_point.get('entry_stock_price') is not None)
+        has_basic_entry = entry_point.get('stock_price') is not None  # For expired plays
+        
+        # For expired status, be very permissive - accept files with basic trade info
+        if status == 'expired':
+            if has_logging_open or has_entry_data or has_basic_entry:
+                return {'valid': True, 'reason': 'Valid - expired play with basic data'}
+            else:
+                return {'valid': False, 'reason': 'No usable data found (expired play missing basic entry_point data)'}
+        
+        # For closed status, require at least some opening data
+        if status == 'closed':
+            if has_logging_open or has_entry_data:
+                return {'valid': True, 'reason': 'Valid - has opening data'}
+            else:
+                return {'valid': False, 'reason': 'No usable opening data found (closed play missing logging and entry_point data)'}
+        
+        return {'valid': True, 'reason': 'Valid'}
 
     def export_to_spreadsheet(self, format='csv', save_to_desktop=None):
         """
