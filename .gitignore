@@ -85,3 +85,7 @@ dist/
 exports/*
 # *.xlsx <-- ignore all xlsx files regardless of directory
 /web/data/exports
+
+# Development notes
+/dev-notes/
+dev-notes/*
