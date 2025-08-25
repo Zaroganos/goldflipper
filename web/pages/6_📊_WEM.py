@@ -153,7 +153,7 @@ from datetime import timedelta
 import sys
 import os
 import shutil
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
