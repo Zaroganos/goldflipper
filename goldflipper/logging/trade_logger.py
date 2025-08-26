@@ -6,8 +6,16 @@ import shutil
 from typing import List, Dict, Any
 import logging
 
+# Import the data backfill helper
+try:
+    from .data_backfill_helper import DataBackfillHelper
+    BACKFILL_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Data backfill helper not available: {str(e)}")
+    BACKFILL_AVAILABLE = False
+
 class PlayLogger:
-    def __init__(self, base_directory=None, save_to_desktop=True):
+    def __init__(self, base_directory=None, save_to_desktop=True, enable_backfill=True):
         if base_directory is None:
             # Get the project root directory
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,6 +36,18 @@ class PlayLogger:
         
         # Save to desktop option
         self.save_to_desktop = save_to_desktop
+        
+        # Data backfill options
+        self.enable_backfill = enable_backfill and BACKFILL_AVAILABLE
+        self.backfill_helper = None
+        
+        if self.enable_backfill:
+            try:
+                self.backfill_helper = DataBackfillHelper()
+                logging.info("Data backfill helper initialized successfully")
+            except Exception as e:
+                logging.warning(f"Failed to initialize backfill helper: {str(e)}")
+                self.enable_backfill = False
             
         # Initialize or load existing CSV
         if not os.path.exists(self.csv_path):
@@ -75,7 +95,10 @@ class PlayLogger:
         self.reset_log()
         
         print(f"Looking for plays in: {self.base_directory}")
-        imported_count = 0
+        
+        # Collect all valid play data first
+        all_plays_data = []
+        skipped_count = 0
         
         for status in ['closed', 'expired']:
             folder_path = os.path.join(self.base_directory, status)
@@ -96,27 +119,148 @@ class PlayLogger:
                         # Validate the play data with enhanced validation
                         validation_result = self._validate_play_data(play_data, status)
                         if validation_result['valid']:
-                            try:
-                                self.log_play(play_data, status)
-                                imported_count += 1
-                                # Only show success message every 5 files to reduce spam
-                                if imported_count % 5 == 0 or imported_count <= 5:
-                                    print(f"✓ Successfully logged: {filename}")
-                            except Exception as log_error:
-                                print(f"✗ Error logging {filename}: {str(log_error)}")
-                                import traceback
-                                traceback.print_exc()
+                            # Add status and file path for reference
+                            play_data['_status'] = status
+                            play_data['_file_path'] = file_path
+                            all_plays_data.append(play_data)
                         else:
                             print(f"⚠ Skipped {filename}: {validation_result['reason']}")
+                            skipped_count += 1
                             
                     except Exception as e:
                         print(f"✗ Error processing {file_path}: {str(e)}")
+                        skipped_count += 1
+        
+        print(f"Collected {len(all_plays_data)} valid plays for processing")
+        
+        # Apply data backfill if enabled
+        if self.enable_backfill and self.backfill_helper and all_plays_data:
+            print(f"🔄 Starting data backfill process...")
+            try:
+                all_plays_data = self.backfill_helper.backfill_multiple_plays(all_plays_data)
+                print(f"✅ Data backfill completed")
+            except Exception as e:
+                print(f"⚠ Data backfill failed: {str(e)}")
+                logging.error(f"Backfill error: {str(e)}")
+        elif not self.enable_backfill:
+            print(f"ℹ Data backfill disabled")
+        
+        # Now log all the plays (with backfilled data if available)
+        imported_count = 0
+        for play_data in all_plays_data:
+            status = play_data.pop('_status')
+            file_path = play_data.pop('_file_path')
+            filename = os.path.basename(file_path)
+            
+            try:
+                self.log_play(play_data, status, source_filename=filename)
+                imported_count += 1
+                # Only show success message every 5 files to reduce spam
+                if imported_count % 5 == 0 or imported_count <= 5:
+                    print(f"✓ Successfully logged: {filename}")
+            except Exception as log_error:
+                print(f"✗ Error logging {filename}: {str(log_error)}")
+                import traceback
+                traceback.print_exc()
         
         print(f"Total plays imported: {imported_count}")
+        if skipped_count > 0:
+            print(f"Total plays skipped: {skipped_count}")
+        
         return imported_count
     
-    def log_play(self, play_data: Dict[str, Any], status: str):
-        """Log a single play to CSV with enhanced data extraction from multiple sources"""
+    def import_all_plays(self):
+        """Import plays from ALL subfolders (except 'old'), with minimal validation.
+        Only requires the 'symbol' field to be present. Other fields are optional.
+        """
+        # Reset the log first
+        self.reset_log()
+
+        print(f"Scanning all play folders in: {self.base_directory}")
+
+        if not os.path.exists(self.base_directory):
+            print(f"Base plays directory does not exist: {self.base_directory}")
+            return 0
+
+        all_plays_data = []
+        skipped_count = 0
+
+        try:
+            subfolders = [
+                name for name in os.listdir(self.base_directory)
+                if os.path.isdir(os.path.join(self.base_directory, name)) and name.lower() != 'old'
+            ]
+        except Exception as e:
+            print(f"Error reading subfolders: {str(e)}")
+            return 0
+
+        # Process each subfolder as a status bucket
+        for status in subfolders:
+            folder_path = os.path.join(self.base_directory, status)
+            print(f"Checking folder: {folder_path}")
+
+            for filename in os.listdir(folder_path):
+                if not filename.endswith('.json'):
+                    continue
+
+                file_path = os.path.join(folder_path, filename)
+                try:
+                    with open(file_path, 'r') as f:
+                        play_data = json.load(f)
+
+                    # Minimal validation: symbol must exist and be non-empty
+                    symbol = (play_data.get('symbol') or '').strip()
+                    if not symbol:
+                        print(f"⚠ Skipped {filename}: missing required 'symbol'")
+                        skipped_count += 1
+                        continue
+
+                    play_data['_status'] = status
+                    play_data['_file_path'] = file_path
+                    all_plays_data.append(play_data)
+                except Exception as e:
+                    print(f"✗ Error processing {file_path}: {str(e)}")
+                    skipped_count += 1
+
+        print(f"Collected {len(all_plays_data)} plays for processing (minimal validation)")
+
+        # Apply data backfill if enabled and available
+        if self.enable_backfill and self.backfill_helper and all_plays_data:
+            print("🔄 Starting data backfill process...")
+            try:
+                all_plays_data = self.backfill_helper.backfill_multiple_plays(all_plays_data)
+                print("✅ Data backfill completed")
+            except Exception as e:
+                print(f"⚠ Data backfill failed: {str(e)}")
+                logging.error(f"Backfill error: {str(e)}")
+        elif not self.enable_backfill:
+            print("ℹ Data backfill disabled")
+
+        imported_count = 0
+        for play_data in all_plays_data:
+            status = play_data.pop('_status')
+            file_path = play_data.pop('_file_path')
+            filename = os.path.basename(file_path)
+            try:
+                self.log_play(play_data, status, source_filename=filename)
+                imported_count += 1
+                if imported_count % 5 == 0 or imported_count <= 5:
+                    print(f"✓ Successfully logged: {filename}")
+            except Exception as log_error:
+                print(f"✗ Error logging {filename}: {str(log_error)}")
+                import traceback
+                traceback.print_exc()
+
+        print(f"Total plays imported: {imported_count}")
+        if skipped_count > 0:
+            print(f"Total plays skipped: {skipped_count}")
+
+        return imported_count
+    
+    def log_play(self, play_data: Dict[str, Any], status: str, source_filename: str = None):
+        """Log a single play to CSV with enhanced data extraction from multiple sources.
+        This method is resilient to missing fields; only 'symbol' is strictly required.
+        """
         logging_data = play_data.get('logging', {})
         entry_point = play_data.get('entry_point', {})
         
@@ -129,10 +273,29 @@ class PlayLogger:
                 return float(value)
             except (ValueError, TypeError):
                 return None
+
+        def safe_int(value, default: int = 0):
+            """Safely convert value to int with default."""
+            if value is None or value == '':
+                return default
+            try:
+                return int(value)
+            except (ValueError, TypeError):
+                return default
         
-        # Extract opening data with fallbacks
-        premium_open = safe_float(logging_data.get('premium_atOpen') or entry_point.get('entry_premium'))
-        price_open = safe_float(logging_data.get('price_atOpen') or entry_point.get('entry_stock_price') or entry_point.get('stock_price'))
+        # Extract opening data with fallbacks, but only use entry_point values if play is considered opened
+        entry_premium_value = safe_float(entry_point.get('entry_premium'))
+        opened_by_entry_premium = entry_premium_value is not None and entry_premium_value > 0
+        premium_open = safe_float(
+            logging_data.get('premium_atOpen') if logging_data.get('premium_atOpen') is not None else (
+                entry_point.get('entry_premium') if opened_by_entry_premium else None
+            )
+        )
+        price_open = safe_float(
+            logging_data.get('price_atOpen') if logging_data.get('price_atOpen') is not None else (
+                entry_point.get('entry_stock_price') if opened_by_entry_premium else None
+            )
+        )
         
         # For expired plays, we might not have premium data, which is acceptable
         # They represent trading setups that never executed
@@ -174,13 +337,18 @@ class PlayLogger:
         # Calculate absolute profit/loss
         pl_dollars = self._calculate_pl(play_data)
 
+        # Ensure we at least have a symbol; if not, skip
+        symbol_value = play_data.get('symbol')
+        if not symbol_value:
+            raise ValueError("Missing required field: symbol")
+
         play_entry = {
-            'play_name': play_data['play_name'],
-            'symbol': play_data['symbol'],
-            'trade_type': play_data['trade_type'],
-            'strike_price': float(play_data['strike_price']),
-            'expiration_date': play_data['expiration_date'],
-            'contracts': play_data['contracts'],
+            'play_name': play_data.get('play_name') or (source_filename or ''),
+            'symbol': symbol_value,
+            'trade_type': play_data.get('trade_type') or '',
+            'strike_price': safe_float(play_data.get('strike_price')),
+            'expiration_date': play_data.get('expiration_date') or '',
+            'contracts': safe_int(play_data.get('contracts'), default=0),
             'date_atOpen': date_open,
             'time_atOpen': time_open,
             'date_atClose': date_close,
@@ -189,8 +357,8 @@ class PlayLogger:
             'price_atClose': price_close,
             'premium_atOpen': premium_open,
             'premium_atClose': premium_close,
-            'delta_atOpen': logging_data.get('delta_atOpen'),
-            'theta_atOpen': logging_data.get('theta_atOpen'),
+            'delta_atOpen': safe_float(logging_data.get('delta_atOpen')),
+            'theta_atOpen': safe_float(logging_data.get('theta_atOpen')),
             'close_type': logging_data.get('close_type'),
             'close_condition': logging_data.get('close_condition'),
             'profit_loss_pct': pl_pct,
@@ -284,8 +452,14 @@ class PlayLogger:
             except (ValueError, TypeError):
                 return None
         
-        # Extract premium data with fallbacks (same logic as log_play)
-        premium_open = safe_float(logging_data.get('premium_atOpen') or entry_point.get('entry_premium'))
+        # Extract premium data with fallbacks (same gating as in log_play)
+        entry_premium_value = safe_float(entry_point.get('entry_premium'))
+        opened_by_entry_premium = entry_premium_value is not None and entry_premium_value > 0
+        premium_open = safe_float(
+            logging_data.get('premium_atOpen') if logging_data.get('premium_atOpen') is not None else (
+                entry_point.get('entry_premium') if opened_by_entry_premium else None
+            )
+        )
         premium_close = safe_float(logging_data.get('premium_atClose'))
         
         # Note: Expired plays might not have premium data, which is acceptable

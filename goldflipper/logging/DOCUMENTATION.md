@@ -25,6 +25,9 @@ The Goldflipper Trading Logger is a comprehensive system for tracking, analyzing
     Features:
     - Summary statistics display
     - Export functionality
+    - Export history viewer with open CSV/Excel/directory actions
+    - Save-to-Desktop option for exports
+    - Enable Data Backfill toggle (fetch missing Greeks for closed plays)
     - Interactive data visualization
     - Real-time updates
 
@@ -76,6 +79,12 @@ The Goldflipper Trading Logger is a comprehensive system for tracking, analyzing
     - CSV: logger.export_to_spreadsheet(format='csv')
     - Excel: logger.export_to_spreadsheet(format='excel')
 
+4.4 Data Backfill Behavior
+    - Backfill targets missing Greeks at open (delta/theta) for CLOSED plays only.
+    - Requirements for backfill: the play must include option_contract_symbol and logging.datetime_atOpen.
+    - EXPIRED plays never opened and are included in logs without backfill.
+    - When enabled in the UI, backfill calls the configured market data provider (MarketDataApp) for historical option quotes on the opening date.
+
 5. EXTENSION POINTS
 -----------------
 
@@ -98,18 +107,26 @@ The Goldflipper Trading Logger is a comprehensive system for tracking, analyzing
 
 6. DATABASE SCHEMA
 ----------------
-Current CSV structure:
+Current CSV columns:
 - play_name (str)
 - symbol (str)
 - trade_type (str)
 - strike_price (float)
-- entry_date (datetime)
-- exit_date (datetime)
-- entry_price (float)
-- exit_price (float)
+- expiration_date (str)
 - contracts (int)
+- date_atOpen (str, yyyy-mm-dd)
+- time_atOpen (str, HH:MM:SS)
+- date_atClose (str, yyyy-mm-dd)
+- time_atClose (str, HH:MM:SS)
+- price_atOpen (float)
+- price_atClose (float)
+- premium_atOpen (float)
+- premium_atClose (float)
 - delta_atOpen (float)
 - theta_atOpen (float)
+- close_type (str)
+- close_condition (str)
+- profit_loss_pct (float)
 - profit_loss (float)
 - status (str)
 
@@ -203,7 +220,7 @@ Guidelines:
 - Follow PEP 8 style guide
 - Include documentation
 - Add unit tests
-- Update DOCUMENTATION.txt
+- Update DOCUMENTATION.md
 
 12. SUPPORT
 ----------
@@ -231,9 +248,10 @@ Required packages:
 14. FILE STRUCTURE
 ----------------
 goldflipper/logging/
+├── data_backfill_helper.py # Backfills missing cells where possible
 ├── trade_logger.py       # Core logging functionality
 ├── trade_logger_ui.py    # User interface
-├── DOCUMENTATION.txt     # This file
+├── DOCUMENTATION.md      # This file
 └── __init__.py          # Package initialization
 
 15. VERSION HISTORY

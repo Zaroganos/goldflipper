@@ -633,14 +633,34 @@ def open_position(play, play_file):
         })
         
         if delta is not None and theta is not None:
-            logging.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
-            display.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
+            if delta == 0.0 and theta == 0.0:
+                logging.warning(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f} (API returned zero values)")
+                display.warning(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f} (API returned zero values)")
+            else:
+                logging.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
+                display.info(f"Greeks at entry - Delta: {delta:.4f}, Theta: {theta:.4f}")
         else:
             logging.warning("Greeks calculation returned None values")
             display.warning("Greeks calculation returned None values")
     except Exception as e:
         logging.error(f"Error during Greeks capture: {str(e)}")
         display.error(f"Error during Greeks capture: {str(e)}")
+        
+        # CRITICAL FIX: Always create logging section even if Greeks capture fails
+        # This ensures opening data is recorded even when API fails
+        if 'logging' not in play:
+            play['logging'] = {}
+        
+        play['logging'].update({
+            'delta_atOpen': 0.0,  # Default to 0.0 when capture fails
+            'theta_atOpen': 0.0,  # Default to 0.0 when capture fails  
+            'datetime_atOpen': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+            'price_atOpen': entry_stock_price,
+            'premium_atOpen': entry_premium
+        })
+        
+        logging.warning("Greeks capture failed, but opening data recorded with zero Greeks")
+        display.warning("Greeks capture failed, but opening data recorded with zero Greeks")
         # Continue with position opening even if Greeks capture fails
     
     logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")

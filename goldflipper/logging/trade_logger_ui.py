@@ -19,8 +19,12 @@ class TradeLoggerUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Goldflipper Trade Logger")
-        self.root.geometry("800x500")  # Increased size to accommodate new features
-        self.logger = PlayLogger()
+        self.root.geometry("800x600")  # Increased size to accommodate new features
+        
+        # Logger options
+        self.enable_backfill = tk.BooleanVar(value=True)
+        self.include_all_folders = tk.BooleanVar(value=False)
+        self.logger = PlayLogger(enable_backfill=self.enable_backfill.get())
         
         # Export options
         self.save_to_desktop = tk.BooleanVar(value=True)
@@ -71,6 +75,21 @@ class TradeLoggerUI:
         ttk.Checkbutton(desktop_frame, text="Save to Desktop", 
                        variable=self.save_to_desktop).pack(side=tk.LEFT, padx=(0, 10))
         
+        # Data backfill option
+        backfill_frame = ttk.Frame(options_frame)
+        backfill_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Checkbutton(backfill_frame, text="Enable Data Backfill (fetch missing Greeks from API)", 
+                       variable=self.enable_backfill,
+                       command=self.on_backfill_changed).pack(side=tk.LEFT, padx=(0, 10))
+
+        # Include all folders option
+        scope_frame = ttk.Frame(options_frame)
+        scope_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Checkbutton(scope_frame, text="Include ALL folders (except Old)", 
+                       variable=self.include_all_folders).pack(side=tk.LEFT, padx=(0, 10))
+        
         # Summary stats
         stats_frame = ttk.LabelFrame(main_frame, text="Summary Statistics", padding="5")
         stats_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
@@ -88,6 +107,26 @@ class TradeLoggerUI:
         ttk.Button(main_frame, text="Refresh Data", 
                   command=lambda: self.refresh_all_data(stats_frame)).grid(row=4, column=0, pady=5)
 
+    def on_backfill_changed(self):
+        """Handle backfill option change - recreate logger with new setting"""
+        try:
+            # Recreate the logger with the new backfill setting
+            self.logger = PlayLogger(
+                base_directory=self.logger.base_directory,
+                save_to_desktop=self.logger.save_to_desktop,
+                enable_backfill=self.enable_backfill.get()
+            )
+            
+            if self.enable_backfill.get():
+                messagebox.showinfo("Backfill Enabled", 
+                    "Data backfill is now enabled. The next refresh will attempt to fetch missing Greeks data from the API.")
+            else:
+                messagebox.showinfo("Backfill Disabled", 
+                    "Data backfill is now disabled. Future refreshes will not fetch missing data from the API.")
+                    
+        except Exception as e:
+            messagebox.showerror("Logger Error", f"Failed to update logger settings: {str(e)}")
+
     def refresh_all_data(self, stats_frame):
         """Refresh all data by re-importing plays and updating statistics"""
         try:
@@ -96,8 +135,19 @@ class TradeLoggerUI:
             status_label.grid(row=0, column=0, padx=10, pady=5)
             self.root.update()  # Force UI update
             
-            # Re-import all closed and expired plays
-            imported_count = self.logger.import_closed_plays()
+            # Ensure logger has current settings
+            if self.logger.enable_backfill != self.enable_backfill.get():
+                self.logger = PlayLogger(
+                    base_directory=self.logger.base_directory,
+                    save_to_desktop=self.logger.save_to_desktop,
+                    enable_backfill=self.enable_backfill.get()
+                )
+            
+            # Re-import plays based on scope selection
+            if self.include_all_folders.get():
+                imported_count = self.logger.import_all_plays()
+            else:
+                imported_count = self.logger.import_closed_plays()
             
             # Remove status message
             status_label.destroy()
@@ -106,7 +156,9 @@ class TradeLoggerUI:
             self.update_summary_stats(stats_frame)
             
             # Show success message
-            messagebox.showinfo("Refresh Complete", f"Successfully refreshed data.\n{imported_count} plays imported.")
+            backfill_status = " (with data backfill)" if self.logger.enable_backfill else ""
+            scope_status = " from ALL folders" if self.include_all_folders.get() else " from closed/expired"
+            messagebox.showinfo("Refresh Complete", f"Successfully refreshed data{backfill_status}{scope_status}.\n{imported_count} plays imported.")
             
         except Exception as e:
             # Remove status message if it exists
@@ -328,5 +380,6 @@ class TradeLoggerUI:
 
 if __name__ == "__main__":
     app = TradeLoggerUI()
-    app.logger.import_closed_plays()  # This will import all closed/expired plays
+    # On startup, default to closed/expired only (checkbox is off by default)
+    app.logger.import_closed_plays()
     app.run()

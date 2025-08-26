@@ -24,6 +24,8 @@ goldflipper/plays/temp/*
 !goldflipper/plays/expired/.gitkeep
 !goldflipper/plays/old/.gitkeep
 !goldflipper/plays/temp/.gitkeep
+goldflipper/plays - Copy/*
+
 # Python bytecode
 __pycache__/
 *.py[cod]
