@@ -577,14 +577,14 @@ class WelcomeScreen(Screen):
         if os.name == "nt":  # Windows
             cmd = [
                 "cmd", "/k", "python",
-                os.path.join(tools_dir, "play-csv-ingestion-tool.py"),
+                os.path.join(tools_dir, "play_csv_ingestion_tool.py"),
                 file_path
             ]
             subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
         else:  # Unix-like systems
             cmd = [
                 "gnome-terminal", "--", "python3",
-                os.path.join(tools_dir, "play-csv-ingestion-tool.py"),
+                os.path.join(tools_dir, "play_csv_ingestion_tool.py"),
                 file_path
             ]
             subprocess.Popen(cmd, cwd=tools_dir)

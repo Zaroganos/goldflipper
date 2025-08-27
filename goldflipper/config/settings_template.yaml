@@ -236,27 +236,26 @@ monitoring:
 # Trailing Stops Configuration (Feature Flags & Defaults)
 ####################################################################################################
 trailing:
-  enabled: false                     # Master switch for trailing features (overrides per-play flags if false)
-  take_profit:
-    default_enabled: false           # Default for new plays (tools can override per play)
-    trail_type: "percentage"         # Options: percentage | fixed_amount | atr (atr to be implemented later)
-    trail_distance_pct: 2.0          # When trail_type = percentage
-    trail_distance_fixed: 0.0        # When trail_type = fixed_amount
-    atr_multiplier: 2.0              # When trail_type = atr
-    atr_period: 14                   # ATR period when atr is used
-    activation_threshold_pct: 5.0    # Profit % before TP trailing activates
-    min_profit_lock_pct: 2.0         # Minimum profit to lock once activated
-    update_frequency_seconds: 30     # Suggested minimum interval between trail recalculations
-  stop_loss:
-    default_enabled: false           # Default for new plays (tools can override per play)
-    trail_type: "percentage"         # Options: percentage | fixed_amount | atr (atr to be implemented later)
-    trail_distance_pct: 3.0          # When trail_type = percentage
-    trail_distance_fixed: 0.0        # When trail_type = fixed_amount
-    atr_multiplier: 1.5              # When trail_type = atr
-    atr_period: 14                   # ATR period when atr is used
-    breakeven_protection: true       # Move SL to breakeven once profit threshold reached
-    max_loss_pct: 15.0               # Never set trail below this loss level from entry
-    update_frequency_seconds: 30     # Suggested minimum interval between trail recalculations
+  enabled: false                     # Master switch for trailing features
+  activation_threshold_pct: 50.0     # Absolute gain since entry to activate trailing (premium or stock)
+  update_mode: "eod"                 # "eod" | "cycle"
+  update_frequency_seconds: 30       # Used when update_mode = "cycle"
+
+  tp1:
+    basis: "profit_capture"          # "profit_capture" | "distance_from_current"
+    start_capture_pct: 10.0          # If basis = profit_capture
+    start_distance_below_pct: 30.0   # If basis = distance_from_current
+    min_gap_below_current_pct: 20.0  # Enforced during ratcheting and updates
+    ratcheting:
+      enabled: true
+      min_rise_since_last_pct: 30.0  # Rise since last ratchet to trigger
+      ratchet_factor: 1.0            # Scaling of capture increase
+
+  tp2:
+    basis: "distance_from_current"   # Default ceiling method
+    start_at_original_tp: true       # Start TP2 at original TP; then follow trailing ceiling
+    distance_above_pct: 20.0         # Used if basis = distance_from_current
+    capture_pct: 0.0                 # Used if basis = profit_capture
 
 ####################################################################################################
 # Order Settings

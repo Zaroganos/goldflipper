@@ -40,8 +40,9 @@ from goldflipper.config.config import config
 #   OCO relationships now work across calls/puts (not limited to same option type)
 #   OSO relationships also work across calls/puts
 CALLS_START = 0
-CALLS_END = 24   # Calls section covers indices 0 to 23; index 24 is a separator.
-PUTS_START = 25  # Puts section starts at index 25.
+# Dynamic puts start will be detected from headers; constants kept as legacy fallback
+CALLS_END = 24
+PUTS_START = 25
 
 # Fixed (expected) index mappings for each section.
 CALLS_ENTRY = {
@@ -63,13 +64,19 @@ CALLS_TP = {
     "tp_stock_price": 15,
     "tp_premium_pct": 16,
     "tp_stock_pct": 17,
-    "tp_order_type": 19  # "Order Type" column for sell side (shared between TP and SL)
+    # New optional trailing column for calls side (Stock% and Order Type section)
+    "tp_trailing_activation_pct": 18,
+    # After Trailing there is a calls-side "# of Con" column, then Order Type
+    "tp_order_type": 20,  # "Order Type" column for sell side (shared between TP and SL)
 }
 CALLS_SL = {
-    "sl_stock_price": 20,
-    "sl_premium_pct": 21,
-    "sl_stock_pct": 22,
-    "sl_order_type": 19  # Same as TP - using the shared sell side order type
+    # After Trailing(18) and calls-side: # of Con(19), Order Type(20)
+    # Sell columns follow: Share Price (SL)(21), Prem %(22), Stock %(23)
+    "sl_stock_price": 21,
+    "sl_premium_pct": 22,
+    "sl_stock_pct": 23,
+    # Order type column for sell side
+    "sl_order_type": 20
 }
 PUTS_ENTRY = {
     "symbol": 2,       # Same relative position in puts section
@@ -86,13 +93,18 @@ PUTS_TP = {
     "tp_stock_price": 15,
     "tp_premium_pct": 16,
     "tp_stock_pct": 17,
-    "tp_order_type": 18  # "Order Type" column for sell side (shared between TP and SL)
+    # New optional trailing column for puts side (Stock% and Order Type section)
+    "tp_trailing_activation_pct": 18,
+    # "Order Type" column follows Trailing in the new schema
+    "tp_order_type": 19
 }
 PUTS_SL = {
-    "sl_stock_price": 20,
-    "sl_premium_pct": 21,
-    "sl_stock_pct": 22,
-    "sl_order_type": 18  # Same as TP - using the shared sell side order type
+    # Puts side order differs: after Trailing(18), Order Type(19), then # of con(20)
+    # Sell columns follow: Share Price (SL)(21), Prem %(22), Stock %(23)
+    "sl_stock_price": 21,
+    "sl_premium_pct": 22,
+    "sl_stock_pct": 23,
+    "sl_order_type": 19
 }
 
 # --- Utility Functions ---
@@ -134,6 +146,24 @@ def build_composite_headers(header_rows):
                     col_parts.append(cell)
         composite.append(" ".join(col_parts))
     return composite
+
+
+def detect_puts_start(composite_headers):
+    """Detect the starting column index of the Puts section based on headers.
+    Strategy: find the second 'Ticket' header; subtract the relative offset for symbol (2).
+    Fallback to legacy PUTS_START if detection fails.
+    """
+    indices = [i for i, h in enumerate(composite_headers) if isinstance(h, str) and 'ticket' in h.lower()]
+    if len(indices) >= 2:
+        ticket_idx_puts = indices[1]
+        start = max(0, ticket_idx_puts - 2)
+        return start
+    # Alternate: look for the literal 'Puts' banner cell
+    for i, h in enumerate(composite_headers):
+        if isinstance(h, str) and 'puts' in h.lower():
+            # Heuristic: banner sits at first column of puts block
+            return i
+    return PUTS_START
 
 def find_strike_index(section_headers):
     """
@@ -392,10 +422,11 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     expiration_value = get_cell(mapping["expiration_date"])
     if not expiration_value:
         errors.append(f"Row {row_num} ({section}): Missing expiration date.")
-    # Attempt to fix and standardize the expiration date.
-    exp_date = fix_expiration_date(expiration_value) if expiration_value else ""
-    if not re.match(r"\d{2}/\d{2}/\d{4}$", exp_date):
-        errors.append(f"Row {row_num} ({section}): Expiration date '{exp_date}' is not in MM/DD/YYYY format.")
+    # Attempt to fix and standardize the expiration date for validation only (non-fatal)
+    exp_tmp = fix_expiration_date(expiration_value) if expiration_value else None
+    exp_tmp = exp_tmp or ""
+    if not re.match(r"\d{2}/\d{2}/\d{4}$", exp_tmp):
+        errors.append(f"Row {row_num} ({section}): Expiration date '{exp_tmp}' is not in MM/DD/YYYY format.")
 
     # Extract OCO/OSO values (supports comma/semicolon separated, +/- prefixes)
     oco_value = get_cell(mapping["oco"])
@@ -460,7 +491,7 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
 
     # Modified date handling with error suppression
     raw_exp_date = get_cell(mapping["expiration_date"])
-    exp_date = fix_expiration_date(raw_exp_date) or raw_exp_date
+    exp_date = fix_expiration_date(raw_exp_date) or raw_exp_date or ""
     
     # Get reference year from expiration date
     ref_year = None
@@ -522,6 +553,26 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
             condition["SL_type"] = "STOP" if parsed_order_type == "market" else "LIMIT"
         
         condition["order_type"] = parsed_order_type
+
+        # Optional trailing activation column (new schema): blank => trailing disabled; number => per-play activation; 'x'/'y' or any non-empty token => default activation
+        if condition_type == "tp" and "tp_trailing_activation_pct" in base_idx:
+            trailing_cell = get_cell(base_idx["tp_trailing_activation_pct"]).strip()
+            if trailing_cell and trailing_cell.upper() != 'N/A':
+                lc = trailing_cell.lower()
+                if lc in ('x', 'y'):
+                    condition.setdefault('trailing_config', {})['enabled'] = True
+                else:
+                    num = clean_numeric_string(trailing_cell)
+                    if num is not None:
+                        try:
+                            pct_val = float(num)
+                            if pct_val > 0:
+                                condition.setdefault('trailing_config', {})['enabled'] = True
+                                condition['trailing_activation_pct'] = pct_val
+                        except ValueError:
+                            condition.setdefault('trailing_config', {})['enabled'] = True
+                    else:
+                        condition.setdefault('trailing_config', {})['enabled'] = True
 
         # Only create condition if at least one price type exists
         if condition:
@@ -649,8 +700,9 @@ def main():
             header_rows.append(row)
 
     composite_headers = build_composite_headers(header_rows)
+    dynamic_puts_start = detect_puts_start(composite_headers)
     calls_headers = composite_headers[CALLS_START:CALLS_END]
-    puts_headers = composite_headers[PUTS_START:]
+    puts_headers = composite_headers[dynamic_puts_start:]
     
     strike_calls = find_strike_index(calls_headers)
     if strike_calls is None:
@@ -675,8 +727,8 @@ def main():
             all_errors.extend(errors_calls)
         
         # Process puts only if puts symbol exists
-        if row[PUTS_START + PUTS_ENTRY["symbol"]].strip():
-            play_puts, errors_puts = create_play_from_data("puts", row, puts_headers, PUTS_START, strike_puts, i)
+        if dynamic_puts_start + PUTS_ENTRY["symbol"] < len(row) and row[dynamic_puts_start + PUTS_ENTRY["symbol"]].strip():
+            play_puts, errors_puts = create_play_from_data("puts", row, puts_headers, dynamic_puts_start, strike_puts, i)
             if play_puts:
                 valid_plays.append(("puts", play_puts))
             all_errors.extend(errors_puts)

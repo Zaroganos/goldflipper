@@ -18,7 +18,7 @@ from alpaca.common.exceptions import APIError
 import json
 from goldflipper.tools.option_data_fetcher import calculate_greeks
 from goldflipper.utils.atomic_io import atomic_write_json
-from goldflipper.trailing import has_trailing_enabled, update_trailing_levels
+from goldflipper.strategy.trailing import has_trailing_enabled, update_trailing_levels
 from uuid import UUID
 from typing import Optional, Dict, Any
 from goldflipper.data.market.manager import MarketDataManager  # Add this import
@@ -463,39 +463,25 @@ def evaluate_closing_strategy(symbol, play):
                 contingency_sl_target = play['stop_loss']['contingency_SL_option_prem']
                 contingency_loss_condition = contingency_loss_condition or (current_premium <= contingency_sl_target)
 
-    # Consider trailing conditions if enabled
+    # Consider trailing conditions if enabled (premium-based TP1/TP2)
     try:
-        from goldflipper.trailing import trailing_tp_enabled, trailing_sl_enabled
-        tp_trail = (play.get('take_profit') or {}).get('trail_state') or {}
-        sl_trail = (play.get('stop_loss') or {}).get('trail_state') or {}
-
+        from goldflipper.strategy.trailing import trailing_tp_enabled, trailing_sl_enabled, get_trailing_tp_levels
         if trailing_tp_enabled(play):
-            tp_level = tp_trail.get('current_trail_level')
-            if tp_level is not None:
-                if trade_type == 'CALL':
-                    if last_price <= tp_level:
-                        profit_condition = True
-                        logging.info("Trailing TP condition met")
-                        display.info("Trailing TP condition met")
-                else:  # PUT
-                    if last_price >= tp_level:
-                        profit_condition = True
-                        logging.info("Trailing TP condition met")
-                        display.info("Trailing TP condition met")
-
-        if trailing_sl_enabled(play):
-            sl_level = sl_trail.get('current_trail_level')
-            if sl_level is not None:
-                if trade_type == 'CALL':
-                    if last_price <= sl_level:
-                        loss_condition = True
-                        logging.info("Trailing SL condition met")
-                        display.info("Trailing SL condition met")
-                else:  # PUT
-                    if last_price >= sl_level:
-                        loss_condition = True
-                        logging.info("Trailing SL condition met")
-                        display.info("Trailing SL condition met")
+            tp_levels = get_trailing_tp_levels(play)
+            tp1 = tp_levels.get('tp1_premium')
+            tp2 = tp_levels.get('tp2_premium')
+            # If current premium known, evaluate against TP1/TP2
+            if option_data and option_data.get('premium') is not None:
+                current_premium = option_data['premium']
+                if tp1 is not None and current_premium <= tp1:
+                    profit_condition = True
+                    logging.info("Trailing TP1 (floor) condition met by premium")
+                    display.info("Trailing TP1 (floor) condition met by premium")
+                if tp2 is not None and current_premium >= tp2:
+                    profit_condition = True
+                    logging.info("Trailing TP2 (ceiling) condition met by premium")
+                    display.info("Trailing TP2 (ceiling) condition met by premium")
+        # SL trailing remains as-is if enabled later
     except Exception as e:
         logging.warning(f"Error evaluating trailing conditions: {e}")
 

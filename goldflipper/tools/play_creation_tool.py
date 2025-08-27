@@ -505,7 +505,35 @@ class PlayBuilder:
             self._handle_multiple_take_profits()
         else:
             self.tp_cache = [self.get_tp_parameters()]  # Single TP stored in cache
-                
+        
+        # Trailing prompt (per-play): optional override for activation threshold
+        trailing_input = get_input(
+            "\nTrailing activation (prem%): leave blank to disable trailing for this play, enter % (e.g., 50) to enable, or 'x'/'y' for default: ",
+            str,
+            validation=lambda x: True,
+            error_message="Invalid input.",
+            optional=True
+        )
+        tp_section = self.tp_cache[0] if self.tp_cache else {}
+        if trailing_input is not None and trailing_input != "":
+            val = trailing_input.strip().lower()
+            if val in ("x", "y"):
+                # Use global default; mark enabled
+                tp_section.setdefault('trailing_config', {})['enabled'] = True
+                # Do not set per-play threshold so global applies
+            else:
+                try:
+                    pct = float(val)
+                    if pct > 0:
+                        tp_section.setdefault('trailing_config', {})['enabled'] = True
+                        # Store per-play override used by trailing manager
+                        tp_section['trailing_activation_pct'] = pct
+                except ValueError:
+                    TerminalDisplay.warning("Ignoring trailing input; not a number/x/y.", show_timestamp=False)
+        # Persist back
+        if self.tp_cache:
+            self.tp_cache[0] = tp_section
+        
         return self.play
 
     def _handle_multiple_take_profits(self):
