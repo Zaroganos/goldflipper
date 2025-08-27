@@ -70,3 +70,6 @@ dist/
 
 # Development notes
 dev-notes/
+
+# Reference files
+goldflipper/strategy/template/*
