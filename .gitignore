@@ -4,6 +4,9 @@ venv/
 env/
 .env/
 
+# Environment files
+.env.bat
+
 # Trade Logging System
 goldflipper/logging/logs/*
 
@@ -35,6 +38,7 @@ __pycache__/
 *.log
 logs/
 goldflipper/logs/
+logs.md
 
 # Database files
 web/data/db/*.db
@@ -90,3 +94,6 @@ exports/*
 /dev-notes/
 dev-notes/*
 goldflipper/dev-notes/*
+
+# Cursor rules
+.cursorrules

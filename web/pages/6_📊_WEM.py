@@ -486,7 +486,7 @@ def update_wem_stock(session: Session, stock_data: Dict[str, Any]) -> bool:
         logger.error(f"Error updating WEM stock {symbol}: {str(e)}", exc_info=True)
         return False
 
-def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regular_hours_only: bool = False, use_friday_close: bool = True) -> Dict[str, Any]:
+def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regular_hours_only: bool = True, use_friday_close: bool = True) -> Dict[str, Any]:
     """
     Calculate the Weekly Expected Move (WEM) for a stock based on options data.
     
@@ -2703,7 +2703,7 @@ def main():
         # Initialize regular hours setting in session state if not exists
         if 'regular_hours_only' not in st.session_state:
             # Try to get default from settings, fallback to False
-            default_regular_hours = settings.get('wem', {}).get('pricing', {}).get('default_regular_hours_only', False)
+            default_regular_hours = settings.get('wem', {}).get('pricing', {}).get('default_regular_hours_only', True)
             st.session_state.regular_hours_only = default_regular_hours
         
         regular_hours_only = st.checkbox(
@@ -3505,11 +3505,11 @@ def main():
                             try:
                                 session_logger = setup_wem_logging()
                                 data_source_text = "Friday Close" if st.session_state.get('use_friday_close', True) else "Most Recent"
-                                pricing_mode_text = "regular hours" if st.session_state.get('regular_hours_only', False) else "extended hours"
+                                pricing_mode_text = "regular hours" if st.session_state.get('regular_hours_only', True) else "extended hours"
                                 session_logger.info(f"Starting WEM data update from export validation using {data_source_text} data with {pricing_mode_text} pricing...")
                                 
                                 with get_db_connection() as db_session:
-                                    update_all_wem_stocks(db_session, st.session_state.get('regular_hours_only', False), 
+                                    update_all_wem_stocks(db_session, st.session_state.get('regular_hours_only', True), 
                                                          st.session_state.get('use_friday_close', True), session_logger)
                                 
                                 session_logger.info(f"WEM data update completed from export validation")
@@ -3634,7 +3634,7 @@ def main():
             
             # Show current calculation settings
             current_data_source = "Friday Close" if st.session_state.get('use_friday_close', True) else "Most Recent"
-            current_pricing = "Regular Hours" if st.session_state.get('regular_hours_only', False) else "Extended Hours"
+            current_pricing = "Regular Hours" if st.session_state.get('regular_hours_only', True) else "Extended Hours"
             
             st.info(f"📊 **Current WEM Settings**: {current_data_source} data using {current_pricing} pricing")
             

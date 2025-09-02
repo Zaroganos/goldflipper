@@ -14,12 +14,23 @@ sys.path.append(str(project_root))
 from goldflipper.config.config import config
 from goldflipper.tools.get_alpaca_info import test_alpaca_connection
 
+# New imports for DB init/seed
+from goldflipper.database.connection import (
+	config as dbconfig,
+	init_db,
+	get_db_connection,
+	backup_database,
+)
+from sqlalchemy import text
+from goldflipper.database.models import WEMStock
+
 # Page configuration
 st.set_page_config(
     page_title="Goldflipper Setup",
     page_icon="⚙️",
     layout="wide"
 )
+
 
 def create_shortcut():
     """Create desktop shortcut for Goldflipper"""
@@ -53,6 +64,7 @@ def create_shortcut():
         st.error(f"Error creating shortcut: {str(e)}")
         return False
 
+
 def save_settings(settings):
     """Save settings to YAML file"""
     try:
@@ -66,6 +78,66 @@ def save_settings(settings):
     except Exception as e:
         st.error(f"Error saving settings: {str(e)}")
         return False
+
+
+# Helpers for DB seeding/overwrite
+
+def _seed_defaults_if_empty():
+    """Seed baseline defaults if DB tables are empty (idempotent)."""
+    try:
+        defaults_file = None
+        for p in [
+            project_root / 'web' / 'wem_template' / 'default_tickers.txt',
+            Path(sys._MEIPASS) / 'web' / 'wem_template' / 'default_tickers.txt' if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS') else None,
+        ]:
+            if p and p.exists():
+                defaults_file = p
+                break
+        with get_db_connection() as session:
+            # WEM stocks
+            try:
+                count = session.execute(text("SELECT COUNT(*) FROM wem_stocks")).scalar()  # type: ignore
+                if not count:
+                    if defaults_file is not None:
+                        symbols = [s.strip().upper() for s in defaults_file.read_text(encoding='utf-8').splitlines() if s.strip()]
+                        for sym in symbols:
+                            session.add(WEMStock(symbol=sym, is_default=True))
+                        st.success(f"Seeded {len(symbols)} default WEM tickers")
+            except Exception as e:
+                st.warning(f"WEM seed skipped: {e}")
+
+            # user_settings baseline
+            try:
+                scount = session.execute(text("SELECT COUNT(*) FROM user_settings")).scalar()  # type: ignore
+                if not scount:
+                    # Add just a minimal baseline; UI will let user customize
+                    session.execute(text("""
+                        INSERT INTO user_settings (category, key, value)
+                        VALUES
+                        ('market_data_providers','yfinance.enabled','true')
+                        ON CONFLICT (category, key) DO NOTHING
+                    """))
+            except Exception as e:
+                st.warning(f"Settings seed skipped: {e}")
+    except Exception as e:
+        st.warning(f"Seeding skipped: {e}")
+
+
+def _find_bundled_seed_db() -> Path | None:
+    candidates = [
+        project_root / 'web' / 'data' / 'db' / 'goldflipper.db',
+    ]
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        base = Path(sys._MEIPASS)
+        candidates.extend([
+            base / 'web' / 'data' / 'db' / 'goldflipper.db',
+            base / 'goldflipper' / 'data' / 'db' / 'goldflipper.db',
+        ])
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
 
 async def validate_alpaca_credentials(api_key, api_secret, paper_trading):
     """Validate Alpaca API credentials"""
@@ -81,17 +153,16 @@ async def validate_alpaca_credentials(api_key, api_secret, paper_trading):
     except Exception as e:
         return False, str(e)
 
+
 def main():
     st.title("Goldflipper Setup")
     st.markdown("""
     Welcome to the Goldflipper setup wizard. This will help you configure your trading accounts and basic settings.
-    
-    Please fill in the information below to get started.
     """)
-    
+
     # Initialize session state for multi-step setup
     if 'setup_step' not in st.session_state:
-        st.session_state.setup_step = 1
+        st.session_state.setup_step = 0
     if 'settings' not in st.session_state:
         st.session_state.settings = {
             'alpaca': {
@@ -99,9 +170,61 @@ def main():
                 'active_account': None
             }
         }
-    
+
+    # Step 0: Database Setup / Import vs Overwrite
+    if st.session_state.setup_step == 0:
+        st.subheader("Step 0: Database Setup")
+        db_path = Path(dbconfig.db_path)
+        st.write(f"Database location: `{db_path}`")
+        exists = db_path.exists()
+        if exists:
+            st.info("An existing database was detected.")
+            choice = st.radio("Choose an action", ["Use existing database (recommended)", "Overwrite with defaults"], index=0)
+            if choice == "Use existing database (recommended)":
+                if st.button("Continue"):
+                    try:
+                        init_db()
+                        _seed_defaults_if_empty()
+                        st.session_state.setup_step = 1
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Initialization failed: {e}")
+            else:
+                st.warning("Overwrite will delete your current database file after creating a backup.")
+                confirm = st.checkbox("I understand and want to overwrite with defaults")
+                if st.button("Overwrite and Continue", disabled=not confirm):
+                    try:
+                        # Backup then overwrite
+                        try:
+                            backup_path = backup_database()
+                            st.success(f"Backup created at: {backup_path}")
+                        except Exception as be:
+                            st.warning(f"Backup failed or skipped: {be}")
+                        seed_src = _find_bundled_seed_db()
+                        db_path.parent.mkdir(parents=True, exist_ok=True)
+                        if db_path.exists():
+                            db_path.unlink(missing_ok=True)
+                        if seed_src and seed_src.exists():
+                            shutil.copy2(seed_src, db_path)
+                        init_db()
+                        _seed_defaults_if_empty()
+                        st.session_state.setup_step = 1
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Overwrite failed: {e}")
+        else:
+            st.info("No database found. We'll initialize and seed defaults.")
+            if st.button("Initialize and Continue"):
+                try:
+                    init_db()
+                    _seed_defaults_if_empty()
+                    st.session_state.setup_step = 1
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Initialization failed: {e}")
+
     # Step 1: Desktop Shortcut
-    if st.session_state.setup_step == 1:
+    elif st.session_state.setup_step == 1:
         st.subheader("Step 1: Create Desktop Shortcut")
         st.markdown("""
         Would you like to create a desktop shortcut for easy access to Goldflipper?
@@ -116,7 +239,7 @@ def main():
         if st.button("Skip and Continue"):
             st.session_state.setup_step = 2
             st.rerun()
-    
+
     # Step 2: Settings Import
     elif st.session_state.setup_step == 2:
         st.subheader("Step 2: Import Existing Settings")
@@ -137,7 +260,7 @@ def main():
         if st.button("Continue"):
             st.session_state.setup_step = 3
             st.rerun()
-    
+
     # Step 3: Alpaca API Configuration
     elif st.session_state.setup_step == 3:
         st.subheader("Step 3: Alpaca API Configuration")
@@ -162,7 +285,7 @@ def main():
                         st.error(f"API validation failed: {message}")
             else:
                 st.error("Please enter both API key and secret")
-    
+
     # Step 4: Account Configuration
     elif st.session_state.setup_step == 4:
         st.subheader("Step 4: Account Configuration")
@@ -203,6 +326,7 @@ def main():
                     """)
                 else:
                     st.error("Failed to save settings. Please try again.")
+
 
 if __name__ == "__main__":
     main() 
