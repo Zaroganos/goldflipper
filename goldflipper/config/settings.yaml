@@ -37,34 +37,7 @@
 ####################################################################################################
 # Alpaca API Settings
 ####################################################################################################
-alpaca:
-  accounts:
-    live:
-      enabled: true
-      nickname: "Live Trading"
-      api_key: 'YOUR_LIVE_API_KEY'
-      secret_key: 'YOUR_LIVE_SECRET_KEY'
-      base_url: 'https://api.alpaca.markets'
-    paper_1:
-      enabled: true
-      nickname: "Profitability Testing"
-      api_key: 'PKWL1UL2EALOU1UZ8BAT'
-      secret_key: 'i4zk7Fb0tfrLvIx3qz5gzgxiaOcqvKgPzkVFrAZX'
-      base_url: 'https://paper-api.alpaca.markets/v2'
-    paper_2:
-      enabled: true
-      nickname: "Staging"
-      api_key: 'PKOJ0UK4PBFQDVG2GO0L'
-      secret_key: 'IOvqTO6fsbaoDtjUkNe3MgyzMu8M7KWOzlaXxhjm'
-      base_url: 'https://paper-api.alpaca.markets/v2'
-    paper_3:
-      enabled: true
-      nickname: "Dev Testing"
-      api_key: 'PKU6AQTC1VE3NPN18FD7'
-      secret_key: 'Cimoq51fX5gvFXkCNLB1ir8AIbpAXzhTAyhGo7ze'
-      base_url: 'https://paper-api.alpaca.markets/v2'
-  default_account: 'paper_1'  # Specify which account to use by default
-  active_account: 'paper_1'  # Specify which account is currently active
+
 
 
   
@@ -368,50 +341,6 @@ chart_viewer:
 ####################################################################################################
 # Market Data Provider Settings
 ####################################################################################################
-market_data_providers:
-  # Primary provider will be used as the main source for data
-  primary_provider: "marketdataapp"  # Options: "alpaca", "yfinance", "marketdataapp"
-  
-  # Enable/disable specific providers
-  providers:
-    marketdataapp:
-      enabled: true
-      cache:
-        enabled: true
-        max_age: 300  # 5 minutes
-      api_key: "NFQ0ZFEzQWlMNWFPZHItVktIRURCa3pYV0R1TlRHM0JraThud1RyTm1QRT0"
-      rate_limiting:
-        enabled: true
-        max_requests: 45  # Keep below 50 for safety
-        window_seconds: 60
-        
-    yfinance:
-      enabled: true  # Disabled by default, use as fallback
-      cache:
-        enabled: true
-        max_age: 300
-        
-    alpaca:
-      enabled: true
-      use_websocket: true  # Enable real-time data streaming
-      websocket_symbols:  # Symbols to stream real-time data for
-        - "SPY"
-        - "QQQ"
-        - "AAPL"
-      rate_limiting:
-        enabled: true
-        quotes_per_minute: 200  # Free tier limit
-        buffer_percent: 10      # Stay 10% under limit to be safe
-        retry_after: 5         # Seconds to wait when limit hit
-      cache:
-        enabled: true
-        strategy: "lru"        # Options: lru, fifo, none
-        max_size: 1000        # Maximum items in cache
-        ttl:                  # Time-to-live in seconds
-          quotes: 2           # Quote data expires quickly
-          bars: 60           # Bar data can live longer
-          trades: 5          # Trade data medium expiry
-    
   
   # Data comparison settings
   comparison:
