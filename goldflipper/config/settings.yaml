@@ -49,19 +49,19 @@ alpaca:
       enabled: true
       nickname: "Profitability Testing"
       api_key: 'PKWL1UL2EALOU1UZ8BAT'
-      secret_key: 'i4zk7Fb0tfrLvIx3qz5gzgxiaOcqvKgPzkVFrAZX'
+      secret_key: ''
       base_url: 'https://paper-api.alpaca.markets/v2'
     paper_2:
       enabled: true
       nickname: "Staging"
       api_key: 'PKOJ0UK4PBFQDVG2GO0L'
-      secret_key: 'IOvqTO6fsbaoDtjUkNe3MgyzMu8M7KWOzlaXxhjm'
+      secret_key: ''
       base_url: 'https://paper-api.alpaca.markets/v2'
     paper_3:
       enabled: true
       nickname: "Dev Testing"
       api_key: 'PKU6AQTC1VE3NPN18FD7'
-      secret_key: 'Cimoq51fX5gvFXkCNLB1ir8AIbpAXzhTAyhGo7ze'
+      secret_key: ''
       base_url: 'https://paper-api.alpaca.markets/v2'
   default_account: 'paper_1'  # Specify which account to use by default
   active_account: 'paper_2'  # Specify which account is currently active
@@ -379,7 +379,7 @@ market_data_providers:
       cache:
         enabled: true
         max_age: 300  # 5 minutes
-      api_key: "NFQ0ZFEzQWlMNWFPZHItVktIRURCa3pYV0R1TlRHM0JraThud1RyTm1QRT0"
+      api_key: ""
       rate_limiting:
         enabled: true
         max_requests: 45  # Keep below 50 for safety
