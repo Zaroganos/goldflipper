@@ -89,3 +89,4 @@ exports/*
 # Development notes
 /dev-notes/
 dev-notes/*
+goldflipper/dev-notes/*
