@@ -60,32 +60,27 @@ if not icon_path.is_file():
     icon_path = None
 splash_path = web_root / 'assets' / 'splash.png'
 if splash_path.is_file():
-    # Distribute splash asset; enable splash with this image
     datas.append((str(splash_path), 'web/assets'))
 
-# Seed DB source from top-level project data directory
-top_level_seed_db = repo_root / 'goldflipper' / 'data' / 'db' / 'goldflipper.db'
-if top_level_seed_db.is_file():
-    datas.append((str(top_level_seed_db), 'web/data/db'))
+# Seed DB sources
+for p in [
+    repo_root / 'goldflipper' / 'data' / 'db' / 'goldflipper.db',
+    package_root / 'data' / 'db' / 'goldflipper.db',
+]:
+    if p.is_file():
+        datas.append((str(p), 'web/data/db'))
 
-# Also consider a seed DB inside the package layout (if present)
-package_seed_db = package_root / 'data' / 'db' / 'goldflipper.db'
-if package_seed_db.is_file():
-    datas.append((str(package_seed_db), 'web/data/db'))
-
-# Streamlit package data and metadata (required for importlib.metadata)
+# Package metadata
 datas += collect_data_files('streamlit')
 datas += copy_metadata('streamlit')
-
-# Alpaca package metadata (distribution is alpaca-py)
 datas += copy_metadata('alpaca-py')
 
-# Bundle the entire goldflipper source tree as data to ensure availability at runtime
+# Bundle entire project package
 source_pkg_dir = package_root / 'goldflipper'
 if source_pkg_dir.is_dir():
     datas.append((str(source_pkg_dir), 'goldflipper'))
 
-# Hidden imports: include Streamlit runtime and specific modules required by entrypoint and pages
+# Hidden imports
 hiddenimports = [
     'win32timezone',
     'streamlit.web.cli',
@@ -94,8 +89,6 @@ hiddenimports = [
     'zoneinfo',
     'yfinance',
 ]
-
-# Collect submodules for key dynamic packages
 for pkg in ['streamlit.runtime', 'alpaca']:
     try:
         hiddenimports += collect_submodules(pkg)
@@ -122,7 +115,6 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-# Configure splash screen if available (Windows run-time splash)
 splash_arg = str(splash_path) if splash_path.is_file() else None
 
 exe = EXE(
@@ -135,10 +127,10 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,            # disable UPX to reduce AV flags
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,        # windowed app; enables splash
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -153,7 +145,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='GoldflipperWeb',
 )

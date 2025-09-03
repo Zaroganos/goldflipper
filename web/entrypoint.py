@@ -124,23 +124,15 @@ def write_boot_log(user_data_dir: Path, text: str) -> None:
 
 
 def safe_init_and_seed(bundled_base: Path) -> None:
-    """Initialize DB schema and seed defaults if empty, without overwriting.
-
-    - Creates schema via init_db() (idempotent)
-    - If wem_stocks is empty, insert defaults from web/wem_template/default_tickers.txt
-    - If user_settings is empty, insert baseline defaults (e.g., WEM symbols)
-    """
+    """Initialize DB schema and seed defaults if empty, without overwriting."""
     try:
-        # Import here to avoid import-time side effects before env is set
         from goldflipper.database.connection import init_db, get_db_connection
         from goldflipper.database.models import WEMStock
         from sqlalchemy import text
         import json
 
-        # Initialize schema
         init_db()
 
-        # Determine default tickers file path in bundle
         defaults_file = None
         for p in [
             bundled_base / "web" / "wem_template" / "default_tickers.txt",
@@ -151,13 +143,11 @@ def safe_init_and_seed(bundled_base: Path) -> None:
                 break
 
         with get_db_connection() as session:
-            # Seed WEM stocks if empty
             need_seed_wem = False
             try:
                 count = session.execute(text("SELECT COUNT(*) FROM wem_stocks")).scalar()  # type: ignore
                 need_seed_wem = (count is None) or (int(count) == 0)
             except Exception:
-                # If table missing for some reason, try creating via init_db again
                 init_db()
                 try:
                     count = session.execute(text("SELECT COUNT(*) FROM wem_stocks")).scalar()  # type: ignore
@@ -174,7 +164,6 @@ def safe_init_and_seed(bundled_base: Path) -> None:
                 except Exception as se:
                     write_boot_log(get_user_data_dir(), f"WEM seed error: {se}")
 
-            # Seed basic user_settings if empty
             need_seed_settings = False
             try:
                 scount = session.execute(text("SELECT COUNT(*) FROM user_settings")).scalar()  # type: ignore
@@ -185,7 +174,6 @@ def safe_init_and_seed(bundled_base: Path) -> None:
             if need_seed_settings and defaults_file is not None:
                 try:
                     symbols = [s.strip().upper() for s in defaults_file.read_text(encoding="utf-8").splitlines() if s.strip()]
-                    # Minimal baseline settings
                     inserts = [
                         ("wem", "default_symbols", json.dumps(symbols)),
                         ("market_data_providers", "yfinance.enabled", "true"),
@@ -210,26 +198,25 @@ def safe_init_and_seed(bundled_base: Path) -> None:
 
 
 def launch_streamlit(app_py: Path, port: int) -> int:
-    """Launch Streamlit programmatically for the given script and port.
-
-    Returns the exit code of the process. Note that this call is blocking until
-    the Streamlit server terminates.
-    """
+    """Launch Streamlit programmatically for the given script and port."""
     from streamlit.web import cli as streamlit_cli
+
+    # Force production mode to allow explicit port binding
+    os.environ.setdefault("STREAMLIT_GLOBAL_DEVELOPMENTMODE", "false")
+    os.environ.setdefault("STREAMLIT_BROWSER_GATHERUSAGESTATS", "false")
 
     # Ensure argv is populated as if run from CLI
     sys.argv = [
         "streamlit",
         "run",
         str(app_py),
+        "--global.developmentMode=false",
         "--server.headless=true",
         f"--server.port={port}",
         "--server.address=127.0.0.1",
         "--browser.gatherUsageStats=false",
     ]
 
-    # Streamlit opens the default browser by default; we proactively open as well
-    # to avoid cases where auto-open is disabled by user config.
     try:
         webbrowser.open(f"http://127.0.0.1:{port}")
     except Exception:
@@ -241,21 +228,18 @@ def launch_streamlit(app_py: Path, port: int) -> int:
 def main() -> int:
     base_dir, web_dir, app_py = resolve_paths()
 
-    # Prepare user data directory and environment
     user_data_dir = get_user_data_dir()
     ensure_dirs(user_data_dir)
     os.environ.setdefault("GOLDFLIPPER_DATA_DIR", str(user_data_dir))
 
     write_boot_log(user_data_dir, f"Starting entrypoint. base_dir={base_dir} web_dir={web_dir} app={app_py}")
 
-    # First-run DB seed (copy seed DB if none), then init schema and defaults safely
     try:
         seed_database_if_needed(base_dir, user_data_dir)
         safe_init_and_seed(base_dir)
     except Exception as exc:
         write_boot_log(user_data_dir, f"DB seed/init error: {exc}")
 
-    # Pick a port and launch
     port = find_free_port(8501, 20)
     write_boot_log(user_data_dir, f"Launching Streamlit on 127.0.0.1:{port}")
 
@@ -266,7 +250,6 @@ def main() -> int:
     try:
         return launch_streamlit(app_py, port)
     except SystemExit as sys_exit:
-        # Streamlit may call sys.exit
         return int(getattr(sys_exit, "code", 0) or 0)
     except Exception as exc:
         write_boot_log(user_data_dir, f"Launch error: {exc}")
