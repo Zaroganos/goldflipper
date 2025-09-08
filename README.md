@@ -75,8 +75,8 @@ Before you start, ensure you have the following:
 - **Alpaca Markets account** for brokerage access; multi-broker support is planned with v2
 - **Windows OS** (required for service functionality and batch files); multi-OS support is planned with v2
 - **Git** (required for cloning the repository and keeping it up to date)
-- **Python 3.8 or higher** (Python 3.10+ recommended)
-- **Python libraries** (see Installation section); strongly recommended to use a virtual environment to avoid dependency conflicts. Consider using Poetry as well (directions to be added in time)
+- **Python 3.10 or higher** (Python 3.12 recommended)
+- **Python libraries** (see Installation section); strongly recommended to use a virtual environment to avoid dependency conflicts. Consider using venv, Poetry, or uv as well (directions to be added in time)
 - **Market Data Provider account(s)** (required if not using market data from brokerage):
   - Yahoo Finance (free, built-in support via yfinance)
 

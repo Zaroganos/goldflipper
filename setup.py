@@ -49,6 +49,7 @@ setup(
         'pywin32',
         'tkinterdnd2>=0.3.0',  # For drag and drop support in the setup dialog
         'requests>=2.25.0',  # HTTP library for API communication
+        'charset-normalizer>=3.2.0', # Required for requests library
         'urllib3>=1.26.0',  # HTTP client with connection pooling
         'PyYAML>=6.0.1',  # YAML configuration parsing
         'colorama>=0.4.6',  # Terminal color output
