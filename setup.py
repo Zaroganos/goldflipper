@@ -35,7 +35,7 @@ setup(
 
     # Dependencies required
     install_requires=[
-        'alpaca-py>=0.8.0', # Alpaca trading API v2
+        'alpaca-py', # Alpaca trading API v2
         'yfinance>=0.2.54', # Yahoo Finance API for market data
         'pandas>=2.0.0',  # Data analysis and manipulation library
         'numpy>=1.24.0',  # Numerical computing library
@@ -43,8 +43,9 @@ setup(
         'seaborn>=0.12.0',  # Data visualization library
         'scipy>=1.10.0',  # Scientific computing library
         'ta>=0.10.0',  # Technical analysis library
-        'textual>=0.38.1',  # TUI library
+        'textual>=1.0.0',  # TUI library
         'psutil>=5.9.0',  # System monitoring library
+        'pytest>=7.0.0',
         'nest-asyncio>=1.5.0', # Asynchronous library
         'pywin32',
         'tkinterdnd2>=0.3.0',  # For drag and drop support in the setup dialog
@@ -83,6 +84,6 @@ setup(
     project_urls={
         'Bug Reports': 'https://github.com/Zaroganos/goldflipper/issues',
         'Source': 'https://github.com/Zaroganos/goldflipper',
-#        'Documentation': 'https://github.com/Zaroganos/goldflipper/wiki',
+        'Documentation': 'https://github.com/Zaroganos/goldflipper/'
     },
 )
