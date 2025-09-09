@@ -50,10 +50,7 @@ class MarketDataManager:
             if settings.get('enabled', False) and name in provider_classes:
                 try:
                     provider_class = provider_classes[name]
-                    if name == 'alpaca':
-                        providers[name] = provider_class()  # No config_path
-                    else:
-                        providers[name] = provider_class(self.config_path)
+                    providers[name] = provider_class(self.config_path)
                     self.logger.info(f"Initialized {name} provider")
                 except Exception as e:
                     self.logger.error(f"Failed to initialize {name} provider: {str(e)}")

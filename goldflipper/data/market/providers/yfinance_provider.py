@@ -8,7 +8,7 @@ import logging
 
 class YFinanceProvider(MarketDataProvider):
     """YFinance implementation of market data provider"""
-    
+
     COLUMN_MAPPING = {
         'contractSymbol': 'symbol',
         'strike': 'strike',
@@ -21,9 +21,10 @@ class YFinanceProvider(MarketDataProvider):
         'impliedVolatility': 'implied_volatility',
         'inTheMoney': 'in_the_money'
     }
-    
-    def __init__(self):
+
+    def __init__(self, config_path: str = None):
         self._cache = {}  # Simple memory cache
+        self.config_path = config_path
         
     async def get_stock_price(self, symbol: str) -> float:
         """Get current stock price"""

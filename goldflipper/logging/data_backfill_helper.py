@@ -58,10 +58,10 @@ class DataBackfillHelper:
     def check_missing_data(self, play_data: Dict[str, Any]) -> Dict[str, bool]:
         """
         Analyze a play file to identify what data is missing.
-        
+
         Args:
             play_data: Dictionary containing play file data
-            
+
         Returns:
             Dictionary indicating what data types are missing
         """
@@ -72,42 +72,50 @@ class DataBackfillHelper:
             'price_atOpen': False,
             'datetime_atOpen': False,
             'has_option_symbol': False,
-            'has_opening_date': False
+            'has_opening_date': False,
+            'any_opening_data': False
         }
-        
+
         logging_data = play_data.get('logging', {})
         entry_point = play_data.get('entry_point', {})
-        
+
         # Check for missing Greeks
         missing['delta_atOpen'] = (
-            logging_data.get('delta_atOpen') is None or 
+            logging_data.get('delta_atOpen') is None or
             logging_data.get('delta_atOpen') == 0.0
         )
-        
+
         missing['theta_atOpen'] = (
-            logging_data.get('theta_atOpen') is None or 
+            logging_data.get('theta_atOpen') is None or
             logging_data.get('theta_atOpen') == 0.0
         )
-        
+
         # Check for missing pricing data
         missing['premium_atOpen'] = (
             logging_data.get('premium_atOpen') is None and
             entry_point.get('entry_premium') is None
         )
-        
+
         missing['price_atOpen'] = (
             logging_data.get('price_atOpen') is None and
             entry_point.get('entry_stock_price') is None and
             entry_point.get('stock_price') is None
         )
-        
+
         # Check for missing datetime
         missing['datetime_atOpen'] = logging_data.get('datetime_atOpen') is None
 
         # Required fields present at creation/open
         missing['has_option_symbol'] = bool(play_data.get('option_contract_symbol'))
         missing['has_opening_date'] = logging_data.get('datetime_atOpen') is not None
-        
+
+        # Check if ANY opening data exists (for validation purposes)
+        missing['any_opening_data'] = (
+            missing['has_opening_date'] or
+            not missing['premium_atOpen'] or
+            not missing['price_atOpen']
+        )
+
         return missing
     
     def construct_option_symbol(self, play_data: Dict[str, Any]) -> Optional[str]:

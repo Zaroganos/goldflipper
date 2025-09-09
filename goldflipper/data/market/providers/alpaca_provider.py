@@ -101,7 +101,7 @@ class AlpacaProvider(MarketDataProvider):
         'in_the_money': 'in_the_money'
     }
     
-    def __init__(self):
+    def __init__(self, config_path: str = None):
         # Load settings from YAML
         self.settings = self._load_settings()
         
