@@ -1424,6 +1424,47 @@ def move_play_to_expired(play_file):
         display.error(f"Error moving play to EXPIRED: {str(e)}")
         raise
 
+# Move to TEMP (for plays recycled by OCO or held for later activation)
+def move_play_to_temp(play_file):
+    """Move play to TEMP folder and update status for recycling."""
+    try:
+        with open(play_file, 'r') as f:
+            play_data = json.load(f)
+        
+        # Ensure status object exists and set status
+        if 'status' not in play_data:
+            play_data['status'] = {}
+        play_data['status'].update({
+            'play_status': 'TEMP',
+            'position_exists': False,
+            'order_id': None,
+            'order_status': None,
+            'closing_order_id': None,
+            'closing_order_status': None,
+        })
+        
+        # Calculate new path before saving
+        temp_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'temp')
+        os.makedirs(temp_dir, exist_ok=True)
+        new_path = os.path.join(temp_dir, os.path.basename(play_file))
+        
+        # Save to original location first
+        with open(play_file, 'w') as f:
+            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
+            
+        # Move file only if it's not already in the target directory
+        if os.path.dirname(play_file) != temp_dir:
+            if os.path.exists(new_path):
+                os.remove(new_path)  # Remove any existing file at destination
+            os.rename(play_file, new_path)
+            logging.info(f"Moved play to TEMP folder: {new_path}")
+            display.info(f"Moved play to TEMP folder: {new_path}")
+            
+    except Exception as e:
+        logging.error(f"Error moving play to TEMP: {str(e)}")
+        display.error(f"Error moving play to TEMP: {str(e)}")
+        raise
+
 # ==================================================
 # 6. MAIN TRADE EXECUTION FLOW
 # ==================================================
@@ -1977,18 +2018,88 @@ def handle_conditional_plays(play, play_file):
     success = True
     plays_base_dir = os.path.abspath(os.path.dirname(os.path.dirname(play_file)))
     
-    # Handle OCO triggers (move to expired)
+    # Handle OCO triggers
     for oco_trigger in oco_triggers:
-        oco_path = os.path.join(plays_base_dir, 'new', oco_trigger)
-        if os.path.exists(oco_path):
+        # 1) If trigger is still NEW, expire it
+        new_path = os.path.join(plays_base_dir, 'new', oco_trigger)
+        if os.path.exists(new_path):
             try:
-                if not move_play_to_expired(oco_path):
+                if not move_play_to_expired(new_path):
                     success = False
                     logging.error(f"Failed to move OCO trigger to expired: {oco_trigger}")
                     display.error(f"Failed to move OCO trigger to expired: {oco_trigger}")
             except Exception as e:
                 logging.error(f"Failed to process OCO trigger {oco_trigger}: {e}")
                 display.error(f"Failed to process OCO trigger {oco_trigger}: {e}")
+                success = False
+            continue
+
+        # 2) If trigger is PENDING-OPENING, cancel broker order and move to TEMP
+        pending_opening_path = os.path.join(plays_base_dir, 'pending-opening', oco_trigger)
+        if os.path.exists(pending_opening_path):
+            try:
+                # Load play to get order_id
+                with open(pending_opening_path, 'r') as f:
+                    pending_play = json.load(f)
+
+                order_id = pending_play.get('status', {}).get('order_id')
+                if not order_id:
+                    logging.warning(f"OCO pending-opening play missing order_id, moving to TEMP: {oco_trigger}")
+                    move_play_to_temp(pending_opening_path)
+                    continue
+
+                client = get_alpaca_client()
+                try:
+                    order = client.get_order_by_id(order_id)
+                except Exception as e:
+                    logging.error(f"Failed to fetch order for OCO pending-opening play {oco_trigger}: {e}")
+                    display.error(f"Failed to fetch order for OCO pending-opening play {oco_trigger}: {e}")
+                    success = False
+                    continue
+
+                order_status = getattr(order, 'status', None) or order.get('status') if isinstance(order, dict) else None
+
+                # If already filled, do not recycle; let normal flow handle it
+                if order_status == 'filled':
+                    logging.warning(f"OCO pending-opening play already filled, cannot recycle: {oco_trigger}")
+                    display.warning(f"OCO pending-opening play already filled, cannot recycle: {oco_trigger}")
+                    success = False
+                    continue
+
+                # Attempt to cancel the order
+                cancel_success = False
+                try:
+                    # Prefer explicit cancel by id; fall back if SDK differs
+                    if hasattr(client, 'cancel_order_by_id'):
+                        client.cancel_order_by_id(order_id)
+                        cancel_success = True
+                    elif hasattr(client, 'cancel_order'):
+                        client.cancel_order(order_id)
+                        cancel_success = True
+                    else:
+                        logging.error("Alpaca client has no cancel_order[_by_id] method")
+                except Exception as e:
+                    logging.error(f"Failed to cancel OCO pending-opening order {order_id} for {oco_trigger}: {e}")
+                    display.error(f"Failed to cancel OCO pending-opening order for {oco_trigger}")
+
+                if cancel_success:
+                    logging.info(f"Cancelled pending-opening OCO order {order_id} for {oco_trigger}")
+                    display.info(f"Cancelled pending-opening OCO order for {oco_trigger}")
+                    # Move the play to TEMP for recycling
+                    move_play_to_temp(pending_opening_path)
+                else:
+                    # If cancel did not throw but not confirmed, still try to move cautiously if not filled
+                    if order_status in ['canceled', 'expired', 'rejected']:
+                        move_play_to_temp(pending_opening_path)
+                        logging.info(f"Order already {order_status}. Moved OCO pending-opening play to TEMP: {oco_trigger}")
+                        display.info(f"Order already {order_status}. Moved OCO pending-opening play to TEMP: {oco_trigger}")
+                    else:
+                        success = False
+                        logging.error(f"Could not cancel OCO pending-opening play: {oco_trigger}")
+                        display.error(f"Could not cancel OCO pending-opening play: {oco_trigger}")
+            except Exception as e:
+                logging.error(f"Failed to recycle OCO pending-opening play {oco_trigger}: {e}")
+                display.error(f"Failed to recycle OCO pending-opening play {oco_trigger}: {e}")
                 success = False
     
     # Handle OTO triggers (move from temp to new)
@@ -2018,6 +2129,40 @@ def handle_conditional_plays(play, play_file):
     display.info(f"Conditional OCO / OTO plays handled for {play_file}")
     
     return success
+
+def reload_oco_peers(play, play_file):
+    """Optionally reload OCO peers from TEMP to NEW after this play is closed.
+
+    Controlled by config: options_swings.conditional_plays.reload_oco_peers (default False).
+    Only moves plays that currently exist in the TEMP folder.
+    """
+    try:
+        if not config.get('options_swings', 'conditional_plays', 'reload_oco_peers', default=False):
+            return
+
+        oco_triggers = play.get('conditional_plays', {}).get('OCO_triggers', [])
+        if not oco_triggers:
+            return
+
+        plays_base_dir = os.path.abspath(os.path.dirname(os.path.dirname(play_file)))
+        reloaded = []
+        for oco_trigger in oco_triggers:
+            temp_path = os.path.join(plays_base_dir, 'temp', oco_trigger)
+            if os.path.exists(temp_path):
+                try:
+                    move_play_to_new(temp_path)
+                    reloaded.append(oco_trigger)
+                except Exception as e:
+                    logging.error(f"Failed to auto-reload OCO peer {oco_trigger}: {e}")
+                    display.error(f"Failed to auto-reload OCO peer {oco_trigger}: {e}")
+
+        if reloaded:
+            summary = ", ".join(reloaded)
+            logging.info(f"OCO auto-reload: moved from TEMP->NEW: [{summary}]")
+            display.info(f"OCO auto-reload: TEMP->NEW for {len(reloaded)} play(s): [{summary}]")
+    except Exception as e:
+        logging.error(f"Error in reload_oco_peers: {e}")
+        display.error(f"Error in reload_oco_peers: {e}")
 
 def validate_bid_price(bid_price, symbol, fallback_price):
     """
@@ -2248,6 +2393,8 @@ def manage_pending_plays(plays_dir, single_play=None):
                                 play['status']['position_exists'] = False
                                 save_play(play, play_file)
                                 move_play_to_closed(play_file)
+                                # Optionally auto-reload OCO peers from TEMP to NEW
+                                reload_oco_peers(play, play_file)
                                 logging.info(f"Closing order filled and position closed, moved to closed: {play_file}")
                                 display.success(f"Closing order filled and position closed, moved to closed: {play_file}")
                                 if single_play:
@@ -2259,6 +2406,8 @@ def manage_pending_plays(plays_dir, single_play=None):
                                     play['status']['position_exists'] = False
                                     save_play(play, play_file)
                                     move_play_to_closed(play_file)
+                                    # Optionally auto-reload OCO peers from TEMP to NEW
+                                    reload_oco_peers(play, play_file)
                                     logging.info(f"Position confirmed closed, moved to closed: {play_file}")
                                     display.success(f"Position confirmed closed, moved to closed: {play_file}")
                                     if single_play:

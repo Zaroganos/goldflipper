@@ -129,6 +129,7 @@ options_swings:
 
   conditional_plays:
     enabled: true
+    reload_oco_peers: false
 
   play_types:                       # Types of plays to create
     - SIMPLE
