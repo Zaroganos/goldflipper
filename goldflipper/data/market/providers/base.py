@@ -79,6 +79,11 @@ class MarketDataProvider(ABC):
     ) -> Dict[str, pd.DataFrame]:
         """Get option chain data"""
         pass
+    
+    @abstractmethod
+    def get_option_expirations(self, symbol: str) -> List[str]:
+        """Get available option expiration dates (YYYY-MM-DD) for a symbol"""
+        pass
         
     @abstractmethod
     def get_option_greeks(

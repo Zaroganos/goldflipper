@@ -182,3 +182,13 @@ class YFinanceProvider(MarketDataProvider):
             'vega': 0.0,
             'rho': 0.0
         }
+
+    def get_option_expirations(self, symbol: str) -> list:
+        """Return available option expirations from yfinance."""
+        try:
+            ticker = yf.Ticker(symbol)
+            dates = ticker.options or []
+            return list(dates)
+        except Exception as e:
+            logging.error(f"YFinance: error getting expirations for {symbol}: {str(e)}")
+            return []

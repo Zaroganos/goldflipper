@@ -362,9 +362,16 @@ auto_play_creator:
     - PUT
     - MIX
   expiration_days: 7                # Default expiration in days for test plays
-  entry_buffer: 0.50                # Entry price buffer for test plays (e.g., ±$0.01)
-  take_profit_pct: 1.5              # Default take profit percentage
-  stop_loss_pct: 0.75                # Default stop loss percentage
+  entry_buffer: 0.50                # Entry price buffer for test plays (fraction, e.g., 0.50 = ±50%)
+  # Defaults for Option 1 (Pure Execution Testing)
+  take_profit_pct: 1.5              # Default take profit percentage (pure execution)
+  stop_loss_pct: 0.75               # Default stop loss percentage (pure execution)
+  # Defaults for Option 2 (Simulate Real Plays)
+  simulate_real:
+    # Optional overrides used only in Simulate Real Plays mode
+    take_profit_pct: 50.0
+    stop_loss_pct: 30.0
+    # entry_buffer: 0.25           # Uncomment to override entry jitter for simulate_real
   test_symbols:                     # Symbols to use for test plays
     - SPY
     - QQQ
@@ -498,6 +505,22 @@ market_data_providers:
       stock_price: 5    # Seconds
       option_quote: 5   # Seconds
       
+
+####################################################################################################
+# Watchlist Settings
+####################################################################################################
+# List of ticker symbols that tools (like auto_play_creator) can use
+watchlist:
+  - SPY
+  - QQQ
+  - AAPL
+  - TSLA
+  - NVDA
+  - MSFT
+  - GOOGL
+  - AMZN
+  - BABA
+  - GME
 
 ####################################################################################################
 # MULTI-MARKET DATA DISPLAY SETTINGS

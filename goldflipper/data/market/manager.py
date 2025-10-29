@@ -146,11 +146,26 @@ class MarketDataManager:
             self.logger.error(f"No option quote available for {contract_symbol}")
             display.error(f"No option quote available for {contract_symbol}")
             return None
-            
         except Exception as e:
             self.logger.error(f"Error getting option quote for {contract_symbol}: {str(e)}")
             display.error(f"Error getting option quote for {contract_symbol}: {str(e)}")
             return None
+            
+    def get_option_expirations(self, symbol: str) -> Optional[list]:
+        """Get available option expirations with cycle caching and fallback"""
+        try:
+            cache_key = f"expirations:{symbol}"
+            if cached := self.cache.get(cache_key):
+                return cached
+
+            expirations = self._try_providers('get_option_expirations', symbol)
+            if expirations:
+                self.cache.set(cache_key, expirations)
+                return expirations
+            return []
+        except Exception as e:
+            self.logger.error(f"Error getting expirations for {symbol}: {str(e)}")
+            return []
         
     def start_new_cycle(self):
         """Start a new market data cycle, clearing the cache"""

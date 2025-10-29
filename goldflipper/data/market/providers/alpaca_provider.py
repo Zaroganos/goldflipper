@@ -729,3 +729,46 @@ class AlpacaProvider(MarketDataProvider):
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
                 
         return df
+
+    def get_option_quote(self, contract_symbol: str):
+        """Get single option quote for a specific contract symbol.
+
+        Returns a DataFrame with standardized columns or an empty DataFrame if unavailable.
+        """
+        try:
+            data = self._latest_option_data.get(contract_symbol, {})
+            quote = data.get('quote', {})
+            trade = data.get('trade', {})
+
+            # Build a single-row DataFrame using whatever we have; fill unknowns with defaults
+            row = {
+                'symbol': contract_symbol,
+                'strike': 0.0,
+                'expiration': '',
+                'type': 'call' if 'C' in contract_symbol else 'put',
+                'bid': quote.get('bid_price', 0.0),
+                'ask': quote.get('ask_price', 0.0),
+                'last': trade.get('price', 0.0),
+                'volume': trade.get('size', 0),
+                'open_interest': 0,
+                'implied_volatility': 0.0,
+                'delta': 0.0,
+                'gamma': 0.0,
+                'theta': 0.0,
+                'vega': 0.0,
+                'rho': 0.0
+            }
+
+            df = pd.DataFrame([row])
+            return self.standardize_columns(df)
+        except Exception as e:
+            logging.error(f"Error getting option quote for {contract_symbol}: {str(e)}")
+            # Return empty DataFrame on failure; manager will try fallback providers
+            return pd.DataFrame()
+
+    def get_option_expirations(self, symbol: str) -> list:
+        """Provide an empty list for expirations (manager will use other providers)."""
+        try:
+            return []
+        except Exception:
+            return []

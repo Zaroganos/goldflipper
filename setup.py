@@ -78,7 +78,7 @@ setup(
     ],
 
     # Keywords related to the project (useful for PyPI and search)
-    keywords='algorithmic trading alpaca finance stocks investment',
+    keywords='algorithmic trading alpaca finance stocks options',
 
     # Project URLs for additional resources
     project_urls={

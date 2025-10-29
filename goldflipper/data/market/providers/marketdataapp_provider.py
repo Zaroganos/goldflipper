@@ -242,6 +242,29 @@ class MarketDataAppProvider(MarketDataProvider):
             logging.error(f"Failed to get option chain for {symbol}: {response.status_code}")
             raise ValueError(f"Error fetching option chain for {symbol}")
 
+    def get_option_expirations(self, symbol: str) -> list:
+        """Get available option expiration dates using MarketDataApp expirations endpoint."""
+        try:
+            url = f"{self.base_url}/options/expirations/{symbol}/"
+            response = self._make_request(url)
+            if response.status_code in (200, 203):
+                data = response.json()
+                if data.get('s') == 'ok':
+                    return data.get('expirations', [])
+                if data.get('s') == 'no_data':
+                    return []
+                logging.error(f"MarketDataApp: Error status for expirations {symbol}: {data.get('errmsg', 'Unknown error')}")
+                return []
+            elif response.status_code == 204:
+                logging.warning(f"MarketDataApp: No cached expirations for {symbol}")
+                return []
+            else:
+                logging.error(f"MarketDataApp: Failed to get expirations for {symbol}: {response.status_code}")
+                return []
+        except Exception as e:
+            logging.error(f"Error getting expirations for {symbol}: {str(e)}")
+            return []
+
     def get_option_greeks(
         self,
         option_symbol: str
