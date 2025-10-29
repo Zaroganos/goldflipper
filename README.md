@@ -113,7 +113,7 @@ pip install -e .
 Goldflipper offers multiple interfaces and execution modes:
 
 #### 1. **TUI Interface (Recommended)**
-The modern Text User Interface provides an intuitive way to interact with all system features:
+The Text User Interface provides an intuitive way to interact with all system features:
 - Double-click the Goldflipper desktop shortcut, or:
 ```cmd
 python goldflipper\goldflipper_tui.py
@@ -125,7 +125,7 @@ python goldflipper\goldflipper_tui.py
 
 ## Key Features
 
-### 🎯 **Core Trading System**
+### 🎯 **Trading System**
 - **Semi-autonomous options trading** with rules-based execution
 - **Advanced play management** with state-based workflow (new → pending → open → closed)
 - **Multiple order types**: Market, limit at bid/ask/mid/last, contingency orders
@@ -133,13 +133,13 @@ python goldflipper\goldflipper_tui.py
 - **Real-time monitoring** with continuous play evaluation
 
 ### 📊 **Market Data & Analysis**
-- **Multiple data providers** with automatic failover:
-- **Complete Options Greeks calculations**: Delta, Gamma, Theta, Vega, Rho, and 15+ advanced Greeks
+- **Multiple data providers** with automatic failover
+- **Options Greeks calculations**: Delta, Gamma, Theta, Vega, Rho, and 15+ advanced Greeks
 - **Technical indicators**: EMA, MACD, TTM Squeeze, and custom indicators
 - **Interactive charting** with candlestick charts and overlay indicators
 
-### 🖥️ **User Interfaces**
-- **Modern TUI (Text User Interface)** built with Textual framework
+### 🖥️ **User Experience**
+- **Text User Interface** built with Textual framework
 - **Console mode** for direct system interaction
 - **Web-based trade logger** with Dash framework for analytics
 - **Windows service integration** for background operation
@@ -202,7 +202,7 @@ watchdog:
   check_interval: 30
 ```
 
-### **Advanced Settings**
+### **More Settings**
 - **Trading parameters**: Risk management, position sizing
 - **Market hours**: Custom trading session definitions
 - **Logging levels**: Debug, info, warning, error
