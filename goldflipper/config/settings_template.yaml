@@ -129,7 +129,7 @@ options_swings:
 
   conditional_plays:
     enabled: true
-    reload_oco_peers: false
+    reload_oco_peers: true
 
   play_types:                       # Types of plays to create
     - SIMPLE
@@ -142,7 +142,7 @@ options_swings:
   take_profit_pct: 50.0              # Default take profit percentage
   stop_loss_pct: 25.5                # Default stop loss percentage
 
-# Kegan's Strategy: Options Spreads
+# K's Strategy: Options Spreads
 spreads:
   enabled: false
 
@@ -151,7 +151,7 @@ spreads:
 ####################################################################################################
 trading:
   default_symbol: 'SPY'              # Default trading symbol
-  default_quantity: 100              # Default contract quantity
+  default_quantity: 1                # Default contract quantity
 
 ####################################################################################################
 # Market Data Settings
@@ -220,13 +220,13 @@ indicators:
     - macd_signals
 
 ####################################################################################################
-# Strategy Settings *USED*
+# Strategy Settings
 ####################################################################################################
 entry_strategy:
-  buffer: 0.25                       # Price buffer for entry points (default is ±$0.05). ENABLED.
+  buffer: 0.25                       # Price buffer for entry points (default is ±$0.05)
 
 ####################################################################################################
-# Play Management (Position Management) *USED*
+# Play Management (Position Management)
 ####################################################################################################
 monitoring:
   max_retries: 3                     # Maximum retry attempts for operations
@@ -499,7 +499,6 @@ market_data_providers:
     update_interval: 1.0  # Seconds between real-time data updates
     max_symbols: 100  # Maximum number of symbols to track simultaneously
 
-  # NEW ADDITIONS - Add these while keeping all existing code:
   fallback:
     enabled: true
     order: ["marketdataapp", "yfinance"]  # Provider priority order
