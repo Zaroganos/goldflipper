@@ -19,26 +19,13 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from goldflipper.utils.json_fixer import PlayFileFixer
 from goldflipper.utils.display import TerminalDisplay as display
+from goldflipper.utils.logging_setup import configure_logging
 
 def setup_logging(verbose=False):
-    """Configure logging with appropriate verbosity."""
+    """Configure logging with rotation for this tool."""
     log_level = logging.DEBUG if verbose else logging.INFO
-    
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
-    
-    # Create a file handler for a log file
-    log_dir = Path(__file__).parent.parent.parent / 'logs'
-    log_dir.mkdir(exist_ok=True)
-    
-    file_handler = logging.FileHandler(log_dir / 'json_fixer.log')
-    file_handler.setLevel(log_level)
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    
-    # Add the file handler to the root logger
-    logging.getLogger().addHandler(file_handler)
+    log_path = Path(__file__).parent.parent.parent / 'logs' / 'json_fixer.log'
+    configure_logging(console_mode=False, service_mode=False, log_file=log_path, level_override=log_level)
 
 def run_fixer(verbose=False, specific_file=None):
     """Run the JSON fixer with optional parameters."""

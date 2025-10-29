@@ -4,6 +4,7 @@ from datetime import datetime
 import sys
 import os
 import requests
+from goldflipper.utils.logging_setup import configure_logging
 
 # Add project root to path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -212,7 +213,7 @@ def run_startup_tests():
     return test_results
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    configure_logging(console_mode=True)
     results = run_startup_tests()
     
     print("\nStartup Self-Test Results:")

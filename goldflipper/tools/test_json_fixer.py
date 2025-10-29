@@ -16,12 +16,10 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from goldflipper.utils.json_fixer import PlayFileFixer
+from goldflipper.utils.logging_setup import configure_logging
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+configure_logging(console_mode=True)
 logger = logging.getLogger(__name__)
 
 def create_test_environment():

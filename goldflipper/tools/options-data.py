@@ -13,12 +13,10 @@ import pandas as pd
 import json
 import time
 from goldflipper.utils.display import TerminalDisplay as display
+from goldflipper.utils.logging_setup import configure_logging
 
 def setup_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+    configure_logging(console_mode=True)
 
 def load_plays(status=None):
     """

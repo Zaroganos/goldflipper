@@ -29,6 +29,7 @@ import sys
 from goldflipper.utils.display import TerminalDisplay as display
 from pathlib import Path
 import win32serviceutil
+from goldflipper.utils.logging_setup import configure_logging
 import win32service
 import win32event
 import servicemanager
@@ -44,27 +45,8 @@ import threading
 # ==================================================
 
 def setup_logging(console_mode=False):
-    """Configure logging with both file and optional console output"""
-    base_dir = Path(__file__).parent.parent
-    log_dir = base_dir / 'logs'
-    log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / 'app_run.log'
-    
-    # Clear existing handlers first
-    root_logger = logging.getLogger()
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-    
-    handlers = [logging.FileHandler(log_file, encoding='utf-8')]
-    
-    if console_mode:
-        handlers.append(logging.StreamHandler(sys.stdout))
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=handlers
-    )
+    """Configure logging using centralized rotating setup."""
+    configure_logging(console_mode=console_mode)
 
 def initialize_system():
     """Initialize the trading system and perform startup checks."""

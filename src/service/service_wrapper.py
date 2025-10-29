@@ -8,6 +8,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 import traceback  # Add this for detailed error tracking
+from goldflipper.utils.logging_setup import configure_logging
 
 class GoldflipperService(win32serviceutil.ServiceFramework):
     _svc_name_ = "GoldflipperService"
@@ -36,15 +37,7 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
         """Set up logging to file and Windows Event Log"""
         import logging
         log_file = self.log_dir / 'service.log'
-        
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file),
-                logging.handlers.NTEventLogHandler(self._svc_name_)
-            ]
-        )
+        configure_logging(service_mode=True, log_file=log_file)
         self.logger = logging.getLogger('GoldflipperService')
         self.logger.info("Logging initialized")
 

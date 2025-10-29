@@ -427,7 +427,11 @@ if __name__ == "__main__":
     import json
     
     # Example of how to use the helper
-    logging.basicConfig(level=logging.INFO)
+    try:
+        from goldflipper.utils.logging_setup import configure_logging
+        configure_logging(console_mode=True)
+    except Exception:
+        logging.basicConfig(level=logging.INFO)
     
     # Load a sample play file for testing
     sample_play_path = os.path.join(

@@ -1,8 +1,9 @@
 from alpaca.data.live import StockDataStream
 import asyncio
 import logging
+from goldflipper.utils.logging_setup import configure_logging
 
-logging.basicConfig(level=logging.DEBUG)
+configure_logging(console_mode=True, level_override=logging.DEBUG)
 
 # Your API credentials
 API_KEY = "PKXATZMQYM3AIMOS9JAE"

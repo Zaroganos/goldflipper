@@ -3,6 +3,7 @@ import json
 import logging
 from pathlib import Path
 import re
+from goldflipper.utils.logging_setup import configure_logging
 
 class PlayFileFixer:
     """Utility for detecting and repairing corrupted play JSON files."""
@@ -367,8 +368,5 @@ def run_fixer():
 
 if __name__ == "__main__":
     # Configure logging when run as standalone script
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+    configure_logging(console_mode=True)
     run_fixer() 

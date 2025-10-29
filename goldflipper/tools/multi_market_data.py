@@ -11,6 +11,7 @@ import time
 import asyncio
 import logging
 import re
+from goldflipper.utils.logging_setup import configure_logging
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -402,7 +403,7 @@ def display_option_comparison(chains: Dict[str, pd.DataFrame], symbol: str, spec
 
 def main():
     # Set up logging
-    logging.basicConfig(level=logging.INFO)
+    configure_logging(console_mode=True)
     
     try:
         comparator = MarketDataComparator()
