@@ -247,13 +247,8 @@ class AutoPlayCreator:
         option_symbol = provider_symbol if provider_symbol and provider_symbol_matches_side(provider_symbol, trade_type) else occ_symbol
         
         # Initialize entry point with non-null values
-        raw_entry_type = random.choice(self.settings.get('order_types', ['market']))
-        if raw_entry_type == 'market':
-            selected_order_type = 'market'
-        else:
-            selected_order_type = random.choice([
-                'limit at bid', 'limit at mid', 'limit at ask', 'limit at last'
-            ])
+        # All buy (entry) orders should be at the bid
+        selected_order_type = 'limit at bid'
 
         entry_point = {
             "stock_price": round(entry_price, 2),
@@ -264,7 +259,8 @@ class AutoPlayCreator:
         # Initialize take profit with non-null values
         take_profit = {
             **tp_values,  # Unpack all TP values
-            "order_type": "market",
+            # All sell (TP) orders should be limit at mid
+            "order_type": "limit at mid",
             "TP_option_prem": 0.0,  # Initialize with 0.0
             "premium_pct": tp_values.get('premium_pct', 0.0),  # Ensure premium_pct exists
             "stock_price": tp_values.get('stock_price', round(entry_price * (1 + ((self.take_profit_pct_sim if sim_mode else self.take_profit_pct)/100)), 2))
@@ -284,7 +280,7 @@ class AutoPlayCreator:
         if stop_loss["SL_type"] == "STOP":
             stop_loss["order_type"] = "market"
         elif stop_loss["SL_type"] == "LIMIT":
-            stop_loss["order_type"] = "limit"
+            stop_loss["order_type"] = "limit at mid"
         
         play = {
             "play_name": self.generate_play_name(option_symbol),
