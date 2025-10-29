@@ -43,6 +43,12 @@ class AutoPlayCreator:
         self.take_profit_pct_sim = sim.get('take_profit_pct', self.take_profit_pct)
         self.stop_loss_pct_sim = sim.get('stop_loss_pct', self.stop_loss_pct)
         
+        # OCO peer set overrides (used only when execution_mode is oco_peer_set)
+        oco = self.settings.get('oco_peer_set', {}) or {}
+        self.entry_buffer_oco = oco.get('entry_buffer', None)
+        self.take_profit_pct_oco = oco.get('take_profit_pct', None)
+        self.stop_loss_pct_oco = oco.get('stop_loss_pct', None)
+        
         # Add execution mode
         self.execution_mode = None  # Will be set later
         
@@ -160,10 +166,22 @@ class AutoPlayCreator:
     def generate_tp_sl_values(self, entry_price, trade_type='CALL'):
         """Generate TP/SL values based on enabled types."""
         enabled_types = self.get_enabled_tp_sl_types()
-        # Choose TP/SL pct based on mode
+        # Choose TP/SL pct based on mode (oco-specific overrides > simulate_real > base)
         sim_mode = self.execution_mode in ('simulate_real', 'oco_peer_set')
-        tp_pct_val = self.take_profit_pct_sim if sim_mode else self.take_profit_pct
-        sl_pct_val = self.stop_loss_pct_sim if sim_mode else self.stop_loss_pct
+        oco_mode = self.execution_mode == 'oco_peer_set'
+        if oco_mode and self.take_profit_pct_oco is not None:
+            tp_pct_val = self.take_profit_pct_oco
+        elif sim_mode:
+            tp_pct_val = self.take_profit_pct_sim
+        else:
+            tp_pct_val = self.take_profit_pct
+
+        if oco_mode and self.stop_loss_pct_oco is not None:
+            sl_pct_val = self.stop_loss_pct_oco
+        elif sim_mode:
+            sl_pct_val = self.stop_loss_pct_sim
+        else:
+            sl_pct_val = self.stop_loss_pct
         # Randomly select how many types to use (at least 1, up to all enabled types)
         num_types = random.randint(1, len(enabled_types))
         selected_types = random.sample(enabled_types, num_types)
@@ -216,9 +234,12 @@ class AutoPlayCreator:
         # Set entry price based on execution mode
         if self.execution_mode == "pure_execution":
             entry_price = current_price
-        else:  # simulate_real
-            # Treat oco_peer_set same as simulate_real for price jitter
-            jitter = self.entry_buffer_sim if self.entry_buffer_sim is not None else self.entry_buffer
+        else:
+            # For oco_peer_set, prefer oco-specific jitter; otherwise use simulate_real override; fallback to base
+            if self.execution_mode == 'oco_peer_set' and getattr(self, 'entry_buffer_oco', None) is not None:
+                jitter = self.entry_buffer_oco
+            else:
+                jitter = self.entry_buffer_sim if self.entry_buffer_sim is not None else self.entry_buffer
             entry_price = current_price * (1 + random.uniform(-jitter, jitter))
         
         # Generate TP/SL values based on enabled types
