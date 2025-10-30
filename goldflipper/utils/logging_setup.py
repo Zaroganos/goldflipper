@@ -12,6 +12,9 @@ try:
 except Exception:
     config = None  # Fallback if config isn't available during certain tool runs
 
+# Track if logging has been configured to prevent basicConfig conflicts
+_logging_configured = False
+
 
 def _get_config_value(*keys, default=None):
     if config is None:
@@ -132,9 +135,37 @@ def configure_logging(
             pass
 
     # Clear existing handlers to avoid duplicates
+    # Properly flush, close, and remove all existing handlers first
     root_logger = logging.getLogger()
+    
+    # Flush and close all existing handlers before removing them
     for existing in root_logger.handlers[:]:
+        try:
+            existing.flush()  # Flush any buffered messages first
+            existing.close()  # Properly close handlers to free resources
+        except Exception:
+            pass  # Ignore errors during cleanup
         root_logger.removeHandler(existing)
+    
+    # Also check and clean up any handlers on child loggers that might cause duplicates
+    # Child loggers should not have their own handlers - they should propagate to root logger
+    # This prevents messages from being logged twice (once by child handler, once by root handler via propagation)
+    # Note: We only remove handlers, not change propagation or levels, to respect library configurations
+    for logger_name in logging.Logger.manager.loggerDict:
+        logger = logging.getLogger(logger_name)
+        if logger.handlers:
+            for handler in logger.handlers[:]:
+                try:
+                    handler.flush()
+                    handler.close()
+                except Exception:
+                    pass
+                logger.removeHandler(handler)
+
+    # Also prevent basicConfig from adding a default handler
+    # by marking that we've already configured logging
+    global _logging_configured
+    _logging_configured = True
 
     formatter = logging.Formatter(fmt)
     for h in handlers:
@@ -147,5 +178,14 @@ def configure_logging(
     # Optional: reduce noise from third-party libraries
     for noisy in ('urllib3', 'yfinance', 'alpaca_trade_api'):
         logging.getLogger(noisy).setLevel(max(logging.WARNING, level))
+
+
+def is_logging_configured() -> bool:
+    """Check if logging has been configured via configure_logging().
+    
+    This can be used to prevent basicConfig from being called after
+    configure_logging has already set up logging.
+    """
+    return _logging_configured
 
 

@@ -303,6 +303,17 @@ class AutoPlayCreator:
         elif stop_loss["SL_type"] == "LIMIT":
             stop_loss["order_type"] = "limit at mid"
         
+        # Enforce explicit defaults: map any plain 'limit' to 'limit at mid'
+        if isinstance(entry_point.get("order_type"), str) and entry_point["order_type"].strip().lower() == "limit":
+            entry_point["order_type"] = "limit at mid"
+        if isinstance(take_profit.get("order_type"), str) and take_profit["order_type"].strip().lower() == "limit":
+            take_profit["order_type"] = "limit at mid"
+        sl_ot = stop_loss.get("order_type")
+        if isinstance(sl_ot, str) and sl_ot.strip().lower() == "limit":
+            stop_loss["order_type"] = "limit at mid"
+        elif isinstance(sl_ot, list) and len(sl_ot) >= 1 and isinstance(sl_ot[0], str) and sl_ot[0].strip().lower() == "limit":
+            stop_loss["order_type"][0] = "limit at mid"
+        
         play = {
             "play_name": self.generate_play_name(option_symbol),
             "symbol": market_data['symbol'],
