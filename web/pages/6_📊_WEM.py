@@ -210,6 +210,51 @@ def _persist_wem_save_to_desktop_setting() -> None:
 if 'newly_added_stocks' not in st.session_state:
     st.session_state.newly_added_stocks = set()
 
+# Define WEM ticker symbol categories
+# Based on WEM Categories.md documentation
+WEM_CATEGORIES = {
+    "Indice": {
+        "description": "Major stock indices",
+        "symbols": ["SPY", "QQQ", "IWM", "VIX"]
+    },
+    "Sectors": {
+        "description": "Sector ETFs (tech, finance, consumers, industrial)",
+        "symbols": ["XLK", "XLF", "XLI", "XLY"]
+    },
+    "Megas": {
+        "description": "Mega market cap stocks (Mag 7)",
+        "symbols": ["META", "MSFT", "NVDA", "GOOGL", "GOOG", "PLTR", "TSLA", "AMZN", "AAPL"]
+    },
+    "Blue Chips": {
+        "description": "High liquid stocks with high OI and low B/A spreads",
+        "symbols": ["AMD", "SPOT", "NFLX", "CVNA", "ASML"]
+    },
+    "Finance": {
+        "description": "Banks and financial companies with tech arm",
+        "symbols": ["V", "PYPL", "SOFI", "COIN", "HOOD", "XYZ"]
+    },
+    "Mid Caps": {
+        "description": "Retail stocks with lower volume and OI, higher B/A spreads",
+        "symbols": ["SHOP", "NKE", "DIS", "DLTR", "DDOG", "CELH", "CMG", "WMT", "SBUX"]
+    },
+    "Growth": {
+        "description": "Fundamentally riskier stocks with stronger projections",
+        "symbols": ["OPEN", "DLO", "RIOT", "VST", "SMR", "SMCI", "INTC", "QS"]
+    },
+    "Chinese": {
+        "description": "Companies based in China in the digital economic space",
+        "symbols": ["BABA", "BIDU", "JD"]
+    },
+    "Health": {
+        "description": "Pharmacy, medicinal, or general public health companies",
+        "symbols": ["LLY", "UNH", "HIMS"]
+    },
+    "Other": {
+        "description": "Industries or stocks that don't fit neatly in primary categories",
+        "symbols": ["RKLB", "ASTS", "RBLX", "CEG", "ARM"]
+    }
+}
+
 # Page configuration
 st.set_page_config(
     page_title="Weekly Expected Moves (WEM)",
@@ -3378,6 +3423,55 @@ def main():
             on_change=_persist_wem_save_to_desktop_setting
         )
         
+        # Category selection for Excel exports (only show if Excel is selected)
+        if export_format == "Excel":
+            st.write("**Category Sheets**")
+            st.caption("Select categories to include as separate sheets in the Excel export")
+            
+            # Initialize session state for selected categories if not exists
+            if 'selected_export_categories' not in st.session_state:
+                st.session_state.selected_export_categories = []
+            
+            # Create a clean list of category names with counts
+            category_options = []
+            category_labels = {}
+            for cat_name, cat_data in WEM_CATEGORIES.items():
+                symbol_count = len(cat_data['symbols'])
+                label = f"{cat_name} ({symbol_count} stocks)"
+                category_options.append(cat_name)
+                category_labels[cat_name] = label
+            
+            # Quick selection buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Select All Categories", key="select_all_categories", help="Enable all category sheets"):
+                    st.session_state.selected_export_categories = list(WEM_CATEGORIES.keys())
+                    st.rerun()
+            with col2:
+                if st.button("Clear Categories", key="clear_categories", help="Disable all category sheets"):
+                    st.session_state.selected_export_categories = []
+                    st.rerun()
+            
+            # Multi-select for categories
+            selected_categories = st.multiselect(
+                "Categories for Export",
+                options=category_options,
+                default=st.session_state.selected_export_categories,
+                format_func=lambda x: category_labels[x],
+                key="category_multiselect",
+                help="Choose which categories to export as separate sheets. Each category will have its own sheet in the Excel file."
+            )
+            
+            # Update session state
+            st.session_state.selected_export_categories = selected_categories
+            
+            # Show selection summary
+            if selected_categories:
+                total_category_symbols = sum(len(WEM_CATEGORIES[cat]['symbols']) for cat in selected_categories)
+                st.caption(f"📊 {len(selected_categories)} categor{'y' if len(selected_categories) == 1 else 'ies'} selected ({total_category_symbols} total symbol positions)")
+            else:
+                st.caption("ℹ️ No categories selected - only main sheet will be exported")
+        
         # Export button (will be handled after data is loaded)
         export_data_requested = st.button("Export Data", help="Export WEM data to file")
         if export_data_requested:
@@ -3586,8 +3680,11 @@ def main():
                             excel_path = f"./data/exports/{timestamp}_export.xlsx"
                             os.makedirs(os.path.dirname(excel_path), exist_ok=True)
                             
+                            # Get selected categories from session state
+                            selected_categories = st.session_state.get('selected_export_categories', [])
+                            
                             try:
-                                export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp)
+                                export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_categories)
                                 # Optionally copy to Desktop
                                 extra_msg = ""
                                 if save_to_desktop_pref and desktop_dir and os.path.isdir(desktop_dir):
@@ -3597,7 +3694,12 @@ def main():
                                         extra_msg = f" and {desktop_xlsx}"
                                     except Exception as copy_err:
                                         logger.warning(f"Failed to copy Excel to Desktop: {copy_err}")
-                                st.success(f"Data exported to {excel_path}{extra_msg}")
+                                
+                                # Build success message with category info
+                                success_msg = f"Data exported to {excel_path}{extra_msg}"
+                                if selected_categories:
+                                    success_msg += f"\n📊 Created {len(selected_categories)} category sheet(s): {', '.join(selected_categories)}"
+                                st.success(success_msg)
                             except Exception as export_error:
                                 logger.exception("Formatted Excel export failed, falling back to basic export")
                                 # Fallback to basic Excel export if formatted export fails
@@ -3763,7 +3865,7 @@ def main():
                             if 'n/a' in status_counts:
                                 st.info(f"➖ {status_counts['n/a']} N/A")
 
-def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
+def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_categories=None):
     """
     Export WEM data to Excel with formatting that matches the WEM 2025 Template.
     
@@ -3772,6 +3874,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
         excel_path: Path where to save the Excel file
         symbols: List of stock symbols
         timestamp: Timestamp string for notes
+        selected_categories: Optional list of category names to export as separate sheets
     """
     from goldflipper.utils.market_holidays import find_previous_friday
     from decimal import Decimal
@@ -4198,6 +4301,177 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp):
         
         # Set row heights
         worksheet.set_default_row(15)  # 15pt row height matching template
+        
+        # Create category sheets if requested
+        if selected_categories:
+            for category_name in selected_categories:
+                if category_name not in WEM_CATEGORIES:
+                    logger.warning(f"Category {category_name} not found in WEM_CATEGORIES, skipping")
+                    continue
+                
+                category_info = WEM_CATEGORIES[category_name]
+                category_symbols = category_info['symbols']
+                
+                # Filter symbols that are in both the main data and the category
+                available_category_symbols = [sym for sym in category_symbols if sym in symbols]
+                
+                if not available_category_symbols:
+                    logger.info(f"No symbols available for category {category_name}, skipping sheet")
+                    continue
+                
+                # Create worksheet for this category with a clean name
+                sheet_name = category_name[:31]  # Excel has 31 char limit for sheet names
+                category_worksheet = workbook.add_worksheet(sheet_name)
+                
+                # Set column widths matching template
+                category_worksheet.set_column(0, 0, 13)  # First column (labels) - wider
+                for i in range(1, len(available_category_symbols) + 1):
+                    category_worksheet.set_column(i, i, 8)  # Stock symbol columns
+                
+                # Determine if we're working with horizontal or vertical layout
+                is_horizontal_cat = isinstance(df.index, pd.Index) and not df.index.name == 'symbol'
+                
+                if is_horizontal_cat:
+                    # Write stock symbols as column headers (row 0) with alternating colors
+                    for col_idx, symbol in enumerate(available_category_symbols):
+                        if symbol in df.columns:
+                            # Alternate column colors
+                            header_fmt = header_format_alt if col_idx % 2 == 1 else header_format
+                            category_worksheet.write(0, col_idx + 1, symbol, header_fmt)
+                    
+                    # Write row labels and data (same metrics as main sheet)
+                    row_idx_cat = 1
+                    for metric_display_name in metric_formats.keys():
+                        # Find the corresponding row in the dataframe
+                        matching_rows = []
+                        
+                        # Try exact match first
+                        if metric_display_name in df.index:
+                            matching_rows = [metric_display_name]
+                        else:
+                            # Try partial match
+                            for idx in df.index:
+                                if metric_display_name.replace(atm_label, 'ATM') in str(idx) or \
+                                   str(idx).replace('ATM (6/13/25)', 'ATM').replace('ATM (dd/mm/yy)', 'ATM') in metric_display_name:
+                                    matching_rows = [idx]
+                                    break
+                        
+                        if matching_rows:
+                            row_data = df.loc[matching_rows[0]]
+                            
+                            # Write row label
+                            category_worksheet.write(row_idx_cat, 0, metric_display_name, row_label_format)
+                            
+                            # Write data for each symbol with alternating column colors
+                            for col_idx, symbol in enumerate(available_category_symbols):
+                                if symbol in row_data.index:
+                                    value = row_data[symbol]
+                                    if pd.notna(value):
+                                        # Check if value is an em-dash (missing data) - use center format
+                                        if isinstance(value, str) and value == '—':
+                                            cell_format = center_format_alt if col_idx % 2 == 1 else center_format
+                                            category_worksheet.write(row_idx_cat, col_idx + 1, value, cell_format)
+                                        else:
+                                            # Apply appropriate formatting with alternating colors
+                                            base_format, alt_format = metric_formats[metric_display_name]
+                                            cell_format = alt_format if col_idx % 2 == 1 else base_format
+                                            
+                                            # Convert percentage strings to numbers for Excel's built-in percentage formats
+                                            if isinstance(value, str) and '%' in value:
+                                                try:
+                                                    percentage_text = value.replace('%', '').strip()
+                                                    # Use Decimal for exact arithmetic to avoid floating point errors
+                                                    percentage_decimal = Decimal(percentage_text)
+                                                    numeric_value = float(percentage_decimal / Decimal('100'))
+                                                    category_worksheet.write(row_idx_cat, col_idx + 1, numeric_value, cell_format)
+                                                except:
+                                                    category_worksheet.write(row_idx_cat, col_idx + 1, value, cell_format)
+                                            else:
+                                                category_worksheet.write(row_idx_cat, col_idx + 1, value, cell_format)
+                        
+                        row_idx_cat += 1
+                    
+                    # Add category notes
+                    notes_row_cat = row_idx_cat + 2
+                    num_cols_cat = len(available_category_symbols) + 1
+                    category_worksheet.merge_range(notes_row_cat, 1, notes_row_cat, num_cols_cat - 1, 'Notes', notes_header_format)
+                    
+                    notes_content_cat = f"Category: {category_name} - {category_info['description']}\n" + \
+                                       f"Generated by Goldflipper WEM Module on {current_date} at {current_time}."
+                    category_worksheet.merge_range(notes_row_cat + 1, 1, notes_row_cat + 5, num_cols_cat - 1, 
+                                                   notes_content_cat, notes_content_format)
+                    
+                    # Freeze panes for category sheet
+                    category_worksheet.freeze_panes(1, 1)
+                    
+                else:  # Vertical layout
+                    # Filter the dataframe to only include category symbols
+                    category_df = df[df['symbol'].isin(available_category_symbols)].copy()
+                    
+                    if category_df.empty:
+                        logger.warning(f"No data found for category {category_name} symbols")
+                        continue
+                    
+                    # Write column headers
+                    for col_idx, col_info in enumerate(wem_df['columns']):
+                        header_fmt = row_label_format
+                        header_name = col_info['headerName']
+                        if 'ATM (' in header_name and header_name != atm_label:
+                            header_name = atm_label
+                        category_worksheet.write(0, col_idx, header_name, header_fmt)
+                    
+                    # Write data rows with alternating row colors
+                    for row_idx_cat, (_, row) in enumerate(category_df.iterrows()):
+                        for col_idx, col_info in enumerate(wem_df['columns']):
+                            field = col_info['field']
+                            if field in row.index:
+                                value = row[field]
+                                if pd.notna(value):
+                                    is_alt_row = row_idx_cat % 2 == 1
+                                    
+                                    if isinstance(value, str) and value == '—':
+                                        cell_format = center_format_alt if is_alt_row else center_format
+                                        category_worksheet.write(row_idx_cat + 1, col_idx, value, cell_format)
+                                    else:
+                                        # Determine format based on field type with alternating colors
+                                        if field in ['wem_points']:
+                                            cell_format = number_format_alt if is_alt_row else number_format
+                                        elif field in ['wem_spread']:
+                                            cell_format = percent_format_alt if is_alt_row else percent_format
+                                        elif field in ['delta_range_pct']:
+                                            cell_format = percent_3dec_format_alt if is_alt_row else percent_3dec_format
+                                        else:
+                                            cell_format = data_format_alt if is_alt_row else data_format
+                                        
+                                        # Convert percentage strings to numbers
+                                        if isinstance(value, str) and '%' in value:
+                                            try:
+                                                percentage_text = value.replace('%', '').strip()
+                                                percentage_decimal = Decimal(percentage_text)
+                                                numeric_value = float(percentage_decimal / Decimal('100'))
+                                                category_worksheet.write(row_idx_cat + 1, col_idx, numeric_value, cell_format)
+                                            except:
+                                                category_worksheet.write(row_idx_cat + 1, col_idx, value, cell_format)
+                                        else:
+                                            category_worksheet.write(row_idx_cat + 1, col_idx, value, cell_format)
+                    
+                    # Add category notes for vertical layout
+                    notes_row_cat = len(category_df) + 2
+                    num_cols_cat = len(wem_df['columns'])
+                    category_worksheet.merge_range(notes_row_cat, 1, notes_row_cat, num_cols_cat - 1, 'Notes', notes_header_format)
+                    
+                    notes_content_cat = f"Category: {category_name} - {category_info['description']}\n" + \
+                                       f"Generated by Goldflipper WEM Module on {current_date} at {current_time}."
+                    category_worksheet.merge_range(notes_row_cat + 1, 1, notes_row_cat + 5, num_cols_cat - 1, 
+                                                   notes_content_cat, notes_content_format)
+                    
+                    # Freeze panes for category sheet
+                    category_worksheet.freeze_panes(1, 0)
+                
+                # Set row heights for category sheet
+                category_worksheet.set_default_row(15)
+                
+                logger.info(f"Created category sheet '{sheet_name}' with {len(available_category_symbols)} symbols")
 
 if __name__ == "__main__":
     main() 
