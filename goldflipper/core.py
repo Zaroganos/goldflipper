@@ -238,30 +238,60 @@ def get_option_data(option_contract_symbol: str) -> Optional[Dict[str, float]]:
 
 def calculate_and_store_premium_levels(play, option_data):
     """Calculate and store TP/SL premium levels in the play data using correct entry price."""
-    # Get entry premium based on entry order type
-    entry_order_type = play.get('entry_point', {}).get('order_type', 'limit at bid')
+    # Determine position side (default to LONG for backward compatibility)
+    position_side = play.get('position_side', 'LONG').upper()
     
-    if entry_order_type == 'limit at bid':
-        entry_premium = option_data.get('bid', 0.0)
-    elif entry_order_type == 'limit at ask':
-        entry_premium = option_data.get('ask', 0.0)
-    elif entry_order_type == 'limit at mid':
-        entry_premium = option_data.get('mid', 0.0)
-    else:  # 'limit at last' or 'market'
-        entry_premium = option_data.get('last', 0.0)
+    # Get entry premium/credit from entry_point (already calculated in open_position)
+    entry_point = play.get('entry_point', {})
+    entry_premium = entry_point.get('entry_credit') or entry_point.get('entry_premium', 0.0)
+    
+    # If not found in entry_point, fall back to calculating from option_data
+    if entry_premium == 0.0:
+        entry_order_type = play.get('entry_point', {}).get('order_type', 'limit at bid')
+        if entry_order_type == 'limit at bid':
+            entry_premium = option_data.get('bid', 0.0)
+        elif entry_order_type == 'limit at ask':
+            entry_premium = option_data.get('ask', 0.0)
+        elif entry_order_type == 'limit at mid':
+            entry_premium = option_data.get('mid', 0.0)
+        else:  # 'limit at last' or 'market'
+            entry_premium = option_data.get('last', 0.0)
     
     if play['take_profit'].get('premium_pct'):
         tp_pct = play['take_profit']['premium_pct'] / 100
-        play['take_profit']['TP_option_prem'] = entry_premium * (1 + tp_pct)
+        if position_side == 'SHORT':
+            # For SHORT: TP when premium decreases (50% means premium drops to 50% of entry)
+            # TP: entry_credit * (1 - profit_target_pct/100)
+            play['take_profit']['TP_option_prem'] = entry_premium * (1 - tp_pct)
+        else:
+            # For LONG: TP when premium increases (standard behavior)
+            play['take_profit']['TP_option_prem'] = entry_premium * (1 + tp_pct)
         
     if play['stop_loss'].get('premium_pct'):
         sl_pct = play['stop_loss']['premium_pct'] / 100
-        play['stop_loss']['SL_option_prem'] = entry_premium * (1 - sl_pct)
+        if position_side == 'SHORT':
+            # For SHORT: SL when premium increases (2x means premium reaches 2x entry)
+            # SL: entry_credit * stop_loss_multiplier
+            # If premium_pct is provided, use it; otherwise use multiplier from config
+            if 'stop_loss_multiplier' in play.get('stop_loss', {}):
+                multiplier = play['stop_loss']['stop_loss_multiplier']
+                play['stop_loss']['SL_option_prem'] = entry_premium * multiplier
+            else:
+                # Use percentage-based calculation inverted
+                play['stop_loss']['SL_option_prem'] = entry_premium * (1 + sl_pct)
+        else:
+            # For LONG: SL when premium decreases (standard behavior)
+            play['stop_loss']['SL_option_prem'] = entry_premium * (1 - sl_pct)
     
     # Add contingency SL premium calculation if it exists
     if play['stop_loss'].get('contingency_premium_pct'):
         contingency_sl_pct = play['stop_loss']['contingency_premium_pct'] / 100
-        play['stop_loss']['contingency_SL_option_prem'] = entry_premium * (1 - contingency_sl_pct)
+        if position_side == 'SHORT':
+            # For SHORT: contingency SL also increases
+            play['stop_loss']['contingency_SL_option_prem'] = entry_premium * (1 + contingency_sl_pct)
+        else:
+            # For LONG: contingency SL decreases
+            play['stop_loss']['contingency_SL_option_prem'] = entry_premium * (1 - contingency_sl_pct)
 
 def calculate_and_store_price_levels(play, entry_stock_price):
     """Calculate and store TP/SL stock price levels in the play data."""
@@ -443,6 +473,9 @@ def evaluate_closing_strategy(symbol, play):
             elif trade_type == "PUT":
                 contingency_loss_condition = last_price >= play['stop_loss']['contingency_SL_stock_price_target']
     
+    # Determine position side (default to LONG for backward compatibility)
+    position_side = play.get('position_side', 'LONG').upper()
+    
     # Check premium-based conditions if available
     option_data = get_option_data(play['option_contract_symbol'])
     if option_data:
@@ -451,17 +484,32 @@ def evaluate_closing_strategy(symbol, play):
         # Check premium-based take profit
         if play['take_profit'].get('premium_pct') is not None:
             tp_target = play['take_profit']['TP_option_prem']
-            profit_condition = profit_condition or (current_premium >= tp_target)
+            if position_side == 'SHORT':
+                # For SHORT: TP when premium decreases (premium <= target)
+                profit_condition = profit_condition or (current_premium <= tp_target)
+            else:
+                # For LONG: TP when premium increases (premium >= target)
+                profit_condition = profit_condition or (current_premium >= tp_target)
 
         # Check premium-based stop loss - combines with stock price condition using OR
         if play['stop_loss'].get('premium_pct') is not None:
             sl_target = play['stop_loss']['SL_option_prem']
-            loss_condition = loss_condition or (current_premium <= sl_target)
+            if position_side == 'SHORT':
+                # For SHORT: SL when premium increases (premium >= target)
+                loss_condition = loss_condition or (current_premium >= sl_target)
+            else:
+                # For LONG: SL when premium decreases (premium <= target)
+                loss_condition = loss_condition or (current_premium <= sl_target)
             
             # Check contingency premium condition if applicable
             if sl_type == 'CONTINGENCY' and play['stop_loss'].get('contingency_premium_pct') is not None:
                 contingency_sl_target = play['stop_loss']['contingency_SL_option_prem']
-                contingency_loss_condition = contingency_loss_condition or (current_premium <= contingency_sl_target)
+                if position_side == 'SHORT':
+                    # For SHORT: contingency SL when premium increases
+                    contingency_loss_condition = contingency_loss_condition or (current_premium >= contingency_sl_target)
+                else:
+                    # For LONG: contingency SL when premium decreases
+                    contingency_loss_condition = contingency_loss_condition or (current_premium <= contingency_sl_target)
 
     # Consider trailing conditions if enabled (premium-based TP1/TP2)
     try:
@@ -575,24 +623,51 @@ def open_position(play, play_file):
         display.error("Failed to get current option premium. Aborting order placement.")
         return False
         
-    # Get entry premium based on entry order type
+    # Determine position side (default to LONG for backward compatibility)
+    position_side = play.get('position_side', 'LONG').upper()
+    
+    # Get entry premium based on entry order type and position side
     entry_order_type = play.get('entry_point', {}).get('order_type', 'limit at bid')
     
-    if entry_order_type == 'limit at bid':
-        entry_premium = option_data.get('bid', 0.0)
-    elif entry_order_type == 'limit at ask':
-        entry_premium = option_data.get('ask', 0.0)
-    elif entry_order_type == 'limit at mid':
-        entry_premium = option_data.get('mid', 0.0)
-    else:  # 'limit at last' or 'market'
-        entry_premium = option_data.get('last', 0.0)
+    # For SHORT positions, we sell premium, so we use ask price (or bid for entry)
+    # For LONG positions, we buy premium, so we use bid price (or ask for entry)
+    if position_side == 'SHORT':
+        # Selling to open: use ask price for entry (we're selling, so we get the ask)
+        if entry_order_type == 'limit at bid':
+            entry_premium = option_data.get('ask', 0.0)  # For SHORT: sell at ask
+        elif entry_order_type == 'limit at ask':
+            entry_premium = option_data.get('ask', 0.0)
+        elif entry_order_type == 'limit at mid':
+            entry_premium = option_data.get('mid', 0.0)
+        else:  # 'limit at last' or 'market'
+            entry_premium = option_data.get('last', 0.0)
+    else:
+        # Buying to open: use bid price for entry (standard behavior)
+        if entry_order_type == 'limit at bid':
+            entry_premium = option_data.get('bid', 0.0)
+        elif entry_order_type == 'limit at ask':
+            entry_premium = option_data.get('ask', 0.0)
+        elif entry_order_type == 'limit at mid':
+            entry_premium = option_data.get('mid', 0.0)
+        else:  # 'limit at last' or 'market'
+            entry_premium = option_data.get('last', 0.0)
         
-    # Store the entry premium in the play data's entry_point object
+    # Store the entry premium/credit in the play data's entry_point object
     if 'entry_point' not in play:
         play['entry_point'] = {}
-    play['entry_point']['entry_premium'] = entry_premium
-    logging.info(f"Entry premium ({entry_order_type}): ${entry_premium:.4f}")
-    display.info(f"Entry premium ({entry_order_type}): ${entry_premium:.4f}")
+    
+    if position_side == 'SHORT':
+        # For SHORT positions, store as entry_credit (premium received)
+        play['entry_point']['entry_credit'] = entry_premium
+        # Also store as entry_premium for backward compatibility
+        play['entry_point']['entry_premium'] = entry_premium
+        logging.info(f"Entry credit ({entry_order_type}): ${entry_premium:.4f} [SHORT position]")
+        display.info(f"Entry credit ({entry_order_type}): ${entry_premium:.4f} [SHORT position]")
+    else:
+        # For LONG positions, store as entry_premium (premium paid)
+        play['entry_point']['entry_premium'] = entry_premium
+        logging.info(f"Entry premium ({entry_order_type}): ${entry_premium:.4f} [LONG position]")
+        display.info(f"Entry premium ({entry_order_type}): ${entry_premium:.4f} [LONG position]")
         
     # Calculate and store TP/SL levels if using premium percentages
     calculate_and_store_premium_levels(play, option_data)
@@ -657,25 +732,40 @@ def open_position(play, play_file):
         order_type = play.get('entry_point', {}).get('order_type', 'limit at bid')  # Default to limit at bid
         is_limit_order = order_type != 'market'
         
+        # Determine order side based on position_side
+        order_side = OrderSide.SELL if position_side == 'SHORT' else OrderSide.BUY
+        
         if is_limit_order:
-            # Get limit price based on order type
-            if order_type == 'limit at bid':
-                limit_price = option_data.get('bid', 0.0)
-            elif order_type == 'limit at ask':
-                limit_price = option_data.get('ask', 0.0)
-            elif order_type == 'limit at mid':
-                limit_price = option_data.get('mid', 0.0)
-            else:  # 'limit at last'
-                limit_price = option_data.get('last', 0.0)
+            # Get limit price based on order type and position side
+            if position_side == 'SHORT':
+                # For SHORT: selling to open, use ask price
+                if order_type == 'limit at bid':
+                    limit_price = option_data.get('ask', 0.0)  # For SHORT: sell at ask
+                elif order_type == 'limit at ask':
+                    limit_price = option_data.get('ask', 0.0)
+                elif order_type == 'limit at mid':
+                    limit_price = option_data.get('mid', 0.0)
+                else:  # 'limit at last'
+                    limit_price = option_data.get('last', 0.0)
+            else:
+                # For LONG: buying to open, use bid price (standard behavior)
+                if order_type == 'limit at bid':
+                    limit_price = option_data.get('bid', 0.0)
+                elif order_type == 'limit at ask':
+                    limit_price = option_data.get('ask', 0.0)
+                elif order_type == 'limit at mid':
+                    limit_price = option_data.get('mid', 0.0)
+                else:  # 'limit at last'
+                    limit_price = option_data.get('last', 0.0)
                 
-            # Apply bid price settings if applicable
-            if order_type == 'limit at bid' and not config.get('orders', 'bid_price_settings', 'entry', default=True):
+            # Apply bid price settings if applicable (for LONG positions only)
+            if position_side == 'LONG' and order_type == 'limit at bid' and not config.get('orders', 'bid_price_settings', 'entry', default=True):
                 limit_price = option_data.get('last', 0.0)
                 logging.info(f"Bid price settings disabled, using last traded price for limit order: ${limit_price:.2f}")
                 display.info(f"Bid price settings disabled, using last traded price for limit order: ${limit_price:.2f}")
             else:
-                logging.info(f"Using {order_type} price for limit order: ${limit_price:.2f}")
-                display.info(f"Using {order_type} price for limit order: ${limit_price:.2f}")
+                logging.info(f"Using {order_type} price for limit order: ${limit_price:.2f} [{position_side}]")
+                display.info(f"Using {order_type} price for limit order: ${limit_price:.2f} [{position_side}]")
                 
             # Round limit price to 2 decimal places
             limit_price = round(limit_price, 2)
@@ -683,22 +773,24 @@ def open_position(play, play_file):
                 symbol=contract.symbol,
                 qty=play['contracts'],
                 limit_price=limit_price,
-                side=OrderSide.BUY,
+                side=order_side,
                 type=OrderType.LIMIT,
                 time_in_force=TimeInForce.DAY,
             )
-            logging.info(f"Creating limit buy order with limit price: ${limit_price:.2f}")
-            display.info(f"Creating limit buy order with limit price: ${limit_price:.2f}")
+            side_str = "sell" if position_side == 'SHORT' else "buy"
+            logging.info(f"Creating limit {side_str} order with limit price: ${limit_price:.2f}")
+            display.info(f"Creating limit {side_str} order with limit price: ${limit_price:.2f}")
         else:
             order_req = MarketOrderRequest(
                 symbol=contract.symbol,
                 qty=play['contracts'],
-                side=OrderSide.BUY,
+                side=order_side,
                 type=OrderType.MARKET,
                 time_in_force=TimeInForce.DAY,
             )
-            logging.info("Creating market buy order")
-            display.info("Creating market buy order")
+            side_str = "sell" if position_side == 'SHORT' else "buy"
+            logging.info(f"Creating market {side_str} order")
+            display.info(f"Creating market {side_str} order")
             
         response = client.submit_order(order_req)
         logging.info(f"Order submitted: {response}")
@@ -747,6 +839,11 @@ def close_position(play, close_conditions, play_file):
         return False
 
     qty = play.get('contracts', 1)  # Default to 1 if not specified
+    
+    # Determine position side (default to LONG for backward compatibility)
+    position_side = play.get('position_side', 'LONG').upper()
+    # For SHORT positions, we BUY to close (instead of SELL to close)
+    close_order_side = OrderSide.BUY if position_side == 'SHORT' else OrderSide.SELL
 
     try:
         # Initialize closing status
@@ -855,17 +952,26 @@ def close_position(play, close_conditions, play_file):
 
             # Build order for take profit if limit order requested
             if play['take_profit'].get('order_type', '').lower().startswith("limit"):
+                # For SHORT positions, adjust limit price to use bid (buying to close)
+                if position_side == 'SHORT':
+                    # For SHORT: buying to close, prefer bid price
+                    if option_data and option_data.get('bid') is not None:
+                        limit_price = option_data['bid']
+                    elif option_data and option_data.get('last') is not None:
+                        limit_price = option_data['last']
+                
                 limit_price = round(limit_price, 2)
                 order_req = LimitOrderRequest(
                     symbol=contract_symbol,
                     qty=qty,
                     limit_price=limit_price,
-                    side=OrderSide.SELL,
+                    side=close_order_side,
                     type=OrderType.LIMIT,
                     time_in_force=TimeInForce.DAY,
                 )
-                logging.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
-                display.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
+                side_str = "buy" if position_side == 'SHORT' else "sell"
+                logging.info(f"Creating take profit limit {side_str} order at ${limit_price:.2f} [{position_side}]")
+                display.info(f"Creating take profit limit {side_str} order at ${limit_price:.2f} [{position_side}]")
                 response = client.submit_order(order_req)
                 
                 # Add PENDING-CLOSING transition for limit orders
@@ -883,8 +989,9 @@ def close_position(play, close_conditions, play_file):
                     symbol_or_asset_id=contract_symbol,
                     close_options=ClosePositionRequest(qty=str(qty))
                 )
-                logging.info("Creating take profit market sell order")
-                display.info("Creating take profit market sell order")
+                side_str = "buy" if position_side == 'SHORT' else "sell"
+                logging.info(f"Creating take profit market {side_str} order [{position_side}]")
+                display.info(f"Creating take profit market {side_str} order [{position_side}]")
                 
                 # Move directly to CLOSED for market orders
                 play['status']['position_exists'] = False
@@ -918,8 +1025,9 @@ def close_position(play, close_conditions, play_file):
                         symbol_or_asset_id=contract_symbol,
                         close_options=ClosePositionRequest(qty=str(qty))
                     )
-                    logging.info("Creating contingency market sell order")
-                    display.info("Creating contingency market sell order")
+                    side_str = "buy" if position_side == 'SHORT' else "sell"
+                    logging.info(f"Creating contingency market {side_str} order [{position_side}]")
+                    display.info(f"Creating contingency market {side_str} order [{position_side}]")
                     
                     # Move directly to CLOSED for market orders
                     play['status']['position_exists'] = False
@@ -974,17 +1082,22 @@ def close_position(play, close_conditions, play_file):
                         logging.warning("Unknown SL order type for CONTINGENCY. Falling back to SL target premium.")
                         limit_price = play['stop_loss']['SL_option_prem']
 
+                    # For SHORT positions, adjust limit price to use bid (buying to close)
+                    if position_side == 'SHORT' and option_data and option_data.get('bid') is not None:
+                        limit_price = option_data['bid']
+                    
                     limit_price = round(limit_price, 2)
                     order_req = LimitOrderRequest(
                         symbol=contract_symbol,
                         qty=qty,
                         limit_price=limit_price,
-                        side=OrderSide.SELL,
+                        side=close_order_side,
                         type=OrderType.LIMIT,
                         time_in_force=TimeInForce.DAY,
                     )
-                    logging.info(f"Creating primary SL limit sell order at ${limit_price:.2f}")
-                    display.info(f"Creating primary SL limit sell order at ${limit_price:.2f}")
+                    side_str = "buy" if position_side == 'SHORT' else "sell"
+                    logging.info(f"Creating primary SL limit {side_str} order at ${limit_price:.2f} [{position_side}]")
+                    display.info(f"Creating primary SL limit {side_str} order at ${limit_price:.2f} [{position_side}]")
                     response = client.submit_order(order_req)
                     
                     # Add PENDING-CLOSING transition for limit orders
@@ -1041,18 +1154,23 @@ def close_position(play, close_conditions, play_file):
                     logging.warning(f"Unrecognized SL order type '{sl_order}' for LIMIT SL type. Falling back to SL target premium.")
                     limit_price = play['stop_loss']['SL_option_prem']
                 
+                # For SHORT positions, adjust limit price to use bid (buying to close)
+                if position_side == 'SHORT' and option_data and option_data.get('bid') is not None:
+                    limit_price = option_data['bid']
+                
                 # Round limit price to 2 decimal places
                 limit_price = round(limit_price, 2)
                 order_req = LimitOrderRequest(
                     symbol=contract_symbol,
                     qty=qty,
                     limit_price=limit_price,
-                    side=OrderSide.SELL,
+                    side=close_order_side,
                     type=OrderType.LIMIT,
                     time_in_force=TimeInForce.DAY,
                 )
-                logging.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
-                display.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
+                side_str = "buy" if position_side == 'SHORT' else "sell"
+                logging.info(f"Creating stop loss limit {side_str} order at ${limit_price:.2f} [{position_side}]")
+                display.info(f"Creating stop loss limit {side_str} order at ${limit_price:.2f} [{position_side}]")
                 response = client.submit_order(order_req)
                 
                 # Add PENDING-CLOSING transition for limit orders
@@ -1065,15 +1183,16 @@ def close_position(play, close_conditions, play_file):
                 logging.info("Play moved to PENDING-CLOSING state for limit SL order")
                 display.info("Play moved to PENDING-CLOSING state for limit SL order")
             
-            # For regular market stop loss
+                # For regular market stop loss
             else:
                 # For SL_type 'STOP' or any other types, use a market order
                 response = client.close_position(
                     symbol_or_asset_id=contract_symbol,
                     close_options=ClosePositionRequest(qty=str(qty))
                 )
-                logging.info("Creating stop loss market sell order")
-                display.info("Creating stop loss market sell order")
+                side_str = "buy" if position_side == 'SHORT' else "sell"
+                logging.info(f"Creating stop loss market {side_str} order [{position_side}]")
+                display.info(f"Creating stop loss market {side_str} order [{position_side}]")
                 
                 # Move directly to CLOSED for market orders
                 play['status']['position_exists'] = False

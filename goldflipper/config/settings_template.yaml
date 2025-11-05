@@ -147,6 +147,25 @@ spreads:
   enabled: false
 
 ####################################################################################################
+# Short Puts Strategy Settings
+####################################################################################################
+short_puts:
+  enabled: true
+  target_dte: 45                        # Target days to expiration
+  dte_range: [35, 49]                  # Acceptable DTE range
+  target_delta: 0.30                    # Target delta for puts
+  delta_tolerance: 0.05                 # Acceptable delta range (±0.05)
+  iv_rank_threshold: 50                 # Minimum IV Rank/Percentile (%)
+  profit_target_pct: 50.0               # Take profit at 50% of premium
+  roll_dte: 21                          # Roll when DTE reaches this
+  max_capital_allocation: 0.50          # Max % of account to use
+  max_notional_leverage: 3.0            # Max notional leverage (3x account)
+  default_symbol: "SPY"                 # Default symbol
+  stop_loss_enabled: true               # Enable 2x stop loss
+  stop_loss_multiplier: 2.0             # Close if premium reaches 2x entry
+  challenge_threshold: 1.5               # Roll if premium reaches 1.5x entry
+
+####################################################################################################
 # Trading Parameters * NOT USED, CONSIDER REMOVING *
 ####################################################################################################
 trading:
