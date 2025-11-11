@@ -14,6 +14,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.append(project_root)
 
 from goldflipper.tools.play_creation_tool import create_option_contract_symbol
+from goldflipper.tools.play_validation import PlayValidator
 from goldflipper.config.config import config
 
 # --- Constants and Fixed Index Ranges ---
@@ -251,18 +252,12 @@ def fix_expiration_date(raw_date, ref_year=None):
     if not date_str:
         return None
 
-    # Get current date for year comparison
-    current_date = datetime.now()
-    
     # If only month and day provided, add current year
     parts = date_str.split('/')
     if len(parts) == 2:
         month, day = int(parts[0]), int(parts[1])
-        # Try current year first
-        target_date = datetime(current_date.year, month, day)
-        # If date has passed, use next year
-        if target_date < current_date:
-            target_date = datetime(current_date.year + 1, month, day)
+        current_year = datetime.now().year
+        target_date = datetime(current_year, month, day)
         return target_date.strftime("%m/%d/%Y")
 
     # Try all possible date formats with priority to MM/DD formats
@@ -288,10 +283,6 @@ def fix_expiration_date(raw_date, ref_year=None):
             elif dt.year < 1900:
                 dt = dt.replace(year=ref_year) if ref_year else dt.replace(year=2000 + dt.year)
                     
-            # If resulting date is in the past, add a year
-            if dt < current_date:
-                dt = dt.replace(year=dt.year + 1)
-                
             return dt.strftime("%m/%d/%Y")
         except ValueError:
             continue
@@ -492,6 +483,15 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     # Modified date handling with error suppression
     raw_exp_date = get_cell(mapping["expiration_date"])
     exp_date = fix_expiration_date(raw_exp_date) or raw_exp_date or ""
+
+    exp_date_obj = None
+    try:
+        exp_date_obj = datetime.strptime(exp_date, "%m/%d/%Y")
+    except Exception:
+        exp_date_obj = None
+
+    if exp_date_obj and exp_date_obj.date() < datetime.now().date():
+        errors.append(f"Row {row_num} ({section}): Expiration date {exp_date} is in the past.")
     
     # Get reference year from expiration date
     ref_year = None
@@ -673,6 +673,11 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Ingest plays from a standardized CSV template.")
     parser.add_argument("csv_file", help="Path to the CSV file containing play data.")
+    parser.add_argument(
+        "--skip-market-validation",
+        action="store_true",
+        help="Skip live market data validation for tickers and option contracts.",
+    )
     args = parser.parse_args()
 
     csv_file_path = args.csv_file
@@ -713,8 +718,11 @@ def main():
         strike_puts = 8  # Updated index for strike price
         print("Warning: Falling back to default strike column index 8 for puts.")
 
+    validator = PlayValidator(enable_market_checks=not args.skip_market_validation)
+
     valid_plays = []
     all_errors = []
+    validation_warnings = []
     created_files = []
     
     # First pass: Create all plays
@@ -722,16 +730,28 @@ def main():
         # Process calls only if calls symbol exists
         if row[CALLS_START + CALLS_ENTRY["symbol"]].strip():
             play_calls, errors_calls = create_play_from_data("calls", row, calls_headers, CALLS_START, strike_calls, i)
-            if play_calls:
-                valid_plays.append(("calls", play_calls))
             all_errors.extend(errors_calls)
+
+            if play_calls:
+                validation_result = validator.validate_play(play_calls, f"Row {i} (calls)")
+                all_errors.extend(validation_result.errors)
+                validation_warnings.extend(validation_result.warnings)
+
+                if not errors_calls and validation_result.is_valid:
+                    valid_plays.append(("calls", play_calls))
         
         # Process puts only if puts symbol exists
         if dynamic_puts_start + PUTS_ENTRY["symbol"] < len(row) and row[dynamic_puts_start + PUTS_ENTRY["symbol"]].strip():
             play_puts, errors_puts = create_play_from_data("puts", row, puts_headers, dynamic_puts_start, strike_puts, i)
-            if play_puts:
-                valid_plays.append(("puts", play_puts))
             all_errors.extend(errors_puts)
+
+            if play_puts:
+                validation_result = validator.validate_play(play_puts, f"Row {i} (puts)")
+                all_errors.extend(validation_result.errors)
+                validation_warnings.extend(validation_result.warnings)
+
+                if not errors_puts and validation_result.is_valid:
+                    valid_plays.append(("puts", play_puts))
 
     # Second pass: Process OCO and OSO relationships
     # Group plays by OCO numbers (cross-section: calls and puts together)
@@ -798,10 +818,15 @@ def main():
         created_files.append(filepath)
 
     if all_errors:
-        print("\nError Summary (last up to 10 messages):")
-        for err in all_errors[-10:]:
+        print("\nError Summary (last up to 20 messages):")
+        for err in all_errors[-20:]:
             print(err)
-    
+
+    if validation_warnings:
+        print("\nValidation warnings (up to 20 shown):")
+        for warning in validation_warnings[-20:]:
+            print(warning)
+
     if all_errors:
         user_input = input("\nErrors/warnings were found during ingestion. Proceed with valid plays? (Y/N): ").strip().upper()
         if user_input != "Y":

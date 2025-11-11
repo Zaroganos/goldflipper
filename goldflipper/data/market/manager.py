@@ -138,7 +138,9 @@ class MarketDataManager:
                     'mid': mid,
                     'premium': last,  # Keep for backward compatibility, but will be replaced
                     'delta': quote.iloc[0].get('delta', 0.0),
-                    'theta': quote.iloc[0].get('theta', 0.0)
+                    'theta': quote.iloc[0].get('theta', 0.0),
+                    'volume': quote.iloc[0].get('volume', 0.0),
+                    'open_interest': quote.iloc[0].get('open_interest', 0.0)
                 }
                 self.cache.set(cache_key, result)
                 return result

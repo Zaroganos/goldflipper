@@ -173,14 +173,7 @@ def get_stock_price(symbol: str) -> Optional[float]:
     market_data = get_market_data_manager()  # Use singleton instance
     cache_key = f"stock_price:{symbol}"
     cached = market_data.cache.get(cache_key)
-    '''START DEBUG - Remove after testing
-    if cached:
-        logging.debug(f"CACHE HIT: Stock price for {symbol}")
-        display.info(f"CACHE HIT: Stock price for {symbol}")
-    else:
-        logging.debug(f"CACHE MISS: Fetching stock price for {symbol}")
-        display.info(f"CACHE MISS: Fetching stock price for {symbol}")
-    END DEBUG'''
+
     if cached:
         return cached
         
@@ -205,14 +198,7 @@ def get_option_data(option_contract_symbol: str) -> Optional[Dict[str, float]]:
     market_data = get_market_data_manager()  # Use singleton instance
     cache_key = f"option_quote:{option_contract_symbol}"
     cached = market_data.cache.get(cache_key)
-    # START DEBUG - Remove after testing
-    if cached:
-        logging.debug(f"CACHE HIT: Option data for {option_contract_symbol}")
-        display.info(f"CACHE HIT: Option data for {option_contract_symbol}")    
-    else:
-        logging.debug(f"CACHE MISS: Fetching option data for {option_contract_symbol}")
-        display.info(f"CACHE MISS: Fetching option data for {option_contract_symbol}")
-    # END DEBUG
+    
     if cached:
         return cached
     
