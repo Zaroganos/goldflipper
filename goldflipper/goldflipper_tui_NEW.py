@@ -570,6 +570,19 @@ class WelcomeScreen(Screen):
             self.notify("No file selected, upload aborted.")
             return
 
+        # Determine which ingestion tool to use based on filename
+        filename_lower = os.path.basename(file_path).lower()
+        
+        if "shortputs" in filename_lower:
+            ingestion_tool = "short_puts_csv_ingestion_tool.py"
+        elif "trailingstops" in filename_lower:
+            # For now, use standard ingestor for trailing stops
+            # TODO: Create dedicated trailing stops ingestor if needed
+            ingestion_tool = "play_csv_ingestion_tool.py"
+        else:
+            # Default to Option Swings ingestor
+            ingestion_tool = "play_csv_ingestion_tool.py"
+
         # Assume the CSV ingestion tool is located in the 'tools' subfolder.
         current_dir = os.path.dirname(os.path.abspath(__file__))
         tools_dir = os.path.join(current_dir, "tools")
@@ -577,14 +590,14 @@ class WelcomeScreen(Screen):
         if os.name == "nt":  # Windows
             cmd = [
                 "cmd", "/k", "python",
-                os.path.join(tools_dir, "play_csv_ingestion_tool.py"),
+                os.path.join(tools_dir, ingestion_tool),
                 file_path
             ]
             subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
         else:  # Unix-like systems
             cmd = [
                 "gnome-terminal", "--", "python3",
-                os.path.join(tools_dir, "play_csv_ingestion_tool.py"),
+                os.path.join(tools_dir, ingestion_tool),
                 file_path
             ]
             subprocess.Popen(cmd, cwd=tools_dir)

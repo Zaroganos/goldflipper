@@ -220,8 +220,101 @@ class AutoPlayCreator:
         
         return tp_values, sl_values
 
+    def create_short_put_play_data(self, symbol: str):
+        """Create a short put play using automated option selection."""
+        from goldflipper.strategy.short_puts import find_short_put_option
+        from goldflipper.config.config import config
+        
+        # Get short puts configuration
+        short_puts_config = config.get('short_puts', {})
+        target_dte = short_puts_config.get('target_dte', 45)
+        target_delta = short_puts_config.get('target_delta', 0.30)
+        iv_rank_threshold = short_puts_config.get('iv_rank_threshold', 50)
+        profit_target_pct = short_puts_config.get('profit_target_pct', 50.0)
+        stop_loss_enabled = short_puts_config.get('stop_loss_enabled', True)
+        stop_loss_multiplier = short_puts_config.get('stop_loss_multiplier', 2.0)
+        
+        # Find matching short put option
+        option_data = find_short_put_option(
+            symbol,
+            target_dte=target_dte,
+            target_delta=target_delta,
+            iv_rank_threshold=iv_rank_threshold,
+            market_data_manager=self.market_data
+        )
+        
+        if not option_data:
+            raise ValueError(f"No matching short put option found for {symbol}")
+        
+        # Get current stock price
+        current_price = self.market_data.get_stock_price(symbol)
+        if not current_price:
+            raise ValueError(f"Could not get current price for {symbol}")
+        
+        # Entry point for SHORT positions (SELL to open)
+        entry_credit = option_data['ask']  # Use ask price for entry credit
+        
+        entry_point = {
+            "stock_price": round(current_price, 2),
+            "order_type": "limit at ask",  # For SHORT: sell at ask (receive premium)
+            "entry_credit": entry_credit
+        }
+        
+        # Take Profit: 50% of premium (premium decreases)
+        tp_premium_target = entry_credit * (1 - profit_target_pct / 100.0)
+        take_profit = {
+            'premium_pct': profit_target_pct,
+            'order_type': 'limit at bid',  # For SHORT: buy back at bid (close position)
+            'TP_option_prem': tp_premium_target
+        }
+        
+        # Stop Loss: 2x premium (premium increases)
+        stop_loss = None
+        if stop_loss_enabled:
+            sl_premium_target = entry_credit * stop_loss_multiplier
+            stop_loss = {
+                'premium_pct': (stop_loss_multiplier - 1.0) * 100.0,  # Percentage loss
+                'order_type': 'market',  # Market order for stop loss
+                'SL_type': 'STOP',
+                'SL_option_prem': sl_premium_target
+            }
+        
+        # Build play data
+        play = {
+            "play_name": self.generate_play_name(option_data['option_contract_symbol']),
+            "symbol": symbol,
+            "expiration_date": option_data['expiration_date_formatted'],
+            "trade_type": "PUT",
+            "strike_price": option_data['strike_price'],
+            "option_contract_symbol": option_data['option_contract_symbol'],
+            "contracts": 1,
+            "play_expiration_date": option_data['expiration_date_formatted'],
+            "entry_point": entry_point,
+            "take_profit": take_profit,
+            "stop_loss": stop_loss,
+            "play_class": "SIMPLE",
+            "strategy": "Short Puts",
+            "position_side": "SHORT",
+            "creation_date": datetime.now().strftime('%Y-%m-%d'),
+            "status": {
+                "play_status": "NEW",
+                "order_id": "",
+                "order_status": "",
+                "position_exists": False,
+                "last_checked": "",
+                "closing_order_id": "",
+                "closing_order_status": "",
+                "contingency_order_id": "",
+                "contingency_order_status": "",
+                "conditionals_handled": False
+            },
+            "creator": "auto"
+        }
+        
+        return play
+
     def create_play_data(self, market_data, trade_type='CALL'):
-        """Create a single play based on market data."""
+        """Create a single play based on market data (for Option Swings strategy)."""
         current_price = market_data['price']
         options = market_data['calls'] if trade_type == 'CALL' else market_data['puts']
         if options is None or options.empty:
@@ -344,6 +437,9 @@ class AutoPlayCreator:
             "creator": "auto"
         }
         
+        # Set position side for Option Swings (LONG)
+        play['position_side'] = 'LONG'
+        
         return play
         
     def save_play(self, play):
@@ -363,8 +459,15 @@ class AutoPlayCreator:
             
         return filepath
         
-    def create_test_plays(self, num_plays=1, mode="pure_execution"):
-        """Create multiple test plays."""
+    def create_test_plays(self, num_plays=1, mode="pure_execution", strategy="option_swings"):
+        """
+        Create multiple test plays.
+        
+        Args:
+            num_plays: Number of plays to create
+            mode: Execution mode ("pure_execution", "simulate_real", "oco_peer_set")
+            strategy: Strategy type ("option_swings" or "short_puts")
+        """
         self.execution_mode = mode
         created_plays = []
         
@@ -376,42 +479,51 @@ class AutoPlayCreator:
             attempts += 1
             symbol = random.choice(symbols_pool)
 
-            market_data = self.get_market_data(symbol)
-            if not market_data:
-                continue
-
-            trade_types_cfg = self.settings.get('trade_types', ['CALL'])
-            has_calls = market_data.get('calls') is not None and not market_data['calls'].empty
-            has_puts = market_data.get('puts') is not None and not market_data['puts'].empty
-
-            if 'MIX' in trade_types_cfg:
-                available_sides = []
-                if has_calls:
-                    available_sides.append('CALL')
-                if has_puts:
-                    available_sides.append('PUT')
-                if not available_sides:
-                    logging.warning(f"No options available for {symbol}; retrying...")
-                    continue
-                trade_type = random.choice(available_sides)
-            else:
-                desired = trade_types_cfg[0]
-                if desired == 'CALL' and not has_calls and has_puts:
-                    trade_type = 'PUT'
-                elif desired == 'PUT' and not has_puts and has_calls:
-                    trade_type = 'CALL'
-                elif (desired == 'CALL' and has_calls) or (desired == 'PUT' and has_puts):
-                    trade_type = desired
-                else:
-                    logging.warning(f"Desired side {desired} unavailable for {symbol}; retrying...")
-                    continue
-
             try:
-                play = self.create_play_data(market_data, trade_type)
-                filepath = self.save_play(play)
-                created_plays.append(filepath)
-                display.success(f"Created play: {filepath}")
-                logging.info(f"Created play: {filepath}")
+                if strategy == "short_puts":
+                    # Use Short Puts strategy
+                    play = self.create_short_put_play_data(symbol)
+                    filepath = self.save_play(play)
+                    created_plays.append(filepath)
+                    display.success(f"Created Short Puts play: {filepath}")
+                    logging.info(f"Created Short Puts play: {filepath}")
+                else:
+                    # Use Option Swings strategy (existing logic)
+                    market_data = self.get_market_data(symbol)
+                    if not market_data:
+                        continue
+
+                    trade_types_cfg = self.settings.get('trade_types', ['CALL'])
+                    has_calls = market_data.get('calls') is not None and not market_data['calls'].empty
+                    has_puts = market_data.get('puts') is not None and not market_data['puts'].empty
+
+                    if 'MIX' in trade_types_cfg:
+                        available_sides = []
+                        if has_calls:
+                            available_sides.append('CALL')
+                        if has_puts:
+                            available_sides.append('PUT')
+                        if not available_sides:
+                            logging.warning(f"No options available for {symbol}; retrying...")
+                            continue
+                        trade_type = random.choice(available_sides)
+                    else:
+                        desired = trade_types_cfg[0]
+                        if desired == 'CALL' and not has_calls and has_puts:
+                            trade_type = 'PUT'
+                        elif desired == 'PUT' and not has_puts and has_calls:
+                            trade_type = 'CALL'
+                        elif (desired == 'CALL' and has_calls) or (desired == 'PUT' and has_puts):
+                            trade_type = desired
+                        else:
+                            logging.warning(f"Desired side {desired} unavailable for {symbol}; retrying...")
+                            continue
+
+                    play = self.create_play_data(market_data, trade_type)
+                    filepath = self.save_play(play)
+                    created_plays.append(filepath)
+                    display.success(f"Created Option Swings play: {filepath}")
+                    logging.info(f"Created Option Swings play: {filepath}")
             except Exception as e:
                 display.error(f"Error creating play for {symbol}: {e}")
                 logging.error(f"Error creating play for {symbol}: {e}")
@@ -465,6 +577,19 @@ def main():
     try:
         creator = AutoPlayCreator()
         
+        # Present strategy choice
+        print("\nSelect strategy:")
+        print("1. Option Swings (Long)")
+        print("2. Short Puts")
+        
+        while True:
+            strategy_choice = input("\nEnter your choice (1 or 2): ").strip()
+            if strategy_choice in ['1', '2']:
+                break
+            print("Invalid choice. Please enter 1 or 2.")
+        
+        strategy = "short_puts" if strategy_choice == '2' else "option_swings"
+        
         # Present mode options
         print("\nSelect execution mode:")
         print("1. Pure Execution Testing (Entry at current market price)")
@@ -493,9 +618,10 @@ def main():
             except ValueError:
                 print("Please enter a valid number.")
         
-        created_plays = creator.create_test_plays(num_plays, mode)
+        created_plays = creator.create_test_plays(num_plays, mode, strategy)
         
-        display.info(f"\nCreated {len(created_plays)} test plays in {mode} mode:")
+        strategy_name = "Short Puts" if strategy == "short_puts" else "Option Swings"
+        display.info(f"\nCreated {len(created_plays)} test plays ({strategy_name} strategy, {mode} mode):")
         for play in created_plays:
             display.info(f"- {play}")
             

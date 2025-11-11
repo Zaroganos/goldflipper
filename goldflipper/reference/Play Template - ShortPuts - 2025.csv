@@ -1,0 +1,22 @@
+# Short Puts Strategy Template
+# Strategy: Short Puts (Cash-Secured Puts)
+# Entry: SELL to open (receive premium)
+# Exit: BUY to close (TP at 50% premium, SL at 2x premium)
+#
+# Required Fields:
+# - Symbol: Stock ticker (e.g., SPY)
+# - Contracts: Number of contracts
+# - Entry Order Type: Usually "limit at ask" for SELL to open
+# - TP Premium %: Take profit percentage (default: 50%)
+# - SL Multiplier: Stop loss multiplier (default: 2.0) or SL Premium %
+#
+# Optional Fields (uses config defaults if blank):
+# - Target DTE: Target days to expiration (default: 45)
+# - Target Delta: Target delta (default: 0.30)
+# - IV Rank Threshold: Minimum IV Rank % (default: 50)
+#
+# Note: Option selection is automated based on DTE, delta, and IV Rank criteria
+# The tool will automatically find matching put options that meet entry conditions
+#
+Symbol,Contracts,Entry Order Type,TP Premium %,SL Multiplier,SL Premium %,Target DTE,Target Delta,IV Rank Threshold,GTD,Notes
+SPY,1,limit at ask,50,2.0,,45,0.30,50,,Example play

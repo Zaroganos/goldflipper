@@ -20,7 +20,7 @@ from goldflipper.tools.option_data_fetcher import calculate_greeks
 from goldflipper.utils.atomic_io import atomic_write_json
 from goldflipper.strategy.trailing import has_trailing_enabled, update_trailing_levels
 from uuid import UUID
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from goldflipper.data.market.manager import MarketDataManager  # Add this import
 
 # ==================================================
@@ -625,6 +625,15 @@ def open_position(play, play_file):
         
     # Determine position side (default to LONG for backward compatibility)
     position_side = play.get('position_side', 'LONG').upper()
+    
+    # Validate buying power and risk limits for SHORT positions before proceeding
+    if position_side == 'SHORT':
+        from goldflipper.strategy.risk_management import validate_short_put_risk
+        is_valid, error_message = validate_short_put_risk(play)
+        if not is_valid:
+            logging.error(f"Risk validation failed: {error_message}")
+            display.error(f"Risk validation failed: {error_message}")
+            return False
     
     # Get entry premium based on entry order type and position side
     entry_order_type = play.get('entry_point', {}).get('order_type', 'limit at bid')

@@ -229,15 +229,23 @@ This field will be:
 ## Implementation Steps
 
 ### Phase 1: Foundation (Core Infrastructure)
-1. ✅ Add `short_puts` config section to `settings_template.yaml`
+1. Add `short_puts` config section to `settings_template.yaml`
    - Added complete configuration section with all required parameters
-2. ✅ Create `goldflipper/strategy/short_puts.py` module
-   - Implemented: `calculate_dte()`, `calculate_iv_rank()` (stub), `check_entry_conditions()`, `calculate_short_put_risk()`, `should_roll_position()`
-3. ✅ Implement IV Rank calculation function
-   - Function structure created (implementation pending historical data access)
-4. ✅ Implement DTE calculation function
+2. Create `goldflipper/strategy/short_puts.py` module
+   - Implemented: `calculate_dte()`, `calculate_iv_rank()`, `check_entry_conditions()`, `calculate_short_put_risk()`, `should_roll_position()`
+   - All functions are fully implemented
+3. Implement IV Rank calculation function
+   - **CURRENT:** Fully implemented using MarketDataManager (MarketDataApp provider) to sample IV from ATM puts across multiple expiration dates
+   - **APPROXIMATION METHOD:** Uses cross-sectional sampling (current option chain across 12 expirations) - NOT true 1-year historical
+   - **WHY:** Provides practical IV distribution snapshot without requiring 52+ historical API calls
+   - Properly uses the market data abstraction layer instead of direct API calls
+   - Calculates IV Rank as: (Current IV - Min IV) / (Max IV - Min IV) * 100
+   - Handles edge cases: insufficient data, identical IVs, format conversion
+   - Uses MarketDataApp provider as the primary data source (per system configuration)
+   - **NOTE:** True 1-year historical IV Rank is NOT implemented (see "Key Technical Considerations" section for details)
+4. Implement DTE calculation function
    - Fully implemented with support for multiple date formats
-5. ✅ Add `position_side` field handling throughout codebase
+5. Add `position_side` field handling throughout codebase
    - Modified `open_position()`: Detects position_side, uses SELL for SHORT, stores entry_credit
    - Modified `close_position()`: Uses BUY to close for SHORT positions
    - Modified `calculate_and_store_premium_levels()`: Inverts TP/SL calculations for SHORT
@@ -245,42 +253,101 @@ This field will be:
    - All changes maintain backward compatibility (defaults to LONG)
 
 ### Phase 2: Play Creation
-1. ✅ Modify `play_creation_tool.py` to add strategy choice
-2. ✅ Add `build_short_put_play()` method to `PlayBuilder`
-3. ✅ Implement `create_short_put_play_data()` in `auto_play_creator.py`
-4. ✅ Implement option selection logic (DTE + delta + IV Rank)
+1. Modify `play_creation_tool.py` to add strategy choice
+   - **COMPLETED:** Added strategy choice prompt at start of `create_play()`
+   - **COMPLETED:** Modified `PlayBuilder.__init__()` to accept strategy_choice parameter
+   - **COMPLETED:** Modified `build_base_play()` to branch based on strategy choice
+2. Add `build_short_put_play()` method to `PlayBuilder`
+   - **COMPLETED:** Implemented `build_short_put_play()` method that uses `find_short_put_option()`
+   - **COMPLETED:** Automatically selects option matching DTE, delta, and IV Rank criteria
+   - **COMPLETED:** Sets `position_side: "SHORT"` and `entry_credit` for short positions
+   - **COMPLETED:** Added `_add_short_put_tp_sl()` method to configure TP/SL based on strategy rules
+3. Implement `create_short_put_play_data()` in `auto_play_creator.py`
+   - **COMPLETED:** Implemented `create_short_put_play_data()` method that uses `find_short_put_option()`
+   - **COMPLETED:** Creates short put plays with automated option selection based on DTE, delta, and IV Rank
+   - **COMPLETED:** Sets `position_side: "SHORT"` and `entry_credit` for short positions
+   - **COMPLETED:** Automatically configures TP/SL based on strategy rules (50% profit target, 2x stop loss)
+   - **COMPLETED:** Modified `create_test_plays()` to accept strategy parameter ("option_swings" or "short_puts")
+   - **COMPLETED:** Updated `main()` function to prompt for strategy selection before execution mode
+4. Implement option selection logic (DTE + delta + IV Rank)
+   - **COMPLETED:** Implemented `find_short_put_option()` in `short_puts.py`
+   - **COMPLETED:** Function filters expirations by DTE range (35-49)
+   - **COMPLETED:** Calculates delta for all puts using `calculate_greeks()`
+   - **COMPLETED:** Filters by delta tolerance (±0.05 from target 0.30)
+   - **COMPLETED:** Calculates IV Rank and validates against threshold (>50%)
+   - **COMPLETED:** Returns best matching option with all required data
 
 ### Phase 3: Order Execution
-1. ✅ Modify `open_position()` to handle SHORT positions (SELL to open)
-2. ✅ Modify `close_position()` to handle SHORT positions (BUY to close)
-3. ✅ Invert TP/SL premium calculations for SHORT positions
-4. ✅ Add buying power validation before opening
+1. Modify `open_position()` to handle SHORT positions (SELL to open)
+   - **COMPLETED:** Detects position_side, uses OrderSide.SELL for SHORT, stores entry_credit
+2. Modify `close_position()` to handle SHORT positions (BUY to close)
+   - **COMPLETED:** Uses OrderSide.BUY to close for SHORT positions
+3. Invert TP/SL premium calculations for SHORT positions
+   - **COMPLETED:** TP/SL calculations inverted in `calculate_and_store_premium_levels()` and `evaluate_closing_strategy()`
+4. Add buying power validation before opening
+   - **COMPLETED:** Added `validate_short_put_risk()` function and integrated into `open_position()`
+   - **COMPLETED:** Validates buying power availability, capital allocation limits, and notional leverage limits
 
 ### Phase 4: Position Management
-1. ✅ Add DTE calculation to monitoring loop
-2. ✅ Implement rolling logic (`roll_short_put()`)
-3. ✅ Integrate rolling check in `monitor_and_manage_position()`
-4. ✅ Add "challenged" condition detection
+1. Add DTE calculation to monitoring loop
+2. Implement rolling logic (`roll_short_put()`)
+3. Integrate rolling check in `monitor_and_manage_position()`
+4. Add "challenged" condition detection
 
 ### Phase 5: Risk Management
-1. ✅ Implement portfolio exposure tracking
-2. ✅ Add risk limit validation
-3. ✅ Add alerts/warnings when approaching limits
+1. Implement portfolio exposure tracking
+   - **COMPLETED:** Implemented `get_portfolio_exposure()` function that scans OPEN plays and calculates total BP used and notional for SHORT positions
+2. Add risk limit validation
+   - **COMPLETED:** Implemented `validate_short_put_risk()` function that validates buying power, capital allocation, and notional leverage limits
+   - **COMPLETED:** Integrated validation into `open_position()` for SHORT positions
+3. Add alerts/warnings when approaching limits
+   - **PENDING:** Can be added as enhancement if needed (validation currently blocks orders that exceed limits)
 
 ### Phase 6: Testing & Validation
-1. ✅ Test play creation for short puts
-2. ✅ Test order placement (SELL to open)
-3. ✅ Test position monitoring and TP/SL
-4. ✅ Test rolling logic
-5. ✅ Test risk limit enforcement
+1. Test play creation for short puts
+2. Test order placement (SELL to open)
+3. Test position monitoring and TP/SL
+4. Test rolling logic
+5. Test risk limit enforcement
 
 ## Key Technical Considerations
 
 ### IV Rank Calculation
-- **Method:** Percentile rank using 1-year historical IV data
-- **Data Source:** Historical option chain data (may need to fetch from yfinance or Alpaca)
-- **Frequency:** Calculate on-demand when evaluating entry conditions
-- **Fallback:** If historical data unavailable, skip IV Rank check (log warning)
+
+**CURRENT IMPLEMENTATION (Approximation):**
+- **Method:** Cross-sectional IV sampling from current option chain across multiple expirations
+- **How it works:** Samples IV from ATM put options across 12 available expiration dates (typically 4-8 weeks of data)
+- **Data Source:** MarketDataApp current option chain data via MarketDataManager
+- **Limitation:** This is NOT true 1-year historical IV Rank - it's a practical approximation using current market data
+- **Why it works:** Provides a reasonable distribution of IV values across different expiration cycles, giving a snapshot of current IV levels relative to available expirations
+- **Performance:** Fast (single query per expiration, ~12 API calls total)
+- **Fallback:** If insufficient data (< 3 samples), returns None and skips IV Rank check (logs warning)
+
+**TRUE 1-YEAR IV RANK (Not Implemented):**
+- **What's needed:** True 1-year IV Rank requires historical IV data over the past 52 weeks
+- **Data Source Available:** MarketDataApp supports historical option data via `options/quotes/{option_symbol}/?date=YYYY-MM-DD` parameter
+- **Implementation Requirements:**
+  1. **Historical Data Collection Logic:**
+     - For each date in the past year (weekly or daily sampling):
+       - Calculate target expiration date (historical_date + 45 days to get ~45 DTE)
+       - Determine which strike was ATM on that historical date (requires historical stock price)
+       - Construct the OCC option symbol for that strike/expiration
+       - Query that option's IV using the historical `date` parameter
+       - Collect all IV values over the year
+  2. **Technical Challenges:**
+     - **API Calls:** 52+ calls for weekly sampling (or 365 for daily) - significant rate limiting concerns
+     - **Performance:** Each calculation could take 10-30+ seconds
+     - **Caching:** Need to cache historical IV data to avoid recalculating for same symbol repeatedly
+     - **Data Consistency:** Must ensure comparing apples-to-apples (same DTE, same moneyness)
+  3. **What's Already Available:**
+     - MarketDataApp historical option data endpoint exists (see `data_backfill_helper.py` for pattern)
+     - Can query specific option contracts for historical dates
+  4. **Future Implementation:**
+     - Consider implementing with weekly sampling (52 calls) + aggressive caching
+     - Add helper functions to determine target expiration dates for historical dates
+     - Add logic to find ATM options on historical dates (requires historical stock prices)
+     - Cache IV distribution per symbol to avoid recalculation
+- **Note:** Current approximation is sufficient for Phase 1. True 1-year IV Rank can be added as enhancement later if needed.
 
 ### Delta Calculation
 - **Method:** Use existing `calculate_greeks()` function from `option_data_fetcher.py`

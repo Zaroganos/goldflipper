@@ -279,11 +279,18 @@ class FileHandler:
 class PlayBuilder:
     """Handles the construction and validation of option play configurations."""
     
-    def __init__(self):
+    def __init__(self, strategy_choice: str = "1"):
+        """
+        Initialize PlayBuilder.
+        
+        Args:
+            strategy_choice: Strategy choice ("1" for Option Swings, "2" for Short Puts)
+        """
         self.play = {}
         self.settings = self._load_settings()
         self.file_handler = FileHandler()
         self.tp_cache = []  # Cache for storing multiple TP configurations
+        self.strategy_choice = strategy_choice
     
     def _load_settings(self):
         """Load settings from yaml file."""
@@ -327,6 +334,16 @@ class PlayBuilder:
     
     def build_base_play(self):
         """Collect and validate basic play information."""
+        # Branch based on strategy choice
+        if self.strategy_choice == "2":
+            # Short Puts strategy
+            return self.build_short_put_play()
+        else:
+            # Option Swings strategy (existing logic)
+            return self._build_option_swings_play()
+    
+    def _build_option_swings_play(self):
+        """Build Option Swings play (existing LONG strategy)."""
         raw_symbol = get_input(
             "Enter the ticker symbol (e.g., SPY or $SPY): ",
             str,
@@ -359,6 +376,9 @@ class PlayBuilder:
         self._set_play_name()
         self._add_play_class()
         self._add_play_metadata()
+        
+        # Set position side for Option Swings
+        self.play['position_side'] = 'LONG'
 
         return self.play
     
@@ -688,18 +708,94 @@ class PlayBuilder:
         # Initialize empty conditional_plays dict (relationships will be set in edit tool)
         self.play['conditional_plays'] = {}
 
-    def _add_play_metadata(self):
-        """Add strategy, creation date, and status information."""
-        self.play['strategy'] = (
-            'Option Swings' if self.play['play_class'] == 'SIMPLE' else
-            'Branching Brackets Option Swings'
+    def build_short_put_play(self):
+        """Build Short Puts play using automated option selection."""
+        from goldflipper.strategy.short_puts import find_short_put_option
+        from goldflipper.config.config import config
+        from goldflipper.data.market.manager import MarketDataManager
+        
+        TerminalDisplay.header("Short Puts Strategy - Play Creation", show_timestamp=False)
+        
+        # Get symbol (default to SPY if configured)
+        short_puts_config = config.get('short_puts', {})
+        default_symbol = short_puts_config.get('default_symbol', 'SPY')
+        
+        raw_symbol = get_input(
+            f"Enter the ticker symbol (e.g., SPY or $SPY) [default: {default_symbol}]: ",
+            str,
+            validation=lambda x: len(x) > 0,
+            error_message="Ticker symbol cannot be empty.",
+            optional=True
         )
+        
+        if not raw_symbol:
+            raw_symbol = default_symbol
+        
+        symbol = clean_ticker_symbol(raw_symbol)
+        self.play['symbol'] = symbol
+        
+        # Set trade type to PUT for short puts
+        self.play['trade_type'] = 'PUT'
+        
+        # Get number of contracts
+        self._add_contracts()
+        
+        # Find matching short put option
+        TerminalDisplay.info(f"Searching for matching short put option for {symbol}...", show_timestamp=False)
+        market_data_manager = MarketDataManager()
+        
+        target_dte = short_puts_config.get('target_dte', 45)
+        target_delta = short_puts_config.get('target_delta', 0.30)
+        iv_rank_threshold = short_puts_config.get('iv_rank_threshold', 50)
+        
+        option_data = find_short_put_option(
+            symbol,
+            target_dte=target_dte,
+            target_delta=target_delta,
+            iv_rank_threshold=iv_rank_threshold,
+            market_data_manager=market_data_manager
+        )
+        
+        if not option_data:
+            TerminalDisplay.error(f"Could not find a matching short put option for {symbol}. Please check entry conditions.", show_timestamp=False)
+            raise ValueError(f"No matching short put option found for {symbol}")
+        
+        # Populate play with option data
+        self.play['strike_price'] = option_data['strike_price']
+        self.play['expiration_date'] = option_data['expiration_date_formatted']
+        self.play['option_contract_symbol'] = option_data['option_contract_symbol']
+        
+        # Entry point setup for SHORT positions (SELL to open)
+        TerminalDisplay.info("\nSetting Entry Point Parameters:", show_timestamp=False)
+        current_price = market_data_manager.get_stock_price(symbol)
+        
+        self.play['entry_point'] = {
+            'stock_price': current_price,
+            'order_type': 'limit at ask',  # For SHORT: sell at ask (receive premium)
+            'entry_credit': option_data['ask']  # Store credit received (for SHORT positions)
+        }
+        
+        # Set position side to SHORT
+        self.play['position_side'] = 'SHORT'
+        
+        # Set play name
+        self._set_play_name()
+        
+        # Set play class (always SIMPLE for short puts initially)
+        self.play['play_class'] = 'SIMPLE'
+        self.play['conditional_plays'] = {}
+        
+        # Add play metadata
+        self.play['strategy'] = 'Short Puts'
         self.play['creation_date'] = datetime.now().strftime('%Y-%m-%d')
         self.play['creator'] = 'user'
-
-        play_status = 'TEMP' if self.play['play_class'] == 'OTO' else 'NEW'
+        
+        # Set play expiration date (same as option expiration)
+        self.play['play_expiration_date'] = option_data['expiration_date_formatted']
+        
+        # Initialize status
         self.play['status'] = {
-            "play_status": play_status,
+            "play_status": "NEW",
             "order_id": None,
             "order_status": None,
             "position_exists": False,
@@ -710,6 +806,42 @@ class PlayBuilder:
             "contingency_order_status": None,
             "conditionals_handled": False
         }
+        
+        TerminalDisplay.success(f"Short put option selected: {option_data['option_contract_symbol']}", show_timestamp=False)
+        TerminalDisplay.info(f"  Strike: ${option_data['strike_price']}, DTE: {option_data['dte']}, "
+                           f"Delta: {option_data['abs_delta']:.3f}, IV Rank: {option_data['iv_rank']:.1f}%", show_timestamp=False)
+        
+        return self.play
+    
+    def _add_play_metadata(self):
+        """Add strategy, creation date, and status information."""
+        # Only set strategy if not already set (for short puts)
+        if 'strategy' not in self.play:
+            self.play['strategy'] = (
+                'Option Swings' if self.play['play_class'] == 'SIMPLE' else
+                'Branching Brackets Option Swings'
+            )
+        # Only set creation_date and creator if not already set
+        if 'creation_date' not in self.play:
+            self.play['creation_date'] = datetime.now().strftime('%Y-%m-%d')
+        if 'creator' not in self.play:
+            self.play['creator'] = 'user'
+
+        # Only set status if not already set (for short puts)
+        if 'status' not in self.play:
+            play_status = 'TEMP' if self.play['play_class'] == 'OTO' else 'NEW'
+            self.play['status'] = {
+                "play_status": play_status,
+                "order_id": None,
+                "order_status": None,
+                "position_exists": False,
+                "last_checked": None,
+                "closing_order_id": None,
+                "closing_order_status": None,
+                "contingency_order_id": None,
+                "contingency_order_status": None,
+                "conditionals_handled": False
+            }
 
         # Add play expiration date
         self.play['play_expiration_date'] = get_input(
@@ -725,6 +857,46 @@ class PlayBuilder:
             self.play['play_expiration_date'] = self.play['expiration_date']
         
         TerminalDisplay.success(f"Set play expiration date: {self.play['play_expiration_date']}", show_timestamp=False)
+
+    def _add_short_put_tp_sl(self):
+        """Add take profit and stop loss for Short Puts strategy based on configuration."""
+        from goldflipper.config.config import config
+        
+        short_puts_config = config.get('short_puts', {})
+        profit_target_pct = short_puts_config.get('profit_target_pct', 50.0)
+        stop_loss_enabled = short_puts_config.get('stop_loss_enabled', True)
+        stop_loss_multiplier = short_puts_config.get('stop_loss_multiplier', 2.0)
+        
+        entry_credit = self.play['entry_point'].get('entry_credit', 0.0)
+        
+        # Take Profit: 50% of premium (premium decreases)
+        # For SHORT: TP triggers when premium drops to 50% of entry credit
+        tp_premium_target = entry_credit * (1 - profit_target_pct / 100.0)
+        
+        take_profit = {
+            'premium_pct': profit_target_pct,
+            'order_type': 'limit at bid',  # For SHORT: buy back at bid (close position)
+            'TP_option_prem': tp_premium_target
+        }
+        
+        # Add to cache for save() method
+        self.tp_cache = [take_profit]
+        
+        # Stop Loss: 2x premium (premium increases)
+        if stop_loss_enabled:
+            sl_premium_target = entry_credit * stop_loss_multiplier
+            stop_loss = {
+                'premium_pct': (stop_loss_multiplier - 1.0) * 100.0,  # Percentage loss
+                'order_type': 'market',  # Market order for stop loss
+                'SL_type': 'STOP',
+                'SL_option_prem': sl_premium_target
+            }
+            self.play['stop_loss'] = stop_loss
+        else:
+            self.play['stop_loss'] = None
+        
+        TerminalDisplay.info(f"Short Puts TP/SL configured: TP at {profit_target_pct}% of premium, "
+                           f"SL at {stop_loss_multiplier}x premium", show_timestamp=False)
 
     def save(self):
         """Save the play configuration(s)."""
@@ -789,10 +961,30 @@ def create_play():
     
     while True:
         try:
-            builder = PlayBuilder()
+            # Get strategy choice
+            strategy_choice = get_input(
+                "Select strategy:\n1. Option Swings (Long)\n2. Short Puts\nEnter choice (1 or 2) [default: 1]: ",
+                str,
+                validation=lambda x: x in ["1", "2", ""],
+                error_message="Please enter 1 or 2.",
+                optional=True
+            )
+            
+            if not strategy_choice:
+                strategy_choice = "1"  # Default to Option Swings
+            
+            builder = PlayBuilder(strategy_choice=strategy_choice)
             play = builder.build_base_play()
-            builder.add_take_profits()  # Now stores TPs in cache
-            builder.add_stop_loss()
+            
+            # For Short Puts, TP/SL are pre-configured based on strategy rules
+            # For Option Swings, use interactive TP/SL setup
+            if strategy_choice == "2":
+                # Short Puts: Set TP/SL based on strategy configuration
+                builder._add_short_put_tp_sl()
+            else:
+                # Option Swings: Interactive TP/SL setup
+                builder.add_take_profits()  # Now stores TPs in cache
+                builder.add_stop_loss()
             
             if builder.save():
                 # Ask if user wants to create another play
