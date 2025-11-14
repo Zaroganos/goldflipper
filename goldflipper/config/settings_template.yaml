@@ -615,7 +615,7 @@ market_data_display:
         percentage: 2
 
 ####################################################################################################
-# CSV Ingestor Settings -- so far only open_after_creation is used. (more settings may be added later)
+# CSV Ingestor Settings -- not all settings are currently implemented
 ####################################################################################################
 csv_ingestor:
   open_after_creation: false  # Whether to automatically open created JSON files
