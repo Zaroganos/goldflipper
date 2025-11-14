@@ -111,9 +111,11 @@ class PlayValidator:
                         f"{context}: Expiration date (GTE) '{expiration_value}' is less than {self._min_days_warning} days away ({days_until_expiry} days)."
                     )
 
-        # Validate play_expiration_date (GTD) - error if today or past, warning if too soon
+        # Validate play_expiration_date (GTD) - required field, error if missing, today or past, warning if too soon
         play_expiration_value = play.get("play_expiration_date")
-        if play_expiration_value:
+        if not play_expiration_value:
+            result.errors.append(f"{context}: Missing play_expiration_date (GTD). GTD date is required.")
+        else:
             try:
                 play_expiry_dt = datetime.strptime(str(play_expiration_value), "%m/%d/%Y")
                 play_expiry_date_only = play_expiry_dt.date()

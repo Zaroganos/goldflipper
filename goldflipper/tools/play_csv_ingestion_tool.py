@@ -500,20 +500,20 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     except:
         pass
 
-    # Process GTD date with expiration year fallback
+    # Process GTD date - required field, no fallback
     raw_gtd_date = get_cell(4)
     parsed_gtd_date = fix_expiration_date(raw_gtd_date, ref_year=ref_year)
     if parsed_gtd_date:
         gtd_date = parsed_gtd_date
     else:
-        # Fallback to expiration date if GTD parsing fails or is empty
-        gtd_date = exp_date
+        # GTD is required - error if missing or unparseable
+        gtd_date = None
         if raw_gtd_date and raw_gtd_date.strip():
-            # Only warn if there was actually a value that couldn't be parsed
-            errors.append(f"Row {row_num} ({section}): GTD date '{raw_gtd_date}' could not be parsed; using expiration date '{exp_date}' as fallback.")
+            # Value provided but couldn't be parsed
+            errors.append(f"Row {row_num} ({section}): GTD date '{raw_gtd_date}' could not be parsed. GTD date is required.")
         else:
-            # Warn if GTD was empty/missing
-            errors.append(f"Row {row_num} ({section}): GTD date is missing; using expiration date '{exp_date}' as fallback.")
+            # GTD is missing/empty
+            errors.append(f"Row {row_num} ({section}): GTD date is missing. GTD date is required.")
 
     # Generate option contract symbol using the proper method
     option_symbol = create_option_contract_symbol(
