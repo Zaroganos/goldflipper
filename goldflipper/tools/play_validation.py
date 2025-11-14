@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, date
 from typing import Dict, List, Optional, Tuple
 
 from goldflipper.data.market.errors import MarketDataError
@@ -34,12 +34,14 @@ class PlayValidator:
         self,
         market_manager: Optional[MarketDataManager] = None,
         enable_market_checks: bool = True,
+        min_days_warning: Optional[int] = None,
     ) -> None:
         self._symbol_cache: Dict[str, Dict[str, Optional[str]]] = {}
         self._contract_cache: Dict[str, Dict[str, Optional[str]]] = {}
         self._initialization_error: Optional[str] = None
         self._market_manager: Optional[MarketDataManager] = None
         self._enable_market_checks = enable_market_checks
+        self._min_days_warning = min_days_warning
 
         if enable_market_checks:
             try:
@@ -93,6 +95,42 @@ class PlayValidator:
                 )
         else:
             result.errors.append(f"{context}: Missing expiration_date.")
+
+        # Validate expiration_date (GTE) - error if today or past, warning if too soon
+        today = date.today()
+        if expiry_dt is not None:
+            expiry_date_only = expiry_dt.date()
+            if expiry_date_only <= today:
+                result.errors.append(
+                    f"{context}: Expiration date (GTE) '{expiration_value}' is today or in the past."
+                )
+            elif self._min_days_warning is not None:
+                days_until_expiry = (expiry_date_only - today).days
+                if days_until_expiry < self._min_days_warning:
+                    result.warnings.append(
+                        f"{context}: Expiration date (GTE) '{expiration_value}' is less than {self._min_days_warning} days away ({days_until_expiry} days)."
+                    )
+
+        # Validate play_expiration_date (GTD) - error if today or past, warning if too soon
+        play_expiration_value = play.get("play_expiration_date")
+        if play_expiration_value:
+            try:
+                play_expiry_dt = datetime.strptime(str(play_expiration_value), "%m/%d/%Y")
+                play_expiry_date_only = play_expiry_dt.date()
+                if play_expiry_date_only <= today:
+                    result.errors.append(
+                        f"{context}: Play expiration date (GTD) '{play_expiration_value}' is today or in the past."
+                    )
+                elif self._min_days_warning is not None:
+                    days_until_play_expiry = (play_expiry_date_only - today).days
+                    if days_until_play_expiry < self._min_days_warning:
+                        result.warnings.append(
+                            f"{context}: Play expiration date (GTD) '{play_expiration_value}' is less than {self._min_days_warning} days away ({days_until_play_expiry} days)."
+                        )
+            except ValueError:
+                result.errors.append(
+                    f"{context}: Play expiration date (GTD) '{play_expiration_value}' is not MM/DD/YYYY."
+                )
 
         contracts_value = play.get("contracts")
         if contracts_value is None:

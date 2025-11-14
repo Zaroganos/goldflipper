@@ -490,8 +490,8 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     except Exception:
         exp_date_obj = None
 
-    if exp_date_obj and exp_date_obj.date() < datetime.now().date():
-        errors.append(f"Row {row_num} ({section}): Expiration date {exp_date} is in the past.")
+    # Note: Date validation (past/today checks and warnings) is now handled by PlayValidator
+    # Keeping this check here as a pre-validation catch, but PlayValidator will be the authoritative source
     
     # Get reference year from expiration date
     ref_year = None
@@ -502,7 +502,18 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
 
     # Process GTD date with expiration year fallback
     raw_gtd_date = get_cell(4)
-    gtd_date = fix_expiration_date(raw_gtd_date, ref_year=ref_year) or exp_date
+    parsed_gtd_date = fix_expiration_date(raw_gtd_date, ref_year=ref_year)
+    if parsed_gtd_date:
+        gtd_date = parsed_gtd_date
+    else:
+        # Fallback to expiration date if GTD parsing fails or is empty
+        gtd_date = exp_date
+        if raw_gtd_date and raw_gtd_date.strip():
+            # Only warn if there was actually a value that couldn't be parsed
+            errors.append(f"Row {row_num} ({section}): GTD date '{raw_gtd_date}' could not be parsed; using expiration date '{exp_date}' as fallback.")
+        else:
+            # Warn if GTD was empty/missing
+            errors.append(f"Row {row_num} ({section}): GTD date is missing; using expiration date '{exp_date}' as fallback.")
 
     # Generate option contract symbol using the proper method
     option_symbol = create_option_contract_symbol(
@@ -718,7 +729,16 @@ def main():
         strike_puts = 8  # Updated index for strike price
         print("Warning: Falling back to default strike column index 8 for puts.")
 
-    validator = PlayValidator(enable_market_checks=not args.skip_market_validation)
+    # Get date validation config
+    ingestor_config = config.get('csv_ingestor') or {}
+    validation_config = ingestor_config.get('validation', {})
+    date_validation_config = validation_config.get('date_validation', {})
+    min_days_warning = date_validation_config.get('min_days_warning')
+    
+    validator = PlayValidator(
+        enable_market_checks=not args.skip_market_validation,
+        min_days_warning=min_days_warning
+    )
 
     valid_plays = []
     all_errors = []
