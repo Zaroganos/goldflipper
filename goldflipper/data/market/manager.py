@@ -168,6 +168,37 @@ class MarketDataManager:
         except Exception as e:
             self.logger.error(f"Error getting expirations for {symbol}: {str(e)}")
             return []
+
+    def get_next_earnings_date(self, symbol: str):
+        """Get the next upcoming earnings date for a symbol, if supported by the provider.
+
+        Returns a datetime.date or None if unavailable.
+        """
+        try:
+            cache_key = f"earnings_next:{symbol}"
+            if cached := self.cache.get(cache_key):
+                return cached
+
+            # Prefer MarketDataAppProvider if initialized, since it exposes earnings.
+            provider = self.providers.get('marketdataapp')
+            if provider is None:
+                self.logger.info("MarketDataApp provider not available; earnings lookup skipped")
+                return None
+
+            if not hasattr(provider, 'get_next_earnings_date'):
+                self.logger.info("Selected provider does not support earnings endpoint; skipping earnings validation")
+                return None
+
+            self.logger.info(f"Fetching next earnings date for {symbol}")
+            next_date = provider.get_next_earnings_date(symbol)
+
+            if next_date is not None:
+                self.cache.set(cache_key, next_date)
+
+            return next_date
+        except Exception as e:
+            self.logger.error(f"Error getting next earnings date for {symbol}: {str(e)}")
+            return None
         
     def start_new_cycle(self):
         """Start a new market data cycle, clearing the cache"""

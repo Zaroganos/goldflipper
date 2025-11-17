@@ -729,15 +729,17 @@ def main():
         strike_puts = 8  # Updated index for strike price
         print("Warning: Falling back to default strike column index 8 for puts.")
 
-    # Get date validation config
+    # Get validation config (dates, earnings, etc.)
     ingestor_config = config.get('csv_ingestor') or {}
     validation_config = ingestor_config.get('validation', {})
     date_validation_config = validation_config.get('date_validation', {})
+    earnings_validation_config = validation_config.get('earnings_validation', {})
     min_days_warning = date_validation_config.get('min_days_warning')
-    
+
     validator = PlayValidator(
         enable_market_checks=not args.skip_market_validation,
-        min_days_warning=min_days_warning
+        min_days_warning=min_days_warning,
+        earnings_validation_config=earnings_validation_config,
     )
 
     valid_plays = []

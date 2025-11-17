@@ -122,6 +122,70 @@ class MarketDataAppProvider(MarketDataProvider):
             logging.error(f"Failed to get stock price for {symbol}: {response.status_code}")
             raise ValueError(f"Error fetching stock price for {symbol}")
 
+    def get_next_earnings_date(self, symbol: str):
+        """Get the next upcoming earnings report date for a symbol, if available.
+
+        Returns a datetime.date instance for the earliest future earnings report
+        on or after today, or None if no such report is available.
+        """
+        url = f"{self.base_url}/stocks/earnings/{symbol}/"
+
+        # Limit to future calendar by using today's date as the lower bound
+        params = {
+            "from": datetime.utcnow().strftime("%Y-%m-%d"),
+        }
+
+        response = self._make_request(url, params=params)
+
+        if response.status_code in (200, 203):
+            data = response.json()
+            status = data.get("s")
+            if status == "ok":
+                report_dates = data.get("reportDate") or []
+                if not report_dates:
+                    return None
+
+                today = datetime.utcnow().date()
+                next_date = None
+
+                for ts in report_dates:
+                    try:
+                        er_date = datetime.utcfromtimestamp(ts).date()
+                    except Exception:
+                        continue
+
+                    if er_date < today:
+                        continue
+
+                    if next_date is None or er_date < next_date:
+                        next_date = er_date
+
+                return next_date
+
+            if status == "no_data":
+                return None
+
+            logging.error(
+                f"API returned error status for earnings {symbol}: {data.get('errmsg', 'Unknown error')}"
+            )
+            return None
+
+        if response.status_code == 204:
+            logging.warning(f"No cached earnings data available for {symbol}")
+            return None
+        if response.status_code == 429:
+            if "Concurrent request limit reached" in response.text:
+                logging.error("Concurrent request limit (50) reached while fetching earnings")
+            else:
+                logging.error("Daily request limit exceeded while fetching earnings")
+            return None
+        if response.status_code == 402:
+            logging.error("Plan limit reached or feature not available while fetching earnings")
+            return None
+
+        logging.error(f"Failed to get earnings data for {symbol}: {response.status_code}")
+        return None
+
     def get_historical_data(
         self,
         symbol: str,

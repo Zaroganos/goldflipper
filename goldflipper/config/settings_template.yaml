@@ -626,6 +626,11 @@ csv_ingestor:
     date_validation:
       min_days_warning: null  # Warn if expiration_date or play_expiration_date is less than N days out (null/off to disable)
       # Example: min_days_warning: 7  # Warn if dates are less than 7 days away
+    earnings_validation:
+      enabled: false          # Enable/disable upcoming earnings-based validation
+      max_days_before_earnings: 7  # Trigger if earnings occur within this many days
+      severity: "warning"     # "warning" to allow plays with a warning, "error" to block plays
+      # NOTE: Earnings thresholds are evaluated relative to UTC dates (UTC midnight as "today").
   backup:
     keep_originals: true      # Keep original CSV files after processing
     backup_dir: "ingestor_backups"  # Directory to store CSV backups

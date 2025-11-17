@@ -6,7 +6,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, date
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from goldflipper.data.market.errors import MarketDataError
 from goldflipper.data.market.manager import MarketDataManager
@@ -35,6 +35,7 @@ class PlayValidator:
         market_manager: Optional[MarketDataManager] = None,
         enable_market_checks: bool = True,
         min_days_warning: Optional[int] = None,
+        earnings_validation_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._symbol_cache: Dict[str, Dict[str, Optional[str]]] = {}
         self._contract_cache: Dict[str, Dict[str, Optional[str]]] = {}
@@ -42,6 +43,8 @@ class PlayValidator:
         self._market_manager: Optional[MarketDataManager] = None
         self._enable_market_checks = enable_market_checks
         self._min_days_warning = min_days_warning
+        self._earnings_config: Dict[str, Any] = {}
+        self._earnings_enabled: bool = False
 
         if enable_market_checks:
             try:
@@ -54,6 +57,19 @@ class PlayValidator:
                     "Market data validation disabled: unable to initialize MarketDataManager (%s)",
                     exc,
                 )
+
+        if earnings_validation_config is not None:
+            self.configure_earnings_validation(earnings_validation_config)
+
+    def configure_earnings_validation(self, earnings_validation_config: Optional[Dict[str, Any]]) -> None:
+        """Configure earnings-based validation behavior.
+
+        This is separated from __init__ to keep constructor arguments simple; callers
+        can pass a config dict and enable/disable earnings checks here.
+        """
+        config = earnings_validation_config or {}
+        self._earnings_config = config
+        self._earnings_enabled = bool(config.get("enabled", False))
 
     def validate_play(self, play: Dict, context: str) -> ValidationResult:
         """Validate a play dictionary, returning collected errors and warnings."""
@@ -85,10 +101,10 @@ class PlayValidator:
                     f"{context}: strike_price '{strike_value_raw}' is not a valid number."
                 )
 
-        expiry_dt: Optional[datetime] = None
+        contract_expiry_dt: Optional[datetime] = None
         if expiration_value:
             try:
-                expiry_dt = datetime.strptime(str(expiration_value), "%m/%d/%Y")
+                contract_expiry_dt = datetime.strptime(str(expiration_value), "%m/%d/%Y")
             except ValueError:
                 result.errors.append(
                     f"{context}: Expiration date '{expiration_value}' is not MM/DD/YYYY."
@@ -97,15 +113,15 @@ class PlayValidator:
             result.errors.append(f"{context}: Missing expiration_date.")
 
         # Validate expiration_date (GTE) - error if today or past, warning if too soon
-        today = date.today()
-        if expiry_dt is not None:
-            expiry_date_only = expiry_dt.date()
-            if expiry_date_only <= today:
+        today = datetime.utcnow().date()
+        if contract_expiry_dt is not None:
+            contract_expiry_date_only = contract_expiry_dt.date()
+            if contract_expiry_date_only <= today:
                 result.errors.append(
                     f"{context}: Expiration date (GTE) '{expiration_value}' is today or in the past."
                 )
             elif self._min_days_warning is not None:
-                days_until_expiry = (expiry_date_only - today).days
+                days_until_expiry = (contract_expiry_date_only - today).days
                 if days_until_expiry < self._min_days_warning:
                     result.warnings.append(
                         f"{context}: Expiration date (GTE) '{expiration_value}' is less than {self._min_days_warning} days away ({days_until_expiry} days)."
@@ -113,6 +129,7 @@ class PlayValidator:
 
         # Validate play_expiration_date (GTD) - required field, error if missing, today or past, warning if too soon
         play_expiration_value = play.get("play_expiration_date")
+        play_expiry_dt: Optional[datetime] = None
         if not play_expiration_value:
             result.errors.append(f"{context}: Missing play_expiration_date (GTD). GTD date is required.")
         else:
@@ -155,7 +172,7 @@ class PlayValidator:
                     symbol,
                     trade_type,
                     strike_numeric,
-                    expiry_dt,
+                    contract_expiry_dt,
                     context,
                 )
             )
@@ -177,6 +194,13 @@ class PlayValidator:
             result.errors.extend(sym_errors)
             result.warnings.extend(sym_warnings)
 
+            if self._earnings_enabled:
+                earnings_errors, earnings_warnings = self._validate_earnings_window(
+                    symbol, contract_expiry_dt, play_expiry_dt, context
+                )
+                result.errors.extend(earnings_errors)
+                result.warnings.extend(earnings_warnings)
+
         if option_symbol:
             opt_errors, opt_warnings = self._validate_option_with_market_data(option_symbol, context)
             result.errors.extend(opt_errors)
@@ -184,13 +208,78 @@ class PlayValidator:
 
         return result
 
+    def _validate_earnings_window(
+        self,
+        symbol: str,
+        contract_expiry_dt: Optional[datetime],
+        play_expiry_dt: Optional[datetime],
+        context: str,
+    ) -> Tuple[List[str], List[str]]:
+        """Validate risk from upcoming earnings within the play's active window.
+
+        Uses MarketDataManager.get_next_earnings_date (via MarketDataApp) to find the
+        next earnings date and compares it against:
+        - A configured max_days_before_earnings threshold; and
+        - The play's active window: today through min(GTE, GTD), when both are known.
+        """
+        errors: List[str] = []
+        warnings: List[str] = []
+
+        if not self._market_manager:
+            return errors, warnings
+
+        days_threshold = self._earnings_config.get("max_days_before_earnings")
+        if not isinstance(days_threshold, int) or days_threshold <= 0:
+            # Misconfigured or effectively disabled
+            return errors, warnings
+
+        severity = str(self._earnings_config.get("severity", "warning")).lower()
+        if severity not in {"warning", "error"}:
+            severity = "warning"
+
+        try:
+            next_earnings = self._market_manager.get_next_earnings_date(symbol)
+        except Exception as exc:  # pragma: no cover - defensive catch
+            warnings.append(
+                f"{context}: Unable to check upcoming earnings for {symbol}: {exc}"
+            )
+            return errors, warnings
+
+        if not next_earnings:
+            return errors, warnings
+
+        today = datetime.utcnow().date()
+        if contract_expiry_dt is None or play_expiry_dt is None:
+            # Date fields are already validated elsewhere; if they are missing or invalid,
+            # the corresponding errors have been recorded and we skip earnings window logic.
+            return errors, warnings
+
+        window_end = min(contract_expiry_dt.date(), play_expiry_dt.date())
+        if next_earnings > window_end:
+            # Earnings occurs after this play's exposure window
+            return errors, warnings
+
+        days_until_earnings = (next_earnings - today).days
+        if days_until_earnings <= days_threshold:
+            msg = (
+                f"{context}: Upcoming earnings for {symbol} on {next_earnings.isoformat()} "
+                f"is {days_until_earnings} days away and falls within the play window "
+                f"ending {window_end.isoformat()} (threshold: {days_threshold} days)."
+            )
+            if severity == "error":
+                errors.append(msg)
+            else:
+                warnings.append(msg)
+
+        return errors, warnings
+
     def _validate_contract_structure(
         self,
         option_symbol: str,
         symbol: str,
         trade_type: str,
         strike_numeric: Optional[float],
-        expiry_dt: Optional[datetime],
+        contract_expiry_dt: Optional[datetime],
         context: str,
     ) -> List[str]:
         errors: List[str] = []
@@ -218,11 +307,11 @@ class PlayValidator:
                     f"{context}: Contract type '{option_type}' does not match trade_type '{trade_type}'."
                 )
 
-        if expiry_dt is not None:
-            expected_date = expiry_dt.strftime("%y%m%d")
+        if contract_expiry_dt is not None:
+            expected_date = contract_expiry_dt.strftime("%y%m%d")
             if date_part != expected_date:
                 errors.append(
-                    f"{context}: Contract expiration '{date_part}' does not match play expiration '{expiry_dt.strftime('%m/%d/%Y')}'."
+                    f"{context}: Contract expiration '{date_part}' does not match play expiration '{contract_expiry_dt.strftime('%m/%d/%Y')}'."
                 )
 
         if strike_numeric is not None:
