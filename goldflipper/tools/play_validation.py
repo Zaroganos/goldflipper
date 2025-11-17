@@ -219,7 +219,7 @@ class PlayValidator:
 
         Uses MarketDataManager.get_next_earnings_date (via MarketDataApp) to find the
         next earnings date and compares it against:
-        - A configured max_days_before_earnings threshold; and
+        - A configured min_days_before_earnings buffer; and
         - The play's active window: today through min(GTE, GTD), when both are known.
         """
         errors: List[str] = []
@@ -228,8 +228,8 @@ class PlayValidator:
         if not self._market_manager:
             return errors, warnings
 
-        days_threshold = self._earnings_config.get("max_days_before_earnings")
-        if not isinstance(days_threshold, int) or days_threshold <= 0:
+        min_days_before_earnings = self._earnings_config.get("min_days_before_earnings")
+        if not isinstance(min_days_before_earnings, int) or min_days_before_earnings <= 0:
             # Misconfigured or effectively disabled
             return errors, warnings
 
@@ -260,11 +260,11 @@ class PlayValidator:
             return errors, warnings
 
         days_until_earnings = (next_earnings - today).days
-        if days_until_earnings <= days_threshold:
+        if days_until_earnings < min_days_before_earnings:
             msg = (
                 f"{context}: Upcoming earnings for {symbol} on {next_earnings.isoformat()} "
                 f"is {days_until_earnings} days away and falls within the play window "
-                f"ending {window_end.isoformat()} (threshold: {days_threshold} days)."
+                f"ending {window_end.isoformat()} (minimum buffer: {min_days_before_earnings} days)."
             )
             if severity == "error":
                 errors.append(msg)
