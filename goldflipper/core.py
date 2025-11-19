@@ -356,7 +356,7 @@ def evaluate_opening_strategy(symbol, play):
 
     return condition_met
 
-def evaluate_closing_strategy(symbol, play):
+def evaluate_closing_strategy(symbol, play, play_file=None):
     """
     Evaluate if closing conditions are met. Supports:
     - Mixed conditions (e.g., TP by stock price, SL by premium %)
@@ -365,6 +365,11 @@ def evaluate_closing_strategy(symbol, play):
     - Stock price absolute value
     - Stock price percentage movement
     - Option premium percentage
+    
+    Args:
+        symbol: The underlying symbol
+        play: The play data dictionary
+        play_file: Optional path to play file - if provided, will save play after calculating missing targets (stock price or premium)
     """
     logging.info(f"Evaluating closing strategy for {symbol} using play data...")
     # display.info(f"Evaluating closing strategy for {symbol} using play data...")
@@ -382,6 +387,9 @@ def evaluate_closing_strategy(symbol, play):
     profit_condition = False
     loss_condition = False
     contingency_loss_condition = False
+    
+    # Track if we calculated any missing targets (stock price or premium)
+    calculated_values = False
 
     # Check stock price-based take profit conditions
     # Check both absolute and percentage-based conditions if both exist (OR logic)
@@ -407,6 +415,11 @@ def evaluate_closing_strategy(symbol, play):
                     tp_target = entry_stock_price * (1 - tp_pct)
                 # Store it for future use
                 play['take_profit']['TP_stock_price_target'] = tp_target
+                calculated_values = True
+                logging.info(f"Calculated TP_stock_price_target on-the-fly: ${tp_target:.2f}")
+            else:
+                logging.error("Cannot calculate TP_stock_price_target: entry_stock_price not found in play data")
+                tp_target = None
         
         # Evaluate if target is available
         if tp_target is not None:
@@ -442,6 +455,11 @@ def evaluate_closing_strategy(symbol, play):
                     sl_target = entry_stock_price * (1 + sl_pct)
                 # Store it for future use
                 play['stop_loss']['SL_stock_price_target'] = sl_target
+                calculated_values = True
+                logging.info(f"Calculated SL_stock_price_target on-the-fly: ${sl_target:.2f}")
+            else:
+                logging.error("Cannot calculate SL_stock_price_target: entry_stock_price not found in play data")
+                sl_target = None
         
         # Evaluate if target is available
         if sl_target is not None:
@@ -475,6 +493,11 @@ def evaluate_closing_strategy(symbol, play):
                         contingency_sl_target = entry_stock_price * (1 + contingency_sl_pct)
                     # Store it for future use
                     play['stop_loss']['contingency_SL_stock_price_target'] = contingency_sl_target
+                    calculated_values = True
+                    logging.info(f"Calculated contingency_SL_stock_price_target on-the-fly: ${contingency_sl_target:.2f}")
+                else:
+                    logging.error("Cannot calculate contingency_SL_stock_price_target: entry_stock_price not found in play data")
+                    contingency_sl_target = None
             
             # Evaluate if target is available
             if contingency_sl_target is not None:
@@ -490,18 +513,60 @@ def evaluate_closing_strategy(symbol, play):
         
         # Check premium-based take profit
         if play['take_profit'].get('premium_pct') is not None:
-            tp_target = play['take_profit']['TP_option_prem']
-            profit_condition = profit_condition or (current_premium >= tp_target)
+            tp_target = play['take_profit'].get('TP_option_prem')
+            # Calculate on-the-fly if not stored
+            if tp_target is None:
+                entry_premium = play.get('entry_point', {}).get('entry_premium')
+                if entry_premium is not None:
+                    tp_pct = play['take_profit']['premium_pct'] / 100
+                    tp_target = entry_premium * (1 + tp_pct)
+                    play['take_profit']['TP_option_prem'] = tp_target
+                    calculated_values = True
+                    logging.info(f"Calculated TP_option_prem on-the-fly: ${tp_target:.4f}")
+                else:
+                    logging.error("Cannot calculate TP_option_prem: entry_premium not found in play data")
+                    tp_target = None
+            
+            if tp_target is not None:
+                profit_condition = profit_condition or (current_premium >= tp_target)
 
         # Check premium-based stop loss - combines with stock price condition using OR
         if play['stop_loss'].get('premium_pct') is not None:
-            sl_target = play['stop_loss']['SL_option_prem']
-            loss_condition = loss_condition or (current_premium <= sl_target)
+            sl_target = play['stop_loss'].get('SL_option_prem')
+            # Calculate on-the-fly if not stored
+            if sl_target is None:
+                entry_premium = play.get('entry_point', {}).get('entry_premium')
+                if entry_premium is not None:
+                    sl_pct = play['stop_loss']['premium_pct'] / 100
+                    sl_target = entry_premium * (1 - sl_pct)
+                    play['stop_loss']['SL_option_prem'] = sl_target
+                    calculated_values = True
+                    logging.info(f"Calculated SL_option_prem on-the-fly: ${sl_target:.4f}")
+                else:
+                    logging.error("Cannot calculate SL_option_prem: entry_premium not found in play data")
+                    sl_target = None
+            
+            if sl_target is not None:
+                loss_condition = loss_condition or (current_premium <= sl_target)
             
             # Check contingency premium condition if applicable
             if sl_type == 'CONTINGENCY' and play['stop_loss'].get('contingency_premium_pct') is not None:
-                contingency_sl_target = play['stop_loss']['contingency_SL_option_prem']
-                contingency_loss_condition = contingency_loss_condition or (current_premium <= contingency_sl_target)
+                contingency_sl_target = play['stop_loss'].get('contingency_SL_option_prem')
+                # Calculate on-the-fly if not stored
+                if contingency_sl_target is None:
+                    entry_premium = play.get('entry_point', {}).get('entry_premium')
+                    if entry_premium is not None:
+                        contingency_sl_pct = play['stop_loss']['contingency_premium_pct'] / 100
+                        contingency_sl_target = entry_premium * (1 - contingency_sl_pct)
+                        play['stop_loss']['contingency_SL_option_prem'] = contingency_sl_target
+                        calculated_values = True
+                        logging.info(f"Calculated contingency_SL_option_prem on-the-fly: ${contingency_sl_target:.4f}")
+                    else:
+                        logging.error("Cannot calculate contingency_SL_option_prem: entry_premium not found in play data")
+                        contingency_sl_target = None
+                
+                if contingency_sl_target is not None:
+                    contingency_loss_condition = contingency_loss_condition or (current_premium <= contingency_sl_target)
 
     # Consider trailing conditions if enabled (premium-based TP1/TP2)
     try:
@@ -535,6 +600,14 @@ def evaluate_closing_strategy(symbol, play):
     if contingency_loss_condition:
         logging.info("Contingency (backup) stop loss condition met")
         # display.info("Contingency (backup) stop loss condition met")
+
+    # Save play if we calculated missing targets (stock price or premium)
+    if calculated_values and play_file:
+        try:
+            save_play_improved(play, play_file)
+            logging.info(f"Saved play after calculating missing targets: {play_file}")
+        except Exception as e:
+            logging.warning(f"Failed to save play after calculating targets: {e}")
 
     # Return tuple with condition flags and stop loss type
     return {
@@ -1247,7 +1320,7 @@ def monitor_and_manage_position(play, play_file):
             logging.warning(f"Trailing update skipped: {e}")
 
         # Evaluate closing conditions
-        close_conditions = evaluate_closing_strategy(underlying_symbol, play)
+        close_conditions = evaluate_closing_strategy(underlying_symbol, play, play_file)
         if close_conditions['should_close']:
             close_attempts = 0
             max_attempts = 3
