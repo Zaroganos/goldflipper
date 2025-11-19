@@ -763,7 +763,7 @@ def save_play(play, section):
 
 def main():
     # At the very start:
-    print(f"Script version: 2025-11-14-v1.4")
+    print(f"Script version: 2025-11-18-v1.5")
     
     # After config import:
     from goldflipper.config.config import config
