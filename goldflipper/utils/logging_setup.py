@@ -26,6 +26,131 @@ def _ensure_parent_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _safe_rotate_existing_log(
+    log_path: Path,
+    max_bytes: int,
+    backup_count: int,
+    compress_enabled: bool,
+    compression_format: str,
+) -> None:
+    """Safely rotate an existing log file if it exceeds the size threshold.
+    
+    This function checks if the log file already exists and is too large,
+    and rotates it before the logging handler is created. This prevents
+    large log files from accumulating between application restarts.
+    
+    Args:
+        log_path: Path to the log file
+        max_bytes: Maximum size in bytes before rotation
+        backup_count: Number of backup files to keep
+        compress_enabled: Whether to compress rotated logs
+        compression_format: Compression format ('gz' or 'zip')
+    """
+    try:
+        # Check if log file exists and get its size
+        if not log_path.exists():
+            return  # No file to rotate
+        
+        file_size = log_path.stat().st_size
+        
+        # Only rotate if file exceeds the threshold
+        if file_size < max_bytes:
+            return  # File is within acceptable size
+        
+        # File is too large, need to rotate
+        # Use the same naming convention as the handlers
+        base_name = str(log_path)
+        
+        # First, rotate existing backups (remove oldest if we're at limit)
+        if backup_count > 0:
+            # Find and remove the oldest backup if we're at the limit
+            backup_files = []
+            for i in range(backup_count, 0, -1):
+                if compress_enabled:
+                    if compression_format == 'zip':
+                        backup_name = f"{base_name}.{i}.zip"
+                    else:
+                        backup_name = f"{base_name}.{i}.gz"
+                else:
+                    backup_name = f"{base_name}.{i}"
+                
+                backup_path = Path(backup_name)
+                if backup_path.exists():
+                    backup_files.append(backup_path)
+            
+            # Remove oldest backup if we're at the limit
+            if len(backup_files) >= backup_count:
+                try:
+                    backup_files[0].unlink()  # Remove oldest
+                except Exception:
+                    pass  # Ignore errors removing old backups
+            
+            # Shift existing backups
+            for i in range(backup_count - 1, 0, -1):
+                if compress_enabled:
+                    if compression_format == 'zip':
+                        old_backup = f"{base_name}.{i}.zip"
+                        new_backup = f"{base_name}.{i + 1}.zip"
+                    else:
+                        old_backup = f"{base_name}.{i}.gz"
+                        new_backup = f"{base_name}.{i + 1}.gz"
+                else:
+                    old_backup = f"{base_name}.{i}"
+                    new_backup = f"{base_name}.{i + 1}"
+                
+                old_path = Path(old_backup)
+                new_path = Path(new_backup)
+                
+                if old_path.exists():
+                    try:
+                        old_path.rename(new_path)
+                    except Exception:
+                        pass  # Ignore errors during backup shifting
+        
+        # Rotate the current log file
+        if compress_enabled:
+            if compression_format == 'zip':
+                rotated_name = f"{base_name}.1.zip"
+            else:
+                rotated_name = f"{base_name}.1.gz"
+        else:
+            rotated_name = f"{base_name}.1"
+        
+        rotated_path = Path(rotated_name)
+        
+        # Compress and move the current log file
+        try:
+            if compress_enabled:
+                if compression_format == 'zip':
+                    # Write the rotated file into a zip archive
+                    with zipfile.ZipFile(rotated_path, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+                        arcname = log_path.name
+                        zf.write(log_path, arcname=arcname)
+                    log_path.unlink()  # Remove original after compression
+                else:
+                    # Gzip compress
+                    with open(log_path, 'rb') as f_in, gzip.open(rotated_path, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+                    log_path.unlink()  # Remove original after compression
+            else:
+                # Simple rename without compression
+                log_path.rename(rotated_path)
+        except Exception:
+            # If rotation fails, try simple rename as fallback
+            try:
+                if rotated_path.exists():
+                    rotated_path.unlink()  # Remove existing rotated file first
+                log_path.rename(rotated_path)
+            except Exception:
+                pass  # If all rotation attempts fail, continue anyway
+                # The handler will manage rotation on next write
+        
+    except Exception:
+        # If anything goes wrong, silently continue
+        # The logging handler will still work and manage rotation going forward
+        pass
+
+
 def configure_logging(
     console_mode: bool = False,
     service_mode: bool = False,
@@ -70,6 +195,16 @@ def configure_logging(
     max_bytes = int(_get_config_value('logging', 'rotation', 'max_bytes', default=10 * 1024 * 1024))  # 10MB
     compress_enabled = bool(_get_config_value('logging', 'rotation', 'compress', default=True))
     compression_format = str(_get_config_value('logging', 'rotation', 'compression_format', default='gz')).lower()
+
+    # Check and rotate existing log file if it's already too large
+    # This handles the case where the log file grew large between application restarts
+    _safe_rotate_existing_log(
+        log_path=log_path,
+        max_bytes=max_bytes,
+        backup_count=backup_count,
+        compress_enabled=compress_enabled,
+        compression_format=compression_format,
+    )
 
     # Build handlers
     handlers: list[logging.Handler] = []
