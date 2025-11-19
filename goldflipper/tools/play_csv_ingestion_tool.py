@@ -65,19 +65,19 @@ CALLS_TP = {
     "tp_stock_price": 15,
     "tp_premium_pct": 16,
     "tp_stock_pct": 17,
-    # New optional trailing column for calls side (Stock% and Order Type section)
-    "tp_trailing_activation_pct": 18,
-    # After Trailing there is a calls-side "# of Con" column, then Order Type
-    "tp_order_type": 20,  # "Order Type" column for sell side (shared between TP and SL)
+    # Note: No trailing column in current CSV template - column 18 is "# of Con"
+    # "tp_trailing_activation_pct": 18,  # Not present in current CSV structure
+    # Order Type column for sell side (shared between TP and SL)
+    "tp_order_type": 19,  # "Order Type" column for sell side (shared between TP and SL)
 }
 CALLS_SL = {
-    # After Trailing(18) and calls-side: # of Con(19), Order Type(20)
-    # Sell columns follow: Share Price (SL)(21), Prem %(22), Stock %(23)
-    "sl_stock_price": 21,
-    "sl_premium_pct": 22,
-    "sl_stock_pct": 23,
-    # Order type column for sell side
-    "sl_order_type": 20
+    # After TP section: # of Con(18), Order Type(19)
+    # Sell columns follow: Share Price (SL)(20), Prem %(21), Stock %(22), # of con(23)
+    "sl_stock_price": 20,
+    "sl_premium_pct": 21,
+    "sl_stock_pct": 22,
+    # Order type column for sell side (shared with TP)
+    "sl_order_type": 19
 }
 PUTS_ENTRY = {
     "symbol": 2,       # Same relative position in puts section
@@ -94,18 +94,18 @@ PUTS_TP = {
     "tp_stock_price": 15,
     "tp_premium_pct": 16,
     "tp_stock_pct": 17,
-    # New optional trailing column for puts side (Stock% and Order Type section)
-    "tp_trailing_activation_pct": 18,
-    # "Order Type" column follows Trailing in the new schema
-    "tp_order_type": 19
+    # Note: No trailing column in current CSV template
+    # "tp_trailing_activation_pct": 18,  # Not present in current CSV structure
+    # "Order Type" column follows Stock% in the current schema
+    "tp_order_type": 18  # Relative index: Order Type is at absolute index 43 (25+18)
 }
 PUTS_SL = {
-    # Puts side order differs: after Trailing(18), Order Type(19), then # of con(20)
-    # Sell columns follow: Share Price (SL)(21), Prem %(22), Stock %(23)
-    "sl_stock_price": 21,
-    "sl_premium_pct": 22,
-    "sl_stock_pct": 23,
-    "sl_order_type": 19
+    # Puts side: after TP section, Order Type(18), then # of con(19)
+    # Sell columns follow: Share Price (SL)(20), Prem %(21), Stock %(22)
+    "sl_stock_price": 20,
+    "sl_premium_pct": 21,
+    "sl_stock_pct": 22,
+    "sl_order_type": 18  # Shared with TP order type
 }
 
 # --- Utility Functions ---
@@ -186,6 +186,99 @@ def find_strike_index(section_headers):
             strike_columns.append(idx)
     
     return strike_columns
+
+def load_reference_template():
+    """
+    Load the reference template CSV and extract its headers.
+    Returns tuple (calls_headers, puts_headers, puts_start) or None if template not found.
+    """
+    template_path = os.path.join(project_root, "goldflipper", "reference", "Play Template - 2025.csv")
+    
+    if not os.path.exists(template_path):
+        return None
+    
+    try:
+        with open(template_path, newline="", encoding="utf-8") as csvfile:
+            reader = list(csv.reader(csvfile))
+        
+        if not reader:
+            return None
+        
+        # Extract headers using same logic as main ingestion
+        header_rows = []
+        found_data = False
+        for row in reader:
+            if not found_data and is_data_row(row):
+                found_data = True
+            if not found_data:
+                header_rows.append(row)
+        
+        composite_headers = build_composite_headers(header_rows)
+        dynamic_puts_start = detect_puts_start(composite_headers)
+        calls_headers = composite_headers[CALLS_START:CALLS_END]
+        puts_headers = composite_headers[dynamic_puts_start:]
+        
+        return calls_headers, puts_headers, dynamic_puts_start
+    except Exception as e:
+        print(f"Warning: Could not load reference template: {e}")
+        return None
+
+def validate_column_mappings(section_headers, mapping_dict, section_name, section_start=0, reference_headers=None):
+    """
+    Validate that CSV column headers match expected mappings.
+    Compares against reference template headers (required).
+    Returns a list of validation errors/warnings.
+    
+    Args:
+        section_headers: List of header strings for this section
+        mapping_dict: Dictionary mapping field names to column indices (relative to section_start)
+        section_name: Name of section (e.g., "calls", "puts") for error messages
+        section_start: Starting column index of this section in the full CSV
+        reference_headers: List of reference headers from template to compare against (required)
+    
+    Returns:
+        List of error/warning messages
+    """
+    errors = []
+    
+    for field_name, col_idx in mapping_dict.items():
+        abs_idx = section_start + col_idx
+        
+        if col_idx >= len(section_headers):
+            errors.append(f"[{section_name}] Column index {col_idx} (absolute {abs_idx}, field '{field_name}') is out of range. CSV has {len(section_headers)} columns in this section.")
+            continue
+        
+        actual_header = section_headers[col_idx].strip()
+        actual_header_lower = actual_header.lower()
+        
+        # Compare against reference template headers
+        if reference_headers is None:
+            errors.append(f"[{section_name}] Reference template not available for validation (field '{field_name}')")
+            continue
+            
+        if col_idx >= len(reference_headers):
+            errors.append(f"[{section_name}] Column index {col_idx} (field '{field_name}') is out of range in reference template. Reference has {len(reference_headers)} columns.")
+            continue
+        
+        expected_header = reference_headers[col_idx].strip()
+        expected_header_lower = expected_header.lower()
+        
+        # Normalize comparison (case-insensitive, ignore extra whitespace)
+        if actual_header_lower != expected_header_lower:
+            # For empty headers, be more lenient
+            if not actual_header and not expected_header:
+                continue  # Both empty, that's fine
+            elif not actual_header:
+                errors.append(f"[{section_name}] Column {abs_idx} (field '{field_name}') has empty header but reference template expects: '{expected_header}'")
+            elif not expected_header:
+                # Reference is empty but actual has something - might be OK for some columns
+                if field_name != "strike_price":
+                    errors.append(f"[{section_name}] Column {abs_idx} (field '{field_name}') has header '{actual_header}' but reference template has empty header")
+            else:
+                # Both have content but don't match
+                errors.append(f"[{section_name}] Column {abs_idx} (field '{field_name}') header '{actual_header}' doesn't match reference template: '{expected_header}'")
+    
+    return errors
 
 def clean_numeric_string(value):
     """
@@ -566,7 +659,9 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
         condition["order_type"] = parsed_order_type
 
         # Optional trailing activation column (new schema): blank => trailing disabled; number => per-play activation; 'x'/'y' or any non-empty token => default activation
-        if condition_type == "tp" and "tp_trailing_activation_pct" in base_idx:
+        # Only enable trailing if the global trailing.enabled setting is True
+        trailing_globally_enabled = config.get('trailing', 'enabled', default=False)
+        if condition_type == "tp" and "tp_trailing_activation_pct" in base_idx and trailing_globally_enabled:
             trailing_cell = get_cell(base_idx["tp_trailing_activation_pct"]).strip()
             if trailing_cell and trailing_cell.upper() != 'N/A':
                 lc = trailing_cell.lower()
@@ -720,6 +815,29 @@ def main():
     calls_headers = composite_headers[CALLS_START:CALLS_END]
     puts_headers = composite_headers[dynamic_puts_start:]
     
+    # Load reference template for validation
+    reference_template = load_reference_template()
+    ref_calls_headers = None
+    ref_puts_headers = None
+    if reference_template:
+        ref_calls_headers, ref_puts_headers, _ = reference_template
+    
+    # Validate column mappings match expected headers
+    mapping_errors = []
+    mapping_errors.extend(validate_column_mappings(calls_headers, CALLS_ENTRY, "calls", CALLS_START, ref_calls_headers))
+    mapping_errors.extend(validate_column_mappings(calls_headers, CALLS_TP, "calls", CALLS_START, ref_calls_headers))
+    mapping_errors.extend(validate_column_mappings(calls_headers, CALLS_SL, "calls", CALLS_START, ref_calls_headers))
+    mapping_errors.extend(validate_column_mappings(puts_headers, PUTS_ENTRY, "puts", dynamic_puts_start, ref_puts_headers))
+    mapping_errors.extend(validate_column_mappings(puts_headers, PUTS_TP, "puts", dynamic_puts_start, ref_puts_headers))
+    mapping_errors.extend(validate_column_mappings(puts_headers, PUTS_SL, "puts", dynamic_puts_start, ref_puts_headers))
+    
+    if mapping_errors:
+        print("\n[COLUMN MAPPING VALIDATION WARNINGS]")
+        print("The CSV column headers don't match the expected structure:")
+        for error in mapping_errors:
+            print(f"  {error}")
+        print("\nProceeding with ingestion, but data may be misaligned.\n")
+    
     strike_calls = find_strike_index(calls_headers)
     if strike_calls is None:
         strike_calls = 8  # Updated index for strike price
@@ -732,18 +850,37 @@ def main():
     # Get validation config (dates, earnings, etc.)
     ingestor_config = config.get('csv_ingestor') or {}
     validation_config = ingestor_config.get('validation', {})
+    validation_enabled = validation_config.get('enabled', True)
+    strictness_level = validation_config.get('strictness_level')
+    if strictness_level is None:
+        if 'strict_mode' in validation_config:
+            strict_mode_value = validation_config.get('strict_mode')
+            if isinstance(strict_mode_value, bool) and strict_mode_value:
+                strictness_level = "high"
+            else:
+                strictness_level = "moderate"
+        else:
+            strictness_level = "moderate"
+    if isinstance(strictness_level, str):
+        strictness_level = strictness_level.strip().lower()
+    if strictness_level not in {"high", "moderate", "low"}:
+        strictness_level = "moderate"
     date_validation_config = validation_config.get('date_validation', {})
     earnings_validation_config = validation_config.get('earnings_validation', {})
     min_days_warning = date_validation_config.get('min_days_warning')
 
-    validator = PlayValidator(
-        enable_market_checks=not args.skip_market_validation,
-        min_days_warning=min_days_warning,
-        earnings_validation_config=earnings_validation_config,
-    )
+    validator = None
+    if validation_enabled:
+        validator = PlayValidator(
+            enable_market_checks=not args.skip_market_validation,
+            min_days_warning=min_days_warning,
+            earnings_validation_config=earnings_validation_config,
+        )
 
     valid_plays = []
     all_errors = []
+    csv_errors = []
+    validation_errors = []
     validation_warnings = []
     created_files = []
     
@@ -753,26 +890,38 @@ def main():
         if row[CALLS_START + CALLS_ENTRY["symbol"]].strip():
             play_calls, errors_calls = create_play_from_data("calls", row, calls_headers, CALLS_START, strike_calls, i)
             all_errors.extend(errors_calls)
+            csv_errors.extend(errors_calls)
 
             if play_calls:
-                validation_result = validator.validate_play(play_calls, f"Row {i} (calls)")
-                all_errors.extend(validation_result.errors)
-                validation_warnings.extend(validation_result.warnings)
+                validation_result = None
+                if validator is not None:
+                    validation_result = validator.validate_play(play_calls, f"Row {i} (calls)")
+                    all_errors.extend(validation_result.errors)
+                    validation_errors.extend(validation_result.errors)
+                    validation_warnings.extend(validation_result.warnings)
 
-                if not errors_calls and validation_result.is_valid:
+                # Include structurally encodable plays even if validation found issues;
+                # strictness_level will gate whether ingestion can proceed.
+                if not errors_calls:
                     valid_plays.append(("calls", play_calls))
         
         # Process puts only if puts symbol exists
         if dynamic_puts_start + PUTS_ENTRY["symbol"] < len(row) and row[dynamic_puts_start + PUTS_ENTRY["symbol"]].strip():
             play_puts, errors_puts = create_play_from_data("puts", row, puts_headers, dynamic_puts_start, strike_puts, i)
             all_errors.extend(errors_puts)
+            csv_errors.extend(errors_puts)
 
             if play_puts:
-                validation_result = validator.validate_play(play_puts, f"Row {i} (puts)")
-                all_errors.extend(validation_result.errors)
-                validation_warnings.extend(validation_result.warnings)
+                validation_result = None
+                if validator is not None:
+                    validation_result = validator.validate_play(play_puts, f"Row {i} (puts)")
+                    all_errors.extend(validation_result.errors)
+                    validation_errors.extend(validation_result.errors)
+                    validation_warnings.extend(validation_result.warnings)
 
-                if not errors_puts and validation_result.is_valid:
+                # Include structurally encodable plays even if validation found issues;
+                # strictness_level will gate whether ingestion can proceed.
+                if not errors_puts:
                     valid_plays.append(("puts", play_puts))
 
     # Second pass: Process OCO and OSO relationships
@@ -839,6 +988,9 @@ def main():
         filepath = os.path.join(target_dir, filename)
         created_files.append(filepath)
 
+    has_validation_errors = bool(validation_errors)
+    has_validation_warnings = bool(validation_warnings)
+
     if all_errors:
         print("\nError Summary (last up to 20 messages):")
         for err in all_errors[-20:]:
@@ -849,12 +1001,26 @@ def main():
         for warning in validation_warnings[-20:]:
             print(warning)
 
-    if all_errors:
-        user_input = input("\nErrors/warnings were found during ingestion. Proceed with valid plays? (Y/N): ").strip().upper()
-        if user_input != "Y":
-            print("Aborting ingestion due to errors.")
+    if strictness_level == "high":
+        if has_validation_errors or has_validation_warnings:
+            print("\nAborting ingestion due to validation strictness level 'high'.")
             return
-    
+    elif strictness_level == "moderate":
+        if has_validation_errors:
+            print("\nAborting ingestion due to validation errors (strictness level 'moderate').")
+            return
+        if has_validation_warnings:
+            user_input = input("\nWarnings were found during ingestion. Proceed with encoded plays? (Y/N): ").strip().upper()
+            if user_input != "Y":
+                print("Aborting ingestion due to warnings.")
+                return
+    else:
+        if has_validation_errors or has_validation_warnings:
+            user_input = input("\nValidation errors and/or warnings were found during ingestion. Proceed with encoded plays? (Y/N): ").strip().upper()
+            if user_input != "Y":
+                print("Aborting ingestion due to validation results.")
+                return
+
     print(f"\nIngestion complete. Valid plays: {len(valid_plays)}.")
 
     # Single file-opening location

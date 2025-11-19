@@ -622,10 +622,12 @@ csv_ingestor:
   default_viewer: "code"      # Options: "code" (VSCode), "explorer" (File Explorer), "none"
   validation:
     enabled: true             # Enable CSV validation before processing
-    strict_mode: false        # Reject files with any validation errors if true
+    strictness_level: "moderate"  # "high" | "moderate" | "low" - controls how strictly validation results gate ingestion
+
     date_validation:
       min_days_warning: null  # Warn if expiration_date or play_expiration_date is less than N days out (null/off to disable)
       # Example: min_days_warning: 7  # Warn if dates are less than 7 days away
+
     earnings_validation:
       enabled: false          # Enable/disable upcoming earnings-based validation
       min_days_before_earnings: 7  # Require at least this many days between today and earnings; warn/error if fewer
