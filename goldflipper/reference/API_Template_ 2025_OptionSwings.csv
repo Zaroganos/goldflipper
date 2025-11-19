@@ -1,0 +1,5 @@
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Calls,,,,,,,,,,,,,,,,,,,,,,,,,, Puts,,,,,,,,,,,,,,,,,,,,,,
+Option Parameters,,,,,,,Strike Price,,,,Buy Conditions,,,,Sell Conditions ,,,,,,,,,,Option Parameters,,,,,,,Strike Price,,,,Buy Conditions,,,,Sell Conditions ,,,,,,,,
+#,Date (Coded),Ticket ,Expiration (Contract),GTD,OCO,,ITM,ATM ,OTM,,Share Price (Buy),Order Type,# of Con,,Share Price (TP),Prem %,Stock %,# of Con,Order Type,Share Price (SL),Prem %,Stock %,# of con,,#,Date,Ticket,Expiration (Contract),GTD,OCO,,ITM,ATM ,OTM,,Share Price (Buy),Order Type,# of Con,,Share Price (TP),Prem %,Stock %,Order Type,# of con,Share Price (SL),Prem %,Stock %,# of con
+22,11/2025,NVDA ,11/28/25,11/10/2025,10,,,,195,,190.25,Limit (Bid) ,1,,194.1,40%,,1,Limit (Mid),,25%,,1,,22,11/10/25,NVDA,11/28/25,11/12/2025,10,,,,200,,202.55,Limit (Bid),1,,198.45,40%,,Limit (Mid),1,,25%,,1
