@@ -1,20 +1,21 @@
-# goldflipper
+# Goldflipper
 Goldflipper Trading System
 
 ![goldlfipper](https://github.com/user-attachments/assets/60a7b1c3-40ef-4dd2-9c64-98be7e93f185)
 
 
 ## Disclaimer
-This repository contains proprietary, source-available code. Please note that technical support is not available, and bug fix and feature requests of any kind will be addressed solely at the author's discretion. 
-Additionally, please note that this program does not capture or transmit any of your data. The only connections made are to brokerage(s) and market data provider(s). Newer branches also make calls using python libraries solely for the purpose of enhancing function by validating inputs (to address user entry errors) and checking the market calendar. However, please note that in this version, access keys are stored in the settings file in plaintext (or, plain-yaml).
+
+Goldflipper Classic is proprietary, source-available software. Please note that technical support, bug fix, and feature requests are managed on a discretionary basis at this time. 
+This program does not capture or transmit any of your data. Goldflipper only makes connections to brokerage(s) and market data provider(s). Newer branches also make calls using ancillary python libraries in order to enhance function by validating inputs (to address user entry errors), and by checking the market calendar. Security wise, note that in this version, access keys are stored in the settings file in plaintext (or, plain-yaml).
 
 ## Introduction
 
-Goldflipper v1 (aka Classic) is a rules-based semi-autonomous trading system developed in Python. It utilizes a modular, event-driven architecture to automate trading strategy execution, with a current focus on level 2 options trading. The system is designed for customizability, modularity, and offers a feature-rich parameter selection that enables functionality not seen in any other program of its kind. Goldflipper v1 integrates with the Alpaca Markets API for live trading, and has API integrations with market data providers as well in order to provide a modular and robust trading experience with fallbacks for reliability.
+Goldflipper Classic is a rules-based semi-autonomous trading system developed in Python. It utilizes a modular, event-driven architecture to automate trading strategy execution, with a current focus on level 2 options trading. The system is designed for customizability, modularity, and offers a feature-rich parameter selection that enables functionality not seen in any other program of its kind. Goldflipper integrates with the Alpaca Markets API for live trading, and has API integrations with market data providers as well in order to provide a modular and robust trading experience with fallbacks for reliability.
 
-## Project Structure
+## Directory Structure
 
-The project is roughly organized into the following directory structure:
+Goldflipper Classic is roughly organized into the following directory structure:
 (Simplified for brevity, access the codebase to discover the full content.)
 
 ```
@@ -112,9 +113,9 @@ pip install -e .
 
 Goldflipper offers multiple interfaces and execution modes:
 
-#### 1. **TUI Interface (Recommended)**
+#### 1. **Text Interface (Recommended)**
 The Text User Interface provides an intuitive way to interact with all system features:
-- Double-click the Goldflipper desktop shortcut, or:
+- (Recommended) Double-click the Goldflipper desktop shortcut, or:
 ```cmd
 python goldflipper\goldflipper_tui.py
 ```
@@ -127,30 +128,30 @@ python goldflipper\goldflipper_tui.py
 
 ### 🎯 **Trading System**
 - **Semi-autonomous options trading** with rules-based execution
-- **Advanced play management** with state-based workflow (new → pending → open → closed)
+- **Advanced play management** with state-based workflow
 - **Multiple order types**: Market, limit at bid/ask/mid/last, contingency orders
 - **Risk management**: Take profit, stop loss, and contingency stop loss orders
 - **Real-time monitoring** with continuous play evaluation
 
 ### 📊 **Market Data & Analysis**
-- **Multiple data providers** with automatic failover
+- **Multiple data providers** behind unified manager with automatic failover
 - **Options Greeks calculations**: Delta, Gamma, Theta, Vega, Rho, and 15+ advanced Greeks
-- **Technical indicators**: EMA, MACD, TTM Squeeze, and custom indicators
-- **Interactive charting** with candlestick charts and overlay indicators
+- **Technical indicators**: basic views of EMA, MACD, TTM Squeeze, and custom indicators
+- **Interactive charting** basic candlestick charts and overlay indicators
 
 ### 🖥️ **User Experience**
 - **Text User Interface** built with Textual framework
 - **Console mode** for direct system interaction
-- **Web-based trade logger** with Dash framework for analytics
+- **Trade logger** for analytics
 - **Windows service integration** for background operation
 
 ### 🔧 **Management Tools**
 - **Play creation tool** with guided setup and validation
 - **Play editing system** with safety protections for active trades
-- **Auto play creator** for bulk play generation
+- **Auto play creator** for automated bulk play generation
 - **System status monitoring** with health checks
 - **Configuration management** with YAML-based settings
-- **Data export capabilities** (CSV, Excel) for analysis
+- **Data export capabilities** (CSV, Excel) for records and analysis
 
 ### 🛡️ **System Reliability**
 - **Watchdog system** for automated health monitoring
@@ -192,14 +193,6 @@ market_data_providers:
     marketdataapp:
       enabled: true
       api_key: 'YOUR_MARKETDATAAPP_KEY'
-
-# System Configuration
-monitoring:
-  polling_interval: 30  # seconds
-  
-watchdog:
-  enabled: true
-  check_interval: 30
 ```
 
 ### **More Settings**

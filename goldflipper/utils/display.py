@@ -2,11 +2,10 @@ from colorama import init, Fore, Back, Style
 import logging
 from datetime import datetime
 
-# Initialize colorama for Windows compatibility
+# Initialize colorama for Windows
 init()
 
 class TerminalDisplay:
-    # Color schemes
     COLORS = {
         'success': Fore.GREEN,
         'error': Fore.RED,
@@ -15,7 +14,7 @@ class TerminalDisplay:
         'debug': Fore.WHITE,
         'header': Fore.MAGENTA,
         'price': Fore.LIGHTGREEN_EX,
-        'status': Fore.LIGHTBLUE_EX
+        'status': Fore.WHITE
     }
 
     @staticmethod

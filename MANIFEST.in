@@ -1,0 +1,38 @@
+# MANIFEST.in
+include README.md
+
+# Include the LICENSE file
+include LICENSE
+
+# Include requirements.txt for reference
+include requirements.txt
+
+# Include package data files (these are also specified in setup.py package_data,
+# but MANIFEST.in ensures they're included in source distributions)
+recursive-include goldflipper/reference *.csv
+include goldflipper/tools/play-template.json
+include goldflipper/config/settings_template.yaml
+recursive-include goldflipper/config *.py
+
+# Include Windows-specific files that may be needed
+include *.bat
+include *.ps1
+include *.ico
+
+# Exclude build artifacts and development files
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude __pycache__
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
+recursive-exclude * Thumbs.db
+
+# Exclude development and test directories
+prune tests
+prune dev-notes
+prune build
+prune dist
+prune *.egg-info
+

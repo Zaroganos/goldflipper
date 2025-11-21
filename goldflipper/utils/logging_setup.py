@@ -260,7 +260,9 @@ def configure_logging(
     handlers.append(file_handler)
 
     if console_mode:
-        handlers.append(logging.StreamHandler(sys.stdout))
+        # We rely on TerminalDisplay for console output to avoid double logging
+        # handlers.append(logging.StreamHandler(sys.stdout))
+        pass
 
     if service_mode:
         try:

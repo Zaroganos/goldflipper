@@ -6,7 +6,7 @@ if %errorLevel% == 0 (
     echo Administrative permissions confirmed.
 ) else (
     echo Error: This script requires administrative privileges.
-    echo Please right-click and select "Run as administrator"
+    echo Please right-click it and select "Run as administrator"
     pause
     exit /b 1
 )
@@ -14,12 +14,12 @@ if %errorLevel% == 0 (
 echo Checking Python installation...
 python --version 2>nul
 if errorlevel 1 (
-    echo Error: Python is not installed or not in PATH
+    echo Error: Python is not installed or is not in PATH
     pause
     exit /b 1
 )
 
-echo Installing required dependencies...
+echo Installing dependencies...
 python -m pip install pywin32
 if errorlevel 1 (
     echo Error installing dependencies
@@ -27,10 +27,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Installing Goldflipper package in development mode...
+echo Installing Goldflipper in development mode...
 python -m pip install -e .
 if errorlevel 1 (
-    echo Error installing Goldflipper package
+    echo Error installing Goldflipper
     pause
     exit /b 1
 )

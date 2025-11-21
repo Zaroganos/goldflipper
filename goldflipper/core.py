@@ -16,12 +16,12 @@ from alpaca.trading.requests import (
 from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
 from alpaca.common.exceptions import APIError
 import json
-from goldflipper.tools.option_data_fetcher import calculate_greeks
+from goldflipper.tools.option_data_fetcher import calculate_greeks  # Currently unused. Kept for potential future analytics
 from goldflipper.utils.atomic_io import atomic_write_json
 from goldflipper.strategy.trailing import has_trailing_enabled, update_trailing_levels
 from uuid import UUID
 from typing import Optional, Dict, Any
-from goldflipper.data.market.manager import MarketDataManager  # Add this import
+from goldflipper.data.market.manager import MarketDataManager
 
 # ==================================================
 # 1. BROKERAGE DATA RETRIEVAL
@@ -321,12 +321,11 @@ def evaluate_opening_strategy(symbol, play):
     """
     Evaluate if opening conditions are met based on stock price and entry point.
     """
-    logging.info(f"Evaluating opening strategy for {symbol} using play data...")
+    logging.debug(f"Evaluating opening strategy for {symbol} using play data...")
     # display.info(f"Evaluating opening strategy for {symbol} using play data...")
-
+    
     entry_point = play.get("entry_point", {}).get("stock_price", 0)
-    # OLD: last_price = market_data["Close"].iloc[-1]
-    # NEW: Get price using our new system
+
     last_price = get_stock_price(symbol)
     if last_price is None:
         logging.error(f"Could not get current price for {symbol}")
@@ -349,10 +348,24 @@ def evaluate_opening_strategy(symbol, play):
         display.error(f"Invalid trade type: {trade_type}. Must be CALL or PUT.")
         return False
 
-    logging.info(f"Opening condition {'met' if condition_met else 'not met'}: "
-                 f"Current price {last_price:.2f} is {comparison} for {trade_type}")
-    # display.info(f"Opening condition {'met' if condition_met else 'not met'}: "
-    #             f"Current price {last_price:.2f} is {comparison} for {trade_type}")
+    if condition_met:
+        logging.info(f"Opening condition met: Current price {last_price:.2f} is {comparison} for {trade_type}")
+        display.success(f"OPENING: {symbol} condition met! Price {last_price:.2f} is {comparison}")
+    else:
+        logging.debug(f"Opening condition not met: Current price {last_price:.2f} is {comparison} for {trade_type}")
+        # display.info(f"Opening condition {'met' if condition_met else 'not met'}: "
+        #             f"Current price {last_price:.2f} is {comparison} for {trade_type}")
+
+    # Always show a concise evaluation line with the key data and result
+    status_tag = "[HIT]" if condition_met else "[MISS]"
+    message = (
+        f"ENTRY ${symbol} {status_tag}: price ${last_price:.2f} "
+        f"target ${lower_bound:.2f}-${upper_bound:.2f}"
+    )
+    if condition_met:
+        display.success(message)
+    else:
+        display.status(message)
 
     return condition_met
 
@@ -371,7 +384,7 @@ def evaluate_closing_strategy(symbol, play, play_file=None):
         play: The play data dictionary
         play_file: Optional path to play file - if provided, will save play after calculating missing targets (stock price or premium)
     """
-    logging.info(f"Evaluating closing strategy for {symbol} using play data...")
+    logging.debug(f"Evaluating closing strategy for {symbol} using play data...")
     # display.info(f"Evaluating closing strategy for {symbol} using play data...")
     
     # NEW: Get current stock price using our new system
@@ -593,13 +606,45 @@ def evaluate_closing_strategy(symbol, play, play_file=None):
     # Log conditions
     if profit_condition:
         logging.info("Take profit condition met")
-        # display.info("Take profit condition met")
+        display.success(f"CLOSING: {symbol} Take Profit condition met!")
     if loss_condition:
         logging.info(f"{'Primary' if sl_type == 'CONTINGENCY' else ''} Stop loss condition met")
-        # display.info(f"{'Primary' if sl_type == 'CONTINGENCY' else ''} Stop loss condition met")
+        display.warning(f"CLOSING: {symbol} {'Primary' if sl_type == 'CONTINGENCY' else ''} Stop loss condition met")
     if contingency_loss_condition:
         logging.info("Contingency (backup) stop loss condition met")
-        # display.info("Contingency (backup) stop loss condition met")
+        display.error(f"CLOSING: {symbol} Contingency (backup) stop loss condition met")
+
+    # Always show a concise evaluation summary
+    tag = "[HOLD]"
+    reason = "no TP/SL/contingency hit"
+    if profit_condition:
+        tag = "[TP]"
+        reason = "take profit target hit"
+    elif contingency_loss_condition:
+        tag = "[CONT]"
+        reason = "contingency stop loss hit"
+    elif loss_condition:
+        tag = "[SL]"
+        reason = "stop loss target hit"
+
+    eval_parts = [f"EXIT ${symbol} {tag}: price ${last_price:.2f}"]
+    if option_data and option_data.get('premium') is not None:
+        eval_parts.append(f"prem ${option_data['premium']:.4f}")
+    eval_parts.append(reason)
+    exit_message = " | ".join(eval_parts)
+
+    # Color-code exit summary by status tag
+    if tag == "[TP]":
+        display.success(exit_message)
+    elif tag == "[SL]":
+        # Primary stop loss as warning (yellow)
+        display.warning(exit_message)
+    elif tag == "[CONT]":
+        # Contingency stop loss as error (red)
+        display.error(exit_message)
+    else:
+        # HOLD or any other tag stays neutral/white
+        display.status(exit_message)
 
     # Save play if we calculated missing targets (stock price or premium)
     if calculated_values and play_file:
@@ -642,7 +687,7 @@ def get_option_contract(play):
     contracts = res.option_contracts
     if contracts:
         logging.info(f"Option contract found: {contracts[0]}")
-        # display.info(f"Option contract found: {contracts[0]}")
+        display.success(f"Option contract found: {contracts[0].symbol}")
         return contracts[0]
     else:
         logging.error(f"No option contract found for {symbol} with given parameters")
@@ -670,8 +715,6 @@ def open_position(play, play_file):
     })
     
     # Get current stock price before opening position
-    # OLD: market_data = get_market_data(play['symbol'])
-    # NEW: Use our new function
     entry_stock_price = get_stock_price(play['symbol'])
     if entry_stock_price is None:
         logging.error("Failed to get current stock price. Aborting order placement.")
@@ -705,15 +748,14 @@ def open_position(play, play_file):
         play['entry_point'] = {}
     play['entry_point']['entry_premium'] = entry_premium
     logging.info(f"Entry premium ({entry_order_type}): ${entry_premium:.4f}")
-    # display.info(f"Entry premium ({entry_order_type}): ${entry_premium:.4f}")
+    display.price(f"Entry premium ({entry_order_type}): ${entry_premium:.4f}")
         
     # Calculate and store TP/SL levels if using premium percentages
     calculate_and_store_premium_levels(play, option_data)
     
     # Capture Greeks and update logging
     try:
-        logging.debug("Attempting to capture Greeks...")
-        # OLD: delta, theta = capture_greeks(play, current_premium)
+        logging.debug("Capturing Greeks...")
         # NEW: Get Greeks directly from option data
         delta = option_data['delta']
         theta = option_data['theta']
@@ -745,21 +787,21 @@ def open_position(play, play_file):
         logging.error(f"Error during Greeks capture: {str(e)}")
         display.error(f"Error during Greeks capture: {str(e)}")
         
-        # CRITICAL FIX: Always create logging section even if Greeks capture fails
+        # Always create logging section even if Greeks capture fails
         # This ensures opening data is recorded even when API fails
         if 'logging' not in play:
             play['logging'] = {}
         
         play['logging'].update({
-            'delta_atOpen': 0.0,  # Default to 0.0 when capture fails
-            'theta_atOpen': 0.0,  # Default to 0.0 when capture fails  
+            'delta_atOpen': 0.0,
+            'theta_atOpen': 0.0,
             'datetime_atOpen': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
             'price_atOpen': entry_stock_price,
             'premium_atOpen': entry_premium
         })
         
-        logging.warning("Greeks capture failed, but opening data recorded with zero Greeks")
-        display.warning("Greeks capture failed, but opening data recorded with zero Greeks")
+        logging.warning("Greeks capture failed, opening data recorded but with zero Greeks")
+        display.warning("Greeks capture failed, opening data recorded but with zero Greeks")
         # Continue with position opening even if Greeks capture fails
     
     logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
@@ -778,7 +820,7 @@ def open_position(play, play_file):
                 limit_price = option_data.get('ask', 0.0)
             elif order_type == 'limit at mid':
                 limit_price = option_data.get('mid', 0.0)
-            else:  # 'limit at last'
+            else:
                 limit_price = option_data.get('last', 0.0)
                 
             # Apply bid price settings if applicable
@@ -802,6 +844,7 @@ def open_position(play, play_file):
             )
             logging.info(f"Creating limit buy order with limit price: ${limit_price:.2f}")
             # display.info(f"Creating limit buy order with limit price: ${limit_price:.2f}")
+            display.status(f"Submitting {'LIMIT' if is_limit_order else 'MARKET'} BUY order for {play['contracts']} {contract.symbol}")
         else:
             order_req = MarketOrderRequest(
                 symbol=contract.symbol,
@@ -812,6 +855,7 @@ def open_position(play, play_file):
             )
             logging.info("Creating market buy order")
             # display.info("Creating market buy order")
+            display.status(f"Submitting {'LIMIT' if is_limit_order else 'MARKET'} BUY order for {play['contracts']} {contract.symbol}")
             
         response = client.submit_order(order_req)
         logging.info(f"Order submitted: {response}")
@@ -853,31 +897,27 @@ def close_position(play, close_conditions, play_file):
     """Close position based on the triggered conditions."""
     client = get_alpaca_client()
     contract_symbol = play.get('option_contract_symbol')
-
+    
     if not contract_symbol:
         logging.error("Option contract symbol not found in play. Cannot close position.")
-        display.error("Option contract symbol not found in play. Cannot close position.")
+        display.error("Option contract symbol not found in play file. Cannot close position.")
         return False
-
+    
     qty = play.get('contracts', 1)  # Default to 1 if not specified
-
+    
     try:
         # Initialize closing status
         play['status']['closing_order_id'] = None
         play['status']['closing_order_status'] = None
         play['status']['contingency_order_id'] = None
         play['status']['contingency_order_status'] = None
-
+    
         # Get current market data for logging
-        # OLD: current_stock_price = get_current_stock_price(play['symbol'])
-        # NEW: Use our new function
         current_stock_price = get_stock_price(play['symbol'])
         
-        # OLD: current_premium = get_current_option_premium(play)
-        # NEW: Use our new function
         option_data = get_option_data(play['option_contract_symbol'])
         current_premium = option_data['premium'] if option_data else None
-
+    
         # Determine close type and condition
         close_type = (
             'TP' if close_conditions['is_profit'] 
@@ -910,10 +950,10 @@ def close_position(play, close_conditions, play_file):
             'close_type': close_type,
             'close_condition': close_condition
         })
-
+    
         # Save initial closing status
         save_play(play, play_file)
-
+    
         # ---- TAKE PROFIT HANDLING ----
         if close_conditions['is_profit']:
             # Get fresh option data
@@ -922,39 +962,42 @@ def close_position(play, close_conditions, play_file):
                 logging.error("Failed to get current option data.")
                 display.error("Failed to get current option data.")
                 return False
-
+    
             # Determine limit price based on TP order type
             if play['take_profit'].get('order_type') == 'limit at last':
                 limit_price = current_premium
                 logging.info(f"Using last traded price for TP limit order: ${limit_price:.2f}")
                 # display.info(f"Using last traded price for TP limit order: ${limit_price:.2f}")
             elif play['take_profit'].get('order_type') == 'limit at ask':
-                # Get ask price if available
-                if option_data and option_data.get('ask') is not None:
-                    limit_price = option_data['ask']
-                    logging.info(f"Using ask price for TP limit order: ${limit_price:.2f}")
-                    # display.info(f"Using ask price for TP limit order: ${limit_price:.2f}")
+                if config.get('orders', 'bid_price_settings', 'take_profit', default=True):
+                    if option_data and option_data.get('ask') is not None:
+                        limit_price = option_data['ask']
+                        logging.info(f"Using ask price for TP limit order: ${limit_price:.2f}")
+                        # display.info(f"Using ask price for TP limit order: ${limit_price:.2f}")
+                    else:
+                        logging.error("Failed to get ask price. Falling back to TP target price.")
+                        display.error("Failed to get ask price. Falling back to TP target price.")
+                        limit_price = play['take_profit']['TP_option_prem']
                 else:
-                    logging.error("Failed to get ask price. Falling back to TP target price.")
-                    display.error("Failed to get ask price. Falling back to TP target price.")
                     limit_price = play['take_profit']['TP_option_prem']
             elif play['take_profit'].get('order_type') == 'limit at mid':
-                # Calculate mid price if bid and ask are available
-                if option_data and option_data.get('bid') is not None and option_data.get('ask') is not None:
-                    limit_price = (option_data['bid'] + option_data['ask']) / 2
-                    logging.info(f"Using mid price for TP limit order: ${limit_price:.2f}")
-                    # display.info(f"Using mid price for TP limit order: ${limit_price:.2f}")
+                if config.get('orders', 'bid_price_settings', 'take_profit', default=True):
+                    if option_data and option_data.get('bid') is not None and option_data.get('ask') is not None:
+                        limit_price = (option_data['bid'] + option_data['ask']) / 2
+                        logging.info(f"Using mid price for TP limit order: ${limit_price:.2f}")
+                        # display.info(f"Using mid price for TP limit order: ${limit_price:.2f}")
+                    else:
+                        logging.error("Failed to get bid/ask prices for mid calculation. Falling back to TP target price.")
+                        display.error("Failed to get bid/ask prices for mid calculation. Falling back to TP target price.")
+                        limit_price = play['take_profit']['TP_option_prem']
                 else:
-                    logging.error("Failed to get bid/ask prices for mid calculation. Falling back to TP target price.")
-                    display.error("Failed to get bid/ask prices for mid calculation. Falling back to TP target price.")
                     limit_price = play['take_profit']['TP_option_prem']
             elif play['take_profit'].get('order_type') == 'limit at bid':
-                # Get bid price if enabled in settings
                 if config.get('orders', 'bid_price_settings', 'take_profit', default=True):
                     if option_data and option_data.get('bid') is not None:
                         limit_price = option_data['bid']
-                        logging.info(f"Using bid price for TP limit order: ${limit_price:.2f}")
-                        # display.info(f"Using bid price for TP limit order: ${limit_price:.2f}")
+                        logging.info(f"Using current bid price for TP limit order: ${limit_price:.2f}")
+                        # display.info(f"Using current bid price for TP limit order: ${limit_price:.2f}")
                     else:
                         logging.error("Failed to get bid price. Falling back to TP target price.")
                         display.error("Failed to get bid price. Falling back to TP target price.")
@@ -965,7 +1008,7 @@ def close_position(play, close_conditions, play_file):
                 logging.warning(f"Unknown TP order type: {play['take_profit'].get('order_type')}. Falling back to TP target price.")
                 display.warning(f"Unknown TP order type: {play['take_profit'].get('order_type')}. Falling back to TP target price.")
                 limit_price = play['take_profit']['TP_option_prem']
-
+    
             # Build order for take profit if limit order requested
             if play['take_profit'].get('order_type', '').lower().startswith("limit"):
                 limit_price = round(limit_price, 2)
@@ -979,6 +1022,7 @@ def close_position(play, close_conditions, play_file):
                 )
                 logging.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
                 # display.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
+                display.status(f"Submitting TAKE PROFIT LIMIT SELL order for {contract_symbol} at ${limit_price:.2f}")
                 response = client.submit_order(order_req)
                 
                 # Add PENDING-CLOSING transition for limit orders
@@ -998,6 +1042,7 @@ def close_position(play, close_conditions, play_file):
                 )
                 logging.info("Creating take profit market sell order")
                 # display.info("Creating take profit market sell order")
+                display.status(f"Submitting TAKE PROFIT MARKET SELL order for {contract_symbol}")
                 
                 # Move directly to CLOSED for market orders
                 play['status']['position_exists'] = False
@@ -1007,13 +1052,16 @@ def close_position(play, close_conditions, play_file):
                 # display.info("Play moved to CLOSED state for market TP order")
         
         # Stop loss handling
-                    # Get fresh option data
-            option_data = get_option_data(play['option_contract_symbol'])
-            if option_data is None:
-                logging.error("Failed to get current option data.")
-                display.error("Failed to get current option data.")
-                return False
         else:
+            # Ensure we have current option data for stop loss processing
+            if option_data is None:
+                option_data = get_option_data(play['option_contract_symbol'])
+                if option_data is None:
+                    logging.error("Failed to get current option data for stop loss.")
+                    display.error("Failed to get current option data for stop loss.")
+                    return False
+                current_premium = option_data.get('premium')
+    
             # Handle contingency stop loss first
             if play['stop_loss'].get('SL_type', '').upper() == 'CONTINGENCY':
                 # Cancel all existing orders as a contingency measure
@@ -1032,13 +1080,13 @@ def close_position(play, close_conditions, play_file):
                         close_options=ClosePositionRequest(qty=str(qty))
                     )
                     logging.info("Creating contingency market sell order")
-                    # display.info("Creating contingency market sell order")
+                    display.warning(f"Submitting CONTINGENCY STOP LOSS MARKET SELL order for {contract_symbol}")
                     
                     # Move directly to CLOSED for market orders
                     play['status']['position_exists'] = False
                     save_play(play, play_file)
                     move_play_to_closed(play_file)
-                    logging.info("Play moved to CLOSED state for contingency market SL order")
+                    logging.info("Play designated as CLOSED for contingency market SL order")
                     # display.info("Play moved to CLOSED state for contingency market SL order")
                     
                 # If only primary condition is met, use limit order
@@ -1075,8 +1123,8 @@ def close_position(play, close_conditions, play_file):
                         if config.get('orders', 'bid_price_settings', 'stop_loss', default=True):
                             if option_data and option_data.get('bid') is not None:
                                 limit_price = option_data['bid']
-                                logging.info(f"Using bid price for primary SL limit order: ${limit_price:.2f}")
-                                # display.info(f"Using bid price for primary SL limit order: ${limit_price:.2f}")
+                                logging.info(f"Using current bid price for primary SL limit order: ${limit_price:.2f}")
+                                # display.info(f"Using current bid price for primary SL limit order: ${limit_price:.2f}")
                             else:
                                 logging.error("Failed to get bid price. Falling back to SL target premium.")
                                 display.error("Failed to get bid price. Falling back to SL target premium.")
@@ -1084,9 +1132,10 @@ def close_position(play, close_conditions, play_file):
                         else:
                             limit_price = play['stop_loss']['SL_option_prem']
                     else:
-                        logging.warning("Unknown SL order type for CONTINGENCY. Falling back to SL target premium.")
+                        logging.warning(f"Unknown SL order type: {play['stop_loss'].get('order_type')}. Falling back to SL target premium.")
+                        display.warning(f"Unknown SL order type: {play['stop_loss'].get('order_type')}. Falling back to SL target premium.")
                         limit_price = play['stop_loss']['SL_option_prem']
-
+    
                     limit_price = round(limit_price, 2)
                     order_req = LimitOrderRequest(
                         symbol=contract_symbol,
@@ -1098,6 +1147,7 @@ def close_position(play, close_conditions, play_file):
                     )
                     logging.info(f"Creating primary SL limit sell order at ${limit_price:.2f}")
                     # display.info(f"Creating primary SL limit sell order at ${limit_price:.2f}")
+                    display.status(f"Submitting Primary Stop Loss (LIMIT SELL) order for {contract_symbol} at ${limit_price:.2f}")
                     response = client.submit_order(order_req)
                     
                     # Add PENDING-CLOSING transition for limit orders
@@ -1107,6 +1157,9 @@ def close_position(play, close_conditions, play_file):
                     })
                     save_play(play, play_file)
                     move_play_to_pending_closing(play_file)
+                    logging.info("Play moved to PENDING-CLOSING state for limit SL order")
+                    # display.info("Play moved to PENDING-CLOSING state for limit SL order")
+            
             # Now handle regular (non-contingency) limit stop loss
             elif play['stop_loss'].get('SL_type', '').upper() == 'LIMIT':
                 sl_order = play['stop_loss'].get('order_type', '').lower()
@@ -1166,6 +1219,7 @@ def close_position(play, close_conditions, play_file):
                 )
                 logging.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
                 # display.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
+                display.status(f"Submitting STOP LOSS LIMIT SELL order for {contract_symbol} at ${limit_price:.2f}")
                 response = client.submit_order(order_req)
                 
                 # Add PENDING-CLOSING transition for limit orders
@@ -1186,7 +1240,7 @@ def close_position(play, close_conditions, play_file):
                     close_options=ClosePositionRequest(qty=str(qty))
                 )
                 logging.info("Creating stop loss market sell order")
-                # display.info("Creating stop loss market sell order")
+                display.warning(f"Submitting STOP LOSS MARKET SELL order for {contract_symbol}")
                 
                 # Move directly to CLOSED for market orders
                 play['status']['position_exists'] = False
@@ -1234,7 +1288,7 @@ def monitor_and_manage_position(play, play_file):
         
         if not contract_symbol or not underlying_symbol:
             logging.error("Missing required symbols")
-            display.error("Missing required symbols")
+            display.error("Play file is missing required symbols")
             return False
 
         # Get current market data
@@ -1246,9 +1300,9 @@ def monitor_and_manage_position(play, play_file):
            play['take_profit'].get('stock_price_pct') is not None or play['stop_loss'].get('stock_price_pct') is not None:
             try:
                 current_price = get_stock_price(underlying_symbol)
-                if current_price is None:
-                    logging.error(f"Failed to get valid stock price for {underlying_symbol}")
-                    display.error(f"Failed to get valid stock price for {underlying_symbol}")
+                if current_price is None or current_price <= 0:
+                    logging.error(f"Could not get valid stock price for {underlying_symbol}")
+                    display.error(f"Could not get valid stock price for {underlying_symbol}")
                     return False
                     
                 logging.info(f"Current stock price for {underlying_symbol}: ${current_price:.2f}")
@@ -1311,6 +1365,14 @@ def monitor_and_manage_position(play, play_file):
                 if sl_level is not None:
                     logging.info(f"Current trailing SL level: ${sl_level:.2f}")
                     # display.info(f"Current trailing SL level: ${sl_level:.2f}")
+                # Provide concise console feedback when trailing levels change
+                msg_parts = []
+                if tp_level is not None:
+                    msg_parts.append(f"TP {tp_level:.2f}")
+                if sl_level is not None:
+                    msg_parts.append(f"SL {sl_level:.2f}")
+                if msg_parts:
+                    display.status("Trailing updated: " + ", ".join(msg_parts))
                 # Persist trail state immediately to avoid loss on restart (use improved atomic saver)
                 try:
                     save_play_improved(play, play_file)
@@ -1334,11 +1396,11 @@ def monitor_and_manage_position(play, play_file):
                     return True
                 close_attempts += 1
                 logging.warning(f"Close attempt {close_attempts} failed. Retrying...")
-                display.warning(f"Close attempt {close_attempts} failed. Retrying...")
+                display.warning(f"Position Close attempt {close_attempts} failed. Retrying...")
                 time.sleep(2)
             
             logging.error("Failed to close position after maximum attempts")
-            display.error("Failed to close position after maximum attempts")
+            display.error("Failed to close position after exhausting retry attempts")
             return False
 
         return True
@@ -1383,7 +1445,7 @@ def move_play_to_new(play_file):
             
     except Exception as e:
         logging.error(f"Error moving play to NEW: {str(e)}")
-        display.error(f"Error moving play to NEW: {str(e)}")
+        display.error(f"Error designating play as NEW: {str(e)}")
         raise
 
 # Move to PENDING-OPENING (for plays whose BUY condition has hit but limit order has not yet been filled)
@@ -1416,7 +1478,7 @@ def move_play_to_pending_opening(play_file):
         
     except Exception as e:
         logging.error(f"Error moving play to PENDING-OPENING: {str(e)}")
-        display.error(f"Error moving play to PENDING-OPENING: {str(e)}")
+        display.error(f"Error designating play as PENDING-OPENING: {str(e)}")
         raise
 
 def move_play_to_open(play_file):
@@ -1450,7 +1512,7 @@ def move_play_to_open(play_file):
         return new_path  # Always return the new path
     except Exception as e:
         logging.error(f"Error moving play to OPEN: {str(e)}")
-        display.error(f"Error moving play to OPEN: {str(e)}")
+        display.error(f"Error designating play as OPEN: {str(e)}")
         raise
 
 # Move to PENDING-CLOSING (for plays whose SELL condition has hit but limit order has not yet been filled)
@@ -1496,7 +1558,7 @@ def move_play_to_closed(play_file):
             
     except Exception as e:
         logging.error(f"Error moving play to CLOSED: {str(e)}")
-        display.error(f"Error moving play to CLOSED: {str(e)}")
+        display.error(f"Error designating play as CLOSED: {str(e)}")
         raise
 
 # Move to EXPIRED (for plays which have expired, and OCO triggered plays)
@@ -1534,7 +1596,7 @@ def move_play_to_expired(play_file):
             
     except Exception as e:
         logging.error(f"Error moving play to EXPIRED: {str(e)}")
-        display.error(f"Error moving play to EXPIRED: {str(e)}")
+        display.error(f"Error designating play as EXPIRED: {str(e)}")
         raise
 
 # Move to TEMP (for plays recycled by OCO or held for later activation)
@@ -1575,7 +1637,7 @@ def move_play_to_temp(play_file):
             
     except Exception as e:
         logging.error(f"Error moving play to TEMP: {str(e)}")
-        display.error(f"Error moving play to TEMP: {str(e)}")
+        display.error(f"Error designating play as TEMP: {str(e)}")
         raise
 
 # ==================================================
@@ -1649,12 +1711,12 @@ def execute_trade(play_file, play_type):
             except Exception as e:
                 if "position does not exist" in str(e):
                     logging.warning(f"Position no longer exists for {play_file}. Moving to closed.")
-                    display.warning(f"Position no longer exists for {play_file}. Moving to closed.")
+                    display.warning(f"Position no longer exists for {play_file}. Designating as closed.")
                     try:
                         move_play_to_closed(play_file)
                     except Exception as move_err:
                         logging.error(f"Error moving play to closed: {str(move_err)}")
-                        display.error(f"Error moving play to closed: {str(move_err)}")
+                        display.error(f"Error designating play as closed: {str(move_err)}")
                 else:
                     logging.error(f"Error monitoring position: {str(e)}. Will retry next cycle.")
                     display.error(f"Error monitoring position: {str(e)}. Will retry next cycle.")
@@ -1666,7 +1728,7 @@ def execute_trade(play_file, play_type):
                 move_play_to_expired(play_file)
             except Exception as e:
                 logging.error(f"Error moving play to expired: {str(e)}. Will retry next cycle.")
-                display.error(f"Error moving play to expired: {str(e)}. Will retry next cycle.")
+                display.error(f"Error designating play as expired: {str(e)}. Will retry next cycle.")
             return True
             
         return True  # Always return True to continue with next play
@@ -1685,11 +1747,11 @@ def validate_play_order_types(play):
     entry_type = entry_point.get('order_type')
     if entry_type is None:
         logging.error("Missing order_type in entry_point")
-        display.error("Missing order_type in entry_point")
+        display.error("Missing order type for Position Entry")
         return False
     if entry_type not in valid_types:
         logging.error(f"Invalid entry_point order_type: {entry_type}")
-        display.error(f"Invalid entry_point order_type: {entry_type}")
+        display.error(f"Invalid Position Entry order type: {entry_type}")
         return False
     
     # Validate take profit order type
@@ -1697,7 +1759,7 @@ def validate_play_order_types(play):
     tp_type = tp.get('order_type')
     if tp_type is not None and tp_type not in valid_types:
         logging.error(f"Invalid take_profit order_type: {tp_type}")
-        display.error(f"Invalid take_profit order_type: {tp_type}")
+        display.error(f"Invalid Take Profit order type: {tp_type}")
         return False
     
     # Validate stop loss order type(s)
@@ -1708,16 +1770,16 @@ def validate_play_order_types(play):
     if sl_type == 'CONTINGENCY':
         if not isinstance(sl_order_type, list) or len(sl_order_type) != 2:
             logging.error("Contingency stop loss must have array of two order types")
-            display.error("Contingency stop loss must have array of two order types")
+            display.error("Contingency-style Stop Loss must consist of two order types")
             return False
         # First order must be a limit order, second must be market
         if not (sl_order_type[0].startswith('limit') and sl_order_type[1] == 'market'):
             logging.error("Contingency stop loss must have ['limit at bid/ask/mid/last', 'market'] order types")
-            display.error("Contingency stop loss must have ['limit at bid/ask/mid/last', 'market'] order types")
+            display.error("Contingency-style Stop Loss must consist of ['limit at bid/ask/mid/last', 'market'] order types")
             return False
     elif sl_order_type is not None and sl_order_type not in valid_types:
         logging.error(f"Invalid stop_loss order_type: {sl_order_type}")
-        display.error(f"Invalid stop_loss order_type: {sl_order_type}")
+        display.error(f"Invalid Stop Loss order type: {sl_order_type}")
         return False
     
     return True
@@ -1730,11 +1792,11 @@ def validate_play_order_types(play):
 def get_sleep_interval(minutes_to_open):
     """Return appropriate sleep interval based on time to market open."""
     if minutes_to_open > 240:    # More than 4 hours
-        return 600               # Check every 10 minutes
+        return 900               # Check every 15 minutes
     elif minutes_to_open > 120:  # More than 2 hours
-        return 300               # Check every 5 minutes
+        return 600               # Check every 10 minutes
     elif minutes_to_open > 30:   # More than 30 minutes
-        return 120               # Check every 2 minutes
+        return 240               # Check every 4 minutes
     elif minutes_to_open > 5:    # More than 5 minutes
         return 60                # Check every minute
     else:
@@ -1785,7 +1847,6 @@ def validate_market_hours():
             
         wait_hours = (next_market_day - current_time).total_seconds() / 3600
         # display.info(f"Market is closed for holiday. Current time in {market_tz}: {current_time_only}")
-        # display.info(f"Next market open in approximately {int(wait_hours)} hours")
         logging.info(f"Market closed (holiday). Next open: {next_market_day}")
         return False, int(wait_hours * 60)
     
@@ -1807,7 +1868,6 @@ def validate_market_hours():
             
         wait_hours = (next_market_day - current_time).total_seconds() / 3600
         # display.info(f"Market is closed for the weekend. Current time in {market_tz}: {current_time_only}")
-        # display.info(f"Next market open in approximately {int(wait_hours)} hours")
         logging.info(f"Market closed (weekend). Next open: {next_market_day}")
         return False, int(wait_hours * 60)
     
@@ -1830,8 +1890,8 @@ def validate_market_hours():
     cleanup_window_end = (datetime.combine(datetime.today(), cleanup_time) + timedelta(seconds=45)).time()
     
     if cleanup_window_start <= current_time_only <= cleanup_window_end:
-        logging.info("Market closed (4:15 PM). Processing pending plays...")
-        # display.info("Market closed (4:15 PM). Processing pending plays...")
+        logging.info("Market closed (4:15 PM). Processing end-of-day pending plays...")
+        display.info("Market closed (4:15 PM). Processing end-of-day pending plays...")
         handle_end_of_day_pending_plays()
     
     # Handle extended hours if enabled
@@ -1862,16 +1922,15 @@ def validate_market_hours():
         wait_minutes = int((next_open - current_time).total_seconds() / 60)
         
         # display.info(f"Market is closed. Current time in {market_tz}: {current_time_only}")
-        # display.info(f"Next market open in approximately {wait_minutes} minutes")
         logging.info(f"Market closed. Next open: {next_open}")
         return False, wait_minutes
         
-    display.success(f"Market is open. Current time in {market_tz}: {current_time_only}")
     logging.info(f"Market open. Current time: {current_time_only}")
     return True, 0
 
 def handle_api_error(e, operation):
     """Handle API errors with appropriate logging and display."""
+    # NOTE: Currently unused; reserved for potential centralized API error handling.
     error_msg = f"API error during {operation}: {str(e)}"
     display.error(error_msg)
     logging.error(error_msg)
@@ -1926,30 +1985,28 @@ def is_market_holiday(date):
 def monitor_plays_continuously():
     """Main monitoring loop for all plays"""
     plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plays'))
-    market_data = get_market_data_manager()  # Initialize market data manager
+    market_data = get_market_data_manager()
     
-    # Import the JSON fixer
     from goldflipper.utils.json_fixer import PlayFileFixer
     json_fixer = PlayFileFixer()
     
-    # display.info(f"Monitoring plays directory: {plays_dir}")
     logging.info(f"Monitoring plays directory: {plays_dir}")
 
     while True:
         try:
-            # Start new market data cycle
             market_data.start_new_cycle()
             logging.info("Starting new monitoring cycle")
-            # display.info("Starting new monitoring cycle")
             
             # Check market hours before processing
             is_open, minutes_to_open = validate_market_hours()
             if not is_open:
                 sleep_time = get_sleep_interval(minutes_to_open)
+                display.status(f"Market is CLOSED. Next check in {sleep_time} seconds.")
                 time.sleep(sleep_time)
                 continue
                 
-            display.header("Checking for new and open plays...")
+            display.success("Market is OPEN. Monitoring starting.")
+            # display.header("Checking for new and open plays...")
             logging.info("Checking for new and open plays")
 
             # Check for expired plays in the "new" folder
@@ -1965,7 +2022,7 @@ def monitor_plays_continuously():
                     if expiration_date < current_date:
                         move_play_to_expired(play_file)
                         display.warning(f"Moved expired play to expired folder: {play_file}")
-                        logging.warning(f"Moved expired play to expired folder: {play_file}")
+                        logging.warning(f"Play has expired: {play_file}")
 
             # Manage pending plays first
             manage_pending_plays(plays_dir)
@@ -2006,13 +2063,49 @@ def monitor_plays_continuously():
                                        f"Ask=${option_data['ask']:.2f}")
 
                             # Display formatted data to terminal
-                            display.header(f"Play: {play['symbol']} {play['trade_type']} ${play['strike_price']} exp:{play['expiration_date']}")
-                            display.status(f"Status: [{play_type}]")
-                            display.price(f"Stock Price: ${current_price:.2f}")
-                            # display.info("Option Data:")
-                            # display.info(f"  Bid: ${option_data['bid']:.2f}")
-                            # display.info(f"  Ask: ${option_data['ask']:.2f}")
-                            # display.info(f"  Last: ${option_data['premium']:.2f}")
+                            play_name = play.get('play_name', 'N/A')
+                            border = "+" + "-" * 60 + "+"
+                            header_text = play_name
+                            display.status(border, show_timestamp=False)
+                            display.status(f"|{header_text:^60}|", show_timestamp=False)
+                            display.status(border, show_timestamp=False)
+                            display.status(
+                                f"Play: {play['symbol']} {play['trade_type']} "
+                                f"{play['strike_price']} Strike {play['expiration_date']} Expiration"
+                            )
+
+                            # Map play types to display methods and colors
+                            status_display = {
+                                'new': (display.info, 'info'),
+                                'pending-opening': (display.info, 'info'),
+                                'open': (display.success, 'success'),
+                                'pending-closing': (display.warning, 'warning'),
+                                'closed': (display.status, 'status'),
+                                'expired': (display.error, 'error'),
+                                'temp': (display.info, 'info')
+                            }
+                            
+                            # Get the appropriate display method and color for the current play type
+                            display_method, color = status_display.get(play_type.lower(), (display.status, 'status'))
+                            
+                            play_status = play.get('status', {}).get('play_status')
+                            play_expiration_date = play.get('play_expiration_date')
+                            
+                            # Create status message with color
+                            status_msg = f"Status: [{play_type}]"
+                            if play_expiration_date and play_status in ('TEMP', 'NEW'):
+                                status_msg = f"Status: [{play_type}], Play expires: {play_expiration_date}"
+                            
+                            # Display with appropriate method
+                            display_method(status_msg, show_timestamp=False)
+
+                            display.price(f"Stock price: ${current_price:.2f}")
+                            display.price(
+                                f"Option premium: Bid ${option_data['bid']:.2f} "
+                                f"Ask ${option_data['ask']:.2f} Last ${option_data['premium']:.2f}"
+                            )
+                            display.status(border, show_timestamp=False)
+
                             
                         except Exception as e:
                             error_msg = f"Error fetching market data for {play['symbol']}: {str(e)}"
@@ -2026,8 +2119,8 @@ def monitor_plays_continuously():
                 
                 for play_file in play_files:
                     if execute_trade(play_file, play_type):
-                        msg = f"Successfully executed {play_type} play: {play_file}"
-                        display.success(msg)
+                        msg = f"Successfully processed {play_type} play: {play_file}"
+                        display.status(msg)
                         logging.info(msg)
                     else:
                         msg = f"Conditions not met for {play_type} play: {play_file}"
@@ -2067,9 +2160,9 @@ def monitor_plays_continuously():
             display.error(error_msg)
             logging.error(error_msg)
 
-            # Read the polling_interval from settings.yaml under the monitoring section.
+            # Wait for the configured interval before the next cycle
             polling_interval = config.get('monitoring', 'polling_interval', default=30)
-            time.sleep(polling_interval)  # Wait for the configured interval before the next cycle
+            time.sleep(polling_interval)
 
 # ==================================================
 # 8. ANCILLARY FUNCTIONS
@@ -2091,20 +2184,25 @@ def verify_position_exists(play):
                 time.sleep(retry_delay)
         except Exception as e:
             logging.error(f"Position verification attempt {attempt + 1} failed: {e}")
-            display.error(f"Position verification attempt {attempt + 1} failed: {e}")
+            display.error(f"Verifying position, attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
                 time.sleep(retry_delay)
     return False
 
 def handle_conditional_plays(play, play_file):
-    """Handle OCO and OTO triggers after position is confirmed open."""
+    """Handle OCO and OTO, aka OSO, triggers after position is confirmed open."""
     if play.get('status', {}).get('conditionals_handled'):
         return
+
+    display.status(
+        f"| OCO | OSO |: evaluating trigger conditions for {play.get('symbol', '')} "
+        f"{play.get('option_contract_symbol', '')}"
+    )
         
     # Verify position exists
     if not verify_position_exists(play):
         logging.error("Position not verified. Delaying conditional handling.")
-        display.error("Position not verified. Delaying conditional handling.")
+        display.error("Position could not be verified. Delaying conditional handling.")
         return False
     
     # Get trigger data directly from conditional_plays
@@ -2133,6 +2231,7 @@ def handle_conditional_plays(play, play_file):
     
     # Handle OCO triggers
     for oco_trigger in oco_triggers:
+        display.status(f"OCO: processing trigger {oco_trigger}")
         # 1) If trigger is still NEW, expire it
         new_path = os.path.join(plays_base_dir, 'new', oco_trigger)
         if os.path.exists(new_path):
@@ -2174,8 +2273,8 @@ def handle_conditional_plays(play, play_file):
 
                 # If already filled, do not recycle; let normal flow handle it
                 if order_status == 'filled':
-                    logging.warning(f"OCO pending-opening play already filled, cannot recycle: {oco_trigger}")
-                    display.warning(f"OCO pending-opening play already filled, cannot recycle: {oco_trigger}")
+                    logging.warning(f"OCO pending-opening play has already filled, cannot recycle: {oco_trigger}")
+                    display.warning(f"OCO pending-opening play has already filled; cannot be recycled: {oco_trigger}")
                     success = False
                     continue
 
@@ -2217,6 +2316,7 @@ def handle_conditional_plays(play, play_file):
     
     # Handle OTO triggers (move from temp to new)
     for oto_trigger in oto_triggers:
+        display.status(f"OTO: activating trigger {oto_trigger}")
         temp_path = os.path.join(plays_base_dir, 'temp', oto_trigger)
         new_path = os.path.join(plays_base_dir, 'new', oto_trigger)
         
@@ -2228,11 +2328,11 @@ def handle_conditional_plays(play, play_file):
                 # display.info(f"Moved OTO trigger from temp to new: {oto_trigger}")
             else:
                 logging.error(f"OTO trigger file not found in temp folder: {oto_trigger}")
-                display.error(f"OTO trigger file not found in temp folder: {oto_trigger}")
+                display.error(f"Conditional OTO play could not be found: {oto_trigger}")
                 success = False
         except Exception as e:
             logging.error(f"Failed to move OTO trigger {oto_trigger}: {e}")
-            display.error(f"Failed to move OTO trigger {oto_trigger}: {e}")
+            display.error(f"Failed to process OTO trigger {oto_trigger}: {e}")
             success = False
     
     play['status']['conditionals_handled'] = success
@@ -2275,7 +2375,7 @@ def reload_oco_peers(play, play_file):
             # display.info(f"OCO auto-reload: TEMP->NEW for {len(reloaded)} play(s): [{summary}]")
     except Exception as e:
         logging.error(f"Error in reload_oco_peers: {e}")
-        display.error(f"Error in reload_oco_peers: {e}")
+        display.error(f"Error in reloading OCO peers: {e}")
 
 def validate_bid_price(bid_price, symbol, fallback_price):
     """
@@ -2330,7 +2430,7 @@ def handle_end_of_day_pending_plays():
                     # Save updated play data
                     if not save_play(play, play_file):
                         logging.error(f"Failed to save updated play data for {play_file}")
-                        display.error(f"Failed to save updated play data for {play_file}")
+                        display.error(f"Failed to update play data for {play_file}")
                         continue
                     
                     # Move the play back to new
@@ -2340,7 +2440,7 @@ def handle_end_of_day_pending_plays():
                         # display.info(f"Successfully moved play back to new: {play_file}")
                     except Exception as e:
                         logging.error(f"Error moving play to new: {e}")
-                        display.error(f"Error moving play to new: {e}")
+                        display.error(f"Error designating play as 'new': {e}")
                         
                 except Exception as e:
                     logging.error(f"Error processing pending-opening play {play_file}: {e}")
@@ -2371,7 +2471,7 @@ def handle_end_of_day_pending_plays():
                     # Save updated play data
                     if not save_play(play, play_file):
                         logging.error(f"Failed to save updated play data for {play_file}")
-                        display.error(f"Failed to save updated play data for {play_file}")
+                        display.error(f"Failed to update play data for {play_file}")
                         continue
                     
                     # Move the play back to open
@@ -2381,7 +2481,7 @@ def handle_end_of_day_pending_plays():
                         # display.info(f"Successfully moved play back to open: {play_file}")
                     except Exception as e:
                         logging.error(f"Error moving play to open: {e}")
-                        display.error(f"Error moving play to open: {e}")
+                        display.error(f"Error designating play as 'open': {e}")
                         
                 except Exception as e:
                     logging.error(f"Error processing pending-closing play {play_file}: {e}")
@@ -2446,7 +2546,7 @@ def manage_pending_plays(plays_dir, single_play=None):
                                 position = client.get_open_position(contract_symbol)
                                 if position is None:
                                     logging.error(f"Order filled but position not found for {contract_symbol}")
-                                    display.error(f"Order filled but position not found for {contract_symbol}")
+                                    display.error(f"Order filled, but position not found for {contract_symbol}")
                                     if single_play:
                                         return False
                                     continue
@@ -2456,7 +2556,7 @@ def manage_pending_plays(plays_dir, single_play=None):
                                 new_filepath = move_play_to_open(play_file)
                                 if new_filepath:
                                     logging.info(f"Order filled and position verified, moved to open: {play_file}")
-                                    display.success(f"Order filled and position verified, moved to open: {play_file}")
+                                    display.success(f"Order filled and position verified: {play_file}")
                                     
                                     # Handle conditional plays after successful move to open
                                     handle_conditional_plays(play, new_filepath)
@@ -2498,7 +2598,7 @@ def manage_pending_plays(plays_dir, single_play=None):
                                 position = client.get_open_position(contract_symbol)
                                 if position is not None:
                                     logging.error(f"Closing order filled but position still exists for {contract_symbol}")
-                                    display.error(f"Closing order filled but position still exists for {contract_symbol}")
+                                    display.error(f"Closing order filled, but position still exists for {contract_symbol}")
                                     if single_play:
                                         return False
                                     continue
@@ -2509,20 +2609,20 @@ def manage_pending_plays(plays_dir, single_play=None):
                                 # Optionally auto-reload OCO peers from TEMP to NEW
                                 reload_oco_peers(play, play_file)
                                 logging.info(f"Closing order filled and position closed, moved to closed: {play_file}")
-                                display.success(f"Closing order filled and position closed, moved to closed: {play_file}")
+                                display.success(f"Closing order filled and position closed: {play_file}")
                                 if single_play:
                                     return True
                                 
                             except Exception as e:
                                 if "position does not exist" in str(e):
-                                    # This is actually what we want for a closing play
+                                    # This is expected for a closing play
                                     play['status']['position_exists'] = False
                                     save_play(play, play_file)
                                     move_play_to_closed(play_file)
                                     # Optionally auto-reload OCO peers from TEMP to NEW
                                     reload_oco_peers(play, play_file)
                                     logging.info(f"Position confirmed closed, moved to closed: {play_file}")
-                                    display.success(f"Position confirmed closed, moved to closed: {play_file}")
+                                    display.success(f"Position confirmed closed: {play_file}")
                                     if single_play:
                                         return True
                                 else:

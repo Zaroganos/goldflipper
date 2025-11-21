@@ -15,7 +15,7 @@ ascii_art = r"""
 
 Welcome to Project Goldflipper.
 
-Loading, please wait...
+Starting up ...
 """
 
 print(ascii_art)
@@ -57,12 +57,14 @@ def initialize_system():
     state_dir.mkdir(exist_ok=True)
     state_manager = StateManager(state_dir)
     
+    """
+    # TO DO: Implement state recovery logic
     # Load previous state if exists
     previous_state = state_manager.load_state()
     if previous_state:
         logging.info("Not implemented: Recovered previous state")
         display.info("Not implemented: Recovered previous state")
-        # TODO: Implement state recovery logic
+    """
     
     # Run startup self-tests
     test_results = run_startup_tests()
@@ -196,7 +198,7 @@ def run_trading_system(console_mode=False):
             
             logging.info("Starting watchdog monitoring")    
             if console_mode:
-                display.info("Starting watchdog monitoring")
+                display.info("Watchdog monitoring starting...")
 
             watchdog.start_monitoring()
             watchdog.update_heartbeat()
@@ -206,7 +208,7 @@ def run_trading_system(console_mode=False):
         else:
             logging.info("Watchdog system is disabled in configuration")
             if console_mode:
-                display.info("Watchdog system is disabled in configuration")
+                display.info("Watchdog system is disabled. Check settings to enable.")
         
         state_dir = Path(__file__).parent / 'state'
         state_dir.mkdir(exist_ok=True)
@@ -219,8 +221,8 @@ def run_trading_system(console_mode=False):
             try:
                 cycle_count += 1
                 logging.info(f"Starting cycle {cycle_count}")
-                if console_mode:
-                    display.info(f"Cycle {cycle_count} started")
+                # if console_mode:
+                #     display.info(f"Cycle {cycle_count} started")
                 
                 # Only update heartbeat if watchdog is enabled
                 if watchdog:
@@ -243,8 +245,8 @@ def run_trading_system(console_mode=False):
                 if watchdog:
                     watchdog.update_heartbeat()
                 
-                if console_mode:
-                    display.info(f"Cycle {cycle_count} completed")
+                # if console_mode:
+                #     display.info(f"Cycle {cycle_count} completed")
                 
             except KeyboardInterrupt:
                 logging.info("KeyboardInterrupt received")

@@ -6,7 +6,7 @@ set SCRIPT_PATH=%~dp0
 set SETTINGS_FILE=%SCRIPT_PATH%goldflipper\config\settings.yaml
 
 if not exist "%SETTINGS_FILE%" (
-    echo First time setup: Running setup dialog...
+    echo Setting up Goldflipper...
     python -m goldflipper.first_run_setup
     if errorlevel 1 (
         echo Error occurred during setup
@@ -17,7 +17,7 @@ if not exist "%SETTINGS_FILE%" (
 
 :: Launch the application
 cd /d %~dp0
-echo Starting Goldflipper in interactive mode...
+echo Goldflipper starting in interactive mode...
 python -m goldflipper.goldflipper_tui
 if errorlevel 1 (
     echo Error occurred while running Goldflipper

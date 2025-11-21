@@ -6,69 +6,71 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='goldflipper',
-    version='0.2.1',
+    version='0.2.2',
     author='Yaroshevskiy, Iliya',
     author_email='purpleafmanagement@gmail.com',
     description='A semi-autonomous options trading system on Alpaca.',
-    long_description=long_description,  # Long description from README.md
-    long_description_content_type="text/markdown",  # The format of the long description
+    long_description=long_description,             # Long description from README.md
+    long_description_content_type="text/markdown",
     url='https://github.com/Zaroganos/goldflipper',
-    license='Proprietary. Copyright Iliya Yaroshevskiy. All rights reserved.',  # License under which the package is distributed
+    license='Proprietary. Copyright Iliya Yaroshevskiy. All rights reserved.',
 
-    # Package structure
-    packages=find_packages(),  # Automatically discover and include all packages and sub-packages
+    # Automatically discover and include all packages and sub-packages
+    packages=find_packages(),  
 
     # Include additional files specified in MANIFEST.in
     include_package_data=True,
 
-    # Package data to include within the package itself
+    # Package data to include
     package_data={
         'goldflipper': [
-            'tools/PlayTemplate',  # Include Play Template in the tools directory
-            'plays/*.json',  # Include all JSON files in the plays directory
-            'config/*.py',  # Include all Python files in the config directory
+            'tools/play-template.json',           # JSON Play template
+            'config/*.py',                        # Configuration Management Module
+            'config/settings_template.yaml',      # Settings template
         ],
     },
 
-    # Python version compatibility
+    # Suggested Python version compatibility
     python_requires='>=3.10',
 
-    # Dependencies required
     install_requires=[
-        'alpaca-py', # Alpaca trading API v2
-        'yfinance>=0.2.54', # Yahoo Finance API for market data
-        'pandas>=2.0.0',  # Data analysis and manipulation library
-        'numpy>=1.24.0',  # Numerical computing library
-        'matplotlib>=3.7.0',  # Data visualization library
-        'seaborn>=0.12.0',  # Data visualization library
-        'scipy>=1.10.0',  # Scientific computing library
-        'ta>=0.10.0',  # Technical analysis library
-        'textual>=1.0.0',  # TUI library
-        'psutil>=5.9.0',  # System monitoring library
+        'alpaca-py>=0.40.0',              # Alpaca Markets brokerage trading API v2
+        'yfinance>=0.2.54',               # Unofficial, free yahoo market data API
+        'pandas>=2.0.0',
+        'numpy>=1.24.0',
+        'matplotlib>=3.7.0',              # Data visualization
+        'seaborn>=0.12.0',                # Data visualization
+        'scipy>=1.10.0',
+        'ta>=0.10.0',                     # Technical analysis
+        'textual>=1.0.0',                 # TUI
+        'psutil>=5.9.0',                  # System monitoring
         'pytest>=7.0.0',
-        'nest-asyncio>=1.5.0', # Asynchronous library
+        'nest-asyncio>=1.5.0',            # Async library
         'pywin32',
-        'tkinterdnd2>=0.3.0',  # For drag and drop support in the setup dialog
-        'requests>=2.25.0',  # HTTP library for API communication
-        'charset-normalizer>=3.2.0', # Required for requests library
-        'urllib3>=1.26.0',  # HTTP client with connection pooling
-        'PyYAML>=6.0.1',  # YAML configuration parsing
-        'colorama>=0.4.6',  # Terminal color output
-        'rich>=13.0.0',  # Enhanced terminal output
-        'mplfinance>=0.12.0',  # Financial plotting
-        'XlsxWriter>=3.1.0',  # Excel file creation
+        'tkinterdnd2>=0.3.0',             # Drag and drop support in the setup dialog
+        'requests>=2.25.0',               # HTTP library for API communication
+        'charset-normalizer>=3.2.0',      # Required for requests library
+        'urllib3>=1.26.0',                # HTTP client
+        'PyYAML>=6.0.1',                  # YAML parsing
+        'colorama>=0.4.6',                # Terminal color output
+        'rich>=13.0.0',                   # Enhanced terminal output
+        'mplfinance>=0.12.0',             # Financial plotting
+        'XlsxWriter>=3.1.0',              # Excel file creation
     ],
 
-    # Entry points to create command-line tools or scripts
+    # Entry points to cli tools or scripts
     entry_points={
         'console_scripts': [
-            'goldflipper=goldflipper.run:main',  # Assumes `main` function is in `run.py`
+            'goldflipper=goldflipper.run:main',
         ],
     },
 
     classifiers=[
         'Programming Language :: Python :: 3',
-        'License :: OSI Approved :: Proprietary. Copyright Iliya Yaroshevskiy. All rights reserved.',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'License :: Other/Proprietary License',
         'Operating System :: Microsoft :: Windows',
         'Development Status :: 4 - Beta',
         'Intended Audience :: Internal Use Only',
@@ -77,13 +79,11 @@ setup(
         'Topic :: Office/Business :: Financial :: Investment',
     ],
 
-    # Keywords related to the project (useful for PyPI and search)
     keywords='algorithmic trading alpaca finance stocks options',
 
-    # Project URLs for additional resources
     project_urls={
         'Bug Reports': 'https://github.com/Zaroganos/goldflipper/issues',
         'Source': 'https://github.com/Zaroganos/goldflipper',
-        'Documentation': 'https://github.com/Zaroganos/goldflipper/'
+        'Documentation': 'https://github.com/Zaroganos/goldflipper#readme'
     },
 )

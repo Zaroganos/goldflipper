@@ -12,7 +12,7 @@ class WatchdogManager:
         self.watchdog_thread = None
         self.running = False
         self.logger = logging.getLogger(__name__)
-        self._lock = threading.Lock()  # Add thread safety
+        self._lock = threading.Lock()
         self.logger.info("WatchdogManager initialized with check_interval=%d", check_interval)
 
     def start_monitoring(self):

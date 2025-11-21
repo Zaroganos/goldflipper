@@ -46,7 +46,7 @@ class FirstRunSetup:
         settings_frame.pack(fill='x', pady=10)
         
         # Settings file question
-        settings_label = tk.Label(settings_frame, text="Do you have an existing settings.yaml file?")
+        settings_label = tk.Label(settings_frame, text="Do you have an existing settings file? (settings.yaml)")
         settings_label.pack(pady=5)
         
         # File selection frame
@@ -127,13 +127,13 @@ class FirstRunSetup:
             shortcut_path = os.path.join(desktop, "Goldflipper.lnk")
             target_path = os.path.join(package_root, "launch_goldflipper.bat")
             
-            # Create shortcut using PowerShell with proper escaping
+            # Create shortcut using PowerShell
             ps_command = f'''
             $WshShell = New-Object -ComObject WScript.Shell
             $Shortcut = $WshShell.CreateShortcut("{shortcut_path}")
             $Shortcut.TargetPath = "{target_path}"
             $Shortcut.WorkingDirectory = "{package_root}"
-            $Shortcut.Description = "Launch Goldflipper Trading Application"
+            $Shortcut.Description = "Launch Goldflipper Classic"
             $Shortcut.IconLocation = "{icon_path}"
             $Shortcut.Save()
             '''
@@ -149,7 +149,6 @@ class FirstRunSetup:
             raise Exception(f"Error creating shortcut: {str(e)}")
     
     def copy_settings_file(self, source_path):
-        # Get the config directory path
         config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
         target_path = os.path.join(config_dir, "settings.yaml")
         
