@@ -8,7 +8,7 @@ import pandas as pd
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-from goldflipper.logging.trade_logger import PlayLogger
+from goldflipper.trade_logging.trade_logger import PlayLogger
 from goldflipper.utils.display import TerminalDisplay as display
 import tkinter as tk
 from tkinter import ttk, messagebox

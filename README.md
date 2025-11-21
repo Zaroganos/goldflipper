@@ -33,7 +33,7 @@ goldflipper/
 │   │   └── providers/        # Market data provider integrations
 │   └── ta/                   # Technical analysis tools
 ├── chart/                     # Charting and visualization
-├── logging/                   # Comprehensive logging system
+├── trade_logging/             # Comprehensive logging system
 │   ├── trade_logger.py       # Core trade logging functionality
 │   ├── trade_logger_ui.py    # Trade logger user interface
 │   └── logs/                 # Application logs storage

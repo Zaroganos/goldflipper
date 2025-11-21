@@ -496,7 +496,7 @@ class WelcomeScreen(Screen):
     def run_trade_logger(self):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            logging_dir = os.path.join(current_dir, "logging")
+            logging_dir = os.path.join(current_dir, "trade_logging")
             if os.name == 'nt':
                 cmd = ['cmd', '/k', 'cd', '/d', logging_dir, '&', 'python', 'trade_logger_ui.py']
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)

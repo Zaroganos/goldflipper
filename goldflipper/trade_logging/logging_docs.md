@@ -67,7 +67,7 @@ The Goldflipper Trading Logger is a comprehensive system for tracking, analyzing
 
 4.1 Basic Logging
     Example:
-    from goldflipper.logging.trade_logger import PlayLogger
+    from goldflipper.trade_logging.trade_logger import PlayLogger
     logger = PlayLogger()
     logger.log_play(play_data)
 
@@ -247,7 +247,7 @@ Required packages:
 
 14. FILE STRUCTURE
 ----------------
-goldflipper/logging/
+goldflipper/trade_logging/
 ├── data_backfill_helper.py # Backfills missing cells where possible
 ├── trade_logger.py       # Core logging functionality
 ├── trade_logger_ui.py    # User interface
