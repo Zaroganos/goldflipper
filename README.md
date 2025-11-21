@@ -83,6 +83,23 @@ Before you start, ensure you have the following:
 
 ### Installation
 
+#### One Command Bootstrap (Simple)
+
+The easiest way to install Goldflipper is to run the following command in PowerShell:
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/Zaroganos/goldflipper/main/bootstrap.ps1 | iex
+```
+
+The bootstrap script will:
+- Check for and install Git and Python if needed
+- Clone/update the repository to `%USERPROFILE%\goldflipper`
+- Create a virtual environment
+- Install all dependencies in development mode
+- Launch Goldflipper automatically
+
+#### Manual Installation
+
 1. **Clone the repository:**
 ```cmd
 git clone https://github.com/Zaroganos/goldflipper.git
@@ -96,7 +113,7 @@ pip install -r requirements.txt
 
 **Note**: You can also install in development mode using setup.py via:
 ```cmd
-pip install -e .
+pip install -e . --pre
 ```
 
 3. **Initial Setup and Configuration:**

@@ -152,7 +152,7 @@ function Update-Repository {
 
 function Initialize-Venv {
     param([string]$RepoPath)
-    $venvPath = Join-Path $RepoPath '.venv'
+    $venvPath = Join-Path $RepoPath 'venv'
     $python = Resolve-PythonInvoker
     if (-not $python) { throw 'Python invoker not found after installation.' }
     Write-Section 'Creating virtual environment'
@@ -165,13 +165,10 @@ function Initialize-Venv {
     $env:VIRTUAL_ENV = $venvPath
     $env:Path = "$scriptsPath;$($env:Path)"
 
-    Write-Section 'Upgrading pip and installing requirements'
+    Write-Section 'Upgrading pip and installing in development mode'
     python -m pip install --upgrade pip wheel
-    if (Test-Path (Join-Path $RepoPath 'requirements.txt')) {
-        python -m pip install -r (Join-Path $RepoPath 'requirements.txt')
-    } else {
-        python -m pip install -e $RepoPath
-    }
+    # Install in development mode (editable install)
+    python -m pip install -e $RepoPath --pre
 }
 
 function Initialize-Settings {
@@ -187,7 +184,16 @@ function Initialize-Settings {
 
 function Start-App {
     param([string]$RepoPath)
-    Write-Section 'Launching Goldflipper TUI'
+    Write-Section 'Launching Goldflipper'
+    
+    # Ensure venv is activated
+    $venvPath = Join-Path $RepoPath 'venv'
+    $scriptsPath = Join-Path $venvPath 'Scripts'
+    if (Test-Path $scriptsPath) {
+        $env:VIRTUAL_ENV = $venvPath
+        $env:Path = "$scriptsPath;$($env:Path)"
+    }
+    
     Push-Location $RepoPath
     try {
         python .\goldflipper\goldflipper_tui.py
@@ -208,7 +214,7 @@ try {
     if (-not $NoLaunch) {
         Start-App -RepoPath $InstallPath
     } else {
-        Write-Host "Bootstrap complete. To launch later: `n`n  `"$InstallPath\\.venv\\Scripts\\python.exe`" `"$InstallPath\\goldflipper\\goldflipper_tui.py`"`n" -ForegroundColor Green
+        Write-Host "Bootstrap complete. To launch later: `n`n  `"$InstallPath\\venv\\Scripts\\python.exe`" `"$InstallPath\\goldflipper\\goldflipper_tui.py`"`n" -ForegroundColor Green
     }
     Write-Section 'Done'
 }
