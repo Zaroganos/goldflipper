@@ -54,7 +54,7 @@ setup(
         'PyYAML>=6.0.1',                  # YAML parsing
         'colorama>=0.4.6',                # Terminal color output
         'rich>=13.0.0',                   # Enhanced terminal output
-        'mplfinance>=0.12.0',             # Financial plotting
+        'mplfinance>=0.12.10b0',           # Financial plotting (using beta version as stable 0.12.0 doesn't exist)
         'XlsxWriter>=3.1.0',              # Excel file creation
     ],
 
