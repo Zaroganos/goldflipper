@@ -173,18 +173,26 @@ function Initialize-Venv {
 
 function Initialize-Settings {
     param([string]$RepoPath)
-    $cfgDir = Join-Path $RepoPath 'goldflipper\config'
-    $template = Join-Path $cfgDir 'settings_template.yaml'
-    $settings = Join-Path $cfgDir 'settings.yaml'
-    if ((Test-Path $template) -and -not (Test-Path $settings)) {
-        Write-Section 'Creating initial settings.yaml from template'
-        Copy-Item $template $settings -Force
+    # Always run first-run setup when installed via bootstrap
+    # The setup wizard will detect existing settings and offer options
+    Write-Section 'Launching Goldflipper first-run setup wizard'
+    Push-Location $RepoPath
+    try {
+        python -m goldflipper.first_run_setup
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host 'Setup wizard was cancelled or failed. Settings will be created from template when TUI starts if needed.' -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "Error running setup wizard: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host 'Settings profile will be created from template when Goldflipper starts if needed.' -ForegroundColor Yellow
+    } finally {
+        Pop-Location
     }
 }
 
 function Start-App {
     param([string]$RepoPath)
-    Write-Section 'Launching Goldflipper'
+    Write-Section 'Launching Goldflipper ...'
     
     # Ensure venv is activated
     $venvPath = Join-Path $RepoPath 'venv'
