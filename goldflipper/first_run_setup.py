@@ -254,7 +254,24 @@ class FirstRunSetup:
     
     def create_shortcut(self):
         try:
-            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            # Get desktop path using Windows shell folders (more reliable)
+            import winreg
+            try:
+                # Try to get Desktop path from registry
+                key = winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
+                )
+                desktop = winreg.QueryValueEx(key, "Desktop")[0]
+                winreg.CloseKey(key)
+            except (OSError, FileNotFoundError):
+                # Fallback to user profile Desktop
+                desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            
+            # Ensure desktop directory exists
+            if not os.path.exists(desktop):
+                os.makedirs(desktop, exist_ok=True)
+            
             # Get the package root directory (where goldflipper.ico and launch_goldflipper.bat are)
             package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             icon_path = os.path.join(package_root, "goldflipper.ico")
@@ -262,23 +279,64 @@ class FirstRunSetup:
             shortcut_path = os.path.join(desktop, "Goldflipper.lnk")
             target_path = os.path.join(package_root, "launch_goldflipper.bat")
             
-            # Create shortcut using PowerShell
+            # Escape backslashes for PowerShell (double them)
+            desktop_escaped = desktop.replace("\\", "\\\\")
+            shortcut_path_escaped = shortcut_path.replace("\\", "\\\\")
+            target_path_escaped = target_path.replace("\\", "\\\\")
+            package_root_escaped = package_root.replace("\\", "\\\\")
+            icon_path_escaped = icon_path.replace("\\", "\\\\")
+            
+            # Create shortcut using PowerShell with proper escaping
             ps_command = f'''
-            $WshShell = New-Object -ComObject WScript.Shell
-            $Shortcut = $WshShell.CreateShortcut("{shortcut_path}")
-            $Shortcut.TargetPath = "{target_path}"
-            $Shortcut.WorkingDirectory = "{package_root}"
-            $Shortcut.Description = "Launch Goldflipper Classic"
-            $Shortcut.IconLocation = "{icon_path}"
-            $Shortcut.Save()
-            '''
+$desktop = "{desktop_escaped}"
+$shortcutPath = "{shortcut_path_escaped}"
+$targetPath = "{target_path_escaped}"
+$workingDir = "{package_root_escaped}"
+$iconPath = "{icon_path_escaped}"
+
+if (-not (Test-Path $desktop)) {{
+    New-Item -ItemType Directory -Path $desktop -Force | Out-Null
+}}
+
+$WshShell = New-Object -ComObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut($shortcutPath)
+$Shortcut.TargetPath = $targetPath
+$Shortcut.WorkingDirectory = $workingDir
+$Shortcut.Description = "Launch Goldflipper Classic"
+if (Test-Path $iconPath) {{
+    $Shortcut.IconLocation = $iconPath
+}}
+$Shortcut.Save()
+'''
             
             # Use subprocess instead of os.system for better error handling
             result = subprocess.run(['powershell', '-Command', ps_command], 
                                  capture_output=True, text=True)
             
             if result.returncode != 0:
-                raise Exception(f"Failed to create shortcut: {result.stderr}")
+                error_msg = result.stderr.strip() if result.stderr else result.stdout.strip()
+                raise Exception(f"Failed to create shortcut: {error_msg}")
+                
+        except ImportError:
+            # winreg not available (shouldn't happen on Windows, but handle gracefully)
+            # Fallback to simpler method
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            if not os.path.exists(desktop):
+                os.makedirs(desktop, exist_ok=True)
+            
+            package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            shortcut_path = os.path.join(desktop, "Goldflipper.lnk")
+            target_path = os.path.join(package_root, "launch_goldflipper.bat")
+            
+            # Use simpler PowerShell command with raw strings
+            ps_command = f'$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut("{shortcut_path}"); $Shortcut.TargetPath = "{target_path}"; $Shortcut.WorkingDirectory = "{package_root}"; $Shortcut.Description = "Launch Goldflipper Classic"; $Shortcut.Save()'
+            
+            result = subprocess.run(['powershell', '-Command', ps_command], 
+                                 capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() if result.stderr else result.stdout.strip()
+                raise Exception(f"Failed to create shortcut: {error_msg}")
                 
         except Exception as e:
             raise Exception(f"Error creating shortcut: {str(e)}")
