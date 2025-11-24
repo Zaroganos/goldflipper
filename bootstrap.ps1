@@ -6,6 +6,35 @@ param(
     [switch]$NoLaunch
 )
 
+<#
+TODO: Address the following concerns in Update-Repository function:
+
+1. Non-git directory handling:
+   - Currently, if the directory exists but is NOT a git repo, the script only prints a warning
+     and continues execution. This can cause issues because:
+     - Initialize-Venv may run on the wrong location
+     - Initialize-Settings may create/overwrite files incorrectly
+     - Start-App may launch from the wrong location
+   - Should either: fail with clear error, or handle this case explicitly
+
+2. Uncommitted changes:
+   - git pull --ff-only will fail if there are uncommitted changes
+   - Should handle: stash changes, warn user, or provide option to abort
+
+3. Branch divergence:
+   - git pull --ff-only will fail if local branch has diverged from remote
+   - Should handle: merge, rebase, or warn user about divergence
+
+4. Remote URL verification:
+   - If directory exists and is a git repo but points to different remote URL,
+     git fetch may fail or fetch from wrong repository
+   - Should verify remote URL matches expected repository before updating
+
+5. Error handling:
+   - git operations may fail silently or with unclear errors
+   - Should add proper error checking and user-friendly error messages
+#>
+
 function Write-Section {
     param([string]$Message)
     Write-Host "`n=== $Message ===" -ForegroundColor Cyan
@@ -24,7 +53,7 @@ function Test-CommandExists {
 
 function Test-WinGet {
     if (Test-CommandExists -Name 'winget') { return $true }
-    Write-Host 'winget not found. On some Windows 10 editions it may be missing. Falling back to Chocolatey if available.' -ForegroundColor Yellow
+    Write-Host 'winget not found. On some Windows editions it may be missing. Falling back to Chocolatey if available.' -ForegroundColor Yellow
     return $false
 }
 
@@ -34,7 +63,7 @@ function Install-Chocolatey {
         Write-Host 'Chocolatey not found and admin rights not detected. Skipping Chocolatey install.' -ForegroundColor Yellow
         return $false
     }
-    Write-Section 'Installing Chocolatey (requires admin)'
+    Write-Section 'Installing Chocolatey (requires admin privileges)'
     Set-ExecutionPolicy Bypass -Scope Process -Force | Out-Null
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
     try {
@@ -65,7 +94,7 @@ function Install-Program {
             winget install --id $WingetId --silent --accept-source-agreements --accept-package-agreements -e
         }
         catch {
-            Write-Host "winget failed to install ${Name}: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "Winget failed to install ${Name}: $($_.Exception.Message)" -ForegroundColor Yellow
         }
         if (Test-CommandExists -Name $Name) { return $true }
     }
@@ -105,10 +134,10 @@ function Resolve-PythonInvoker {
 function Install-PythonIfMissing {
     $invoker = Resolve-PythonInvoker
     if ($invoker) { return $true }
-    Write-Section 'Python not found; attempting installation'
+    Write-Section 'Python not found, attempting to install it...'
     $ok = Install-Program -Name 'python' -WingetId 'Python.Python.3.12' -ChocoId 'python'
     if (-not $ok) {
-        Write-Host 'Failed to install Python automatically. Please install Python 3.10+ and re-run.' -ForegroundColor Red
+        Write-Host 'Failed to install Python automatically. Please install Python and re-run.' -ForegroundColor Red
         return $false
     }
     return $true
@@ -116,7 +145,7 @@ function Install-PythonIfMissing {
 
 function Install-GitIfMissing {
     if (Test-CommandExists -Name 'git') { return $true }
-    Write-Section 'Git not found; attempting installation'
+    Write-Section 'Git not found, attempting to install it...'
     $ok = Install-Program -Name 'git' -WingetId 'Git.Git' -ChocoId 'git'
     if (-not $ok) {
         Write-Host 'Failed to install Git automatically. Please install Git and re-run.' -ForegroundColor Red
@@ -137,7 +166,7 @@ function Update-Repository {
         } finally { Pop-Location }
     } else {
         if (Test-Path (Join-Path $Path '.git')) {
-            Write-Section 'Updating repository'
+            Write-Section 'Updating repository...'
             Push-Location $Path
             try {
                 git fetch --all --prune
@@ -145,7 +174,7 @@ function Update-Repository {
                 git pull --ff-only
             } finally { Pop-Location }
         } else {
-            Write-Host "Target path exists but is not a git repo: $Path" -ForegroundColor Yellow
+            Write-Host "Target path already exists but it is not a git repository: $Path" -ForegroundColor Yellow
         }
     }
 }
@@ -211,7 +240,7 @@ function Start-App {
 }
 
 try {
-    Write-Section 'Goldflipper bootstrap starting'
+    Write-Section 'Goldflipper setup starting...'
     if (-not (Install-GitIfMissing)) { throw 'Git is required but could not be installed.' }
     if (-not (Install-PythonIfMissing)) { throw 'Python is required but could not be installed.' }
 
@@ -222,11 +251,11 @@ try {
     if (-not $NoLaunch) {
         Start-App -RepoPath $InstallPath
     } else {
-        Write-Host "Bootstrap complete. To launch later: `n`n  `"$InstallPath\\venv\\Scripts\\python.exe`" `"$InstallPath\\goldflipper\\goldflipper_tui.py`"`n" -ForegroundColor Green
+        Write-Host "Setup complete. To launch later: `n`n  `"$InstallPath\\venv\\Scripts\\python.exe`" `"$InstallPath\\goldflipper\\goldflipper_tui.py`"`n" -ForegroundColor Green
     }
     Write-Section 'Done'
 }
 catch {
-    Write-Host "Bootstrap failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Setup failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }

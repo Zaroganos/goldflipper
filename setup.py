@@ -6,11 +6,11 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='goldflipper',
-    version='0.2.2',
+    version='0.2.3',
     author='Yaroshevskiy, Iliya',
     author_email='purpleafmanagement@gmail.com',
     description='A semi-autonomous options trading system on Alpaca.',
-    long_description=long_description,             # Long description from README.md
+    long_description=long_description,             # From README.md
     long_description_content_type="text/markdown",
     url='https://github.com/Zaroganos/goldflipper',
     license='Proprietary. Copyright Iliya Yaroshevskiy. All rights reserved.',
@@ -30,7 +30,7 @@ setup(
         ],
     },
 
-    # Suggested Python version compatibility
+    # Suggested Python version forcompatibility
     python_requires='>=3.10',
 
     install_requires=[
@@ -54,7 +54,7 @@ setup(
         'PyYAML>=6.0.1',                  # YAML parsing
         'colorama>=0.4.6',                # Terminal color output
         'rich>=13.0.0',                   # Enhanced terminal output
-        'mplfinance>=0.12.10b0',           # Financial plotting (using beta version as stable 0.12.0 doesn't exist)
+        'mplfinance>=0.12.10b0',          # Financial plotting (using beta as stable 0.12.0 doesn't exist)
         'XlsxWriter>=3.1.0',              # Excel file creation
     ],
 
