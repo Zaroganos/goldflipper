@@ -6,6 +6,6 @@ if exist "%~dp0venv\Scripts\activate.bat" (
     call "%~dp0venv\Scripts\activate.bat"
 )
 
-echo Goldflipper starting in console mode...
+echo Goldflipper starting in console mode ...
 python -m goldflipper.run --mode console
 pause

@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='goldflipper',
-    version='0.2.3',
+    version='0.2.2',
     author='Yaroshevskiy, Iliya',
     author_email='purpleafmanagement@gmail.com',
     description='A semi-autonomous options trading system on Alpaca.',
@@ -34,7 +34,7 @@ setup(
     python_requires='>=3.10',
 
     install_requires=[
-        'alpaca-py>=0.40.0',              # Alpaca Markets brokerage trading API v2
+        'alpaca-py>=0.42.0',              # Alpaca Markets brokerage trading API v2
         'yfinance>=0.2.54',               # Unofficial, free yahoo market data API
         'pandas>=2.0.0',
         'numpy>=1.24.0',
