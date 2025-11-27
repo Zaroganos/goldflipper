@@ -1,5 +1,5 @@
 # Goldflipper
-Goldflipper Trading System
+Goldflipper Classic Trading System
 
 ![goldlfipper](https://github.com/user-attachments/assets/60a7b1c3-40ef-4dd2-9c64-98be7e93f185)
 
@@ -9,63 +9,11 @@ Goldflipper Trading System
 Goldflipper Classic is proprietary, source-available software. Please note that technical support, bug fix, and feature requests are managed on a discretionary basis at this time. 
 This program does not capture or transmit any of your data. Goldflipper only makes connections to brokerage(s) and market data provider(s). Newer branches also make calls using ancillary python libraries in order to enhance function by validating inputs (to address user entry errors), and by checking the market calendar. Security wise, note that in this version, access keys are stored in the settings file in plaintext (or, plain-yaml).
 
+
 ## Introduction
 
 Goldflipper Classic is a rules-based semi-autonomous trading system developed in Python. It utilizes a modular, event-driven architecture to automate trading strategy execution, with a current focus on level 2 options trading. The system is designed for customizability, modularity, and offers a feature-rich parameter selection that enables functionality not seen in any other program of its kind. Goldflipper integrates with the Alpaca Markets API for live trading, and has API integrations with market data providers as well in order to provide a modular and robust trading experience with fallbacks for reliability.
 
-## Directory Structure
-
-Goldflipper Classic is roughly organized into the following directory structure:
-(Simplified for brevity, access the codebase to discover the full content.)
-
-```
-goldflipper/
-├── config/                     # Configuration files and settings
-│   ├── config.py              # Configuration management
-│   └── settings_template.yaml # Configuration template
-├── data/                      # Data handling modules
-│   ├── greeks/               # Options Greeks calculations
-│   ├── indicators/           # Technical indicators
-│   ├── market/               # Market data handling and management
-│   │   ├── manager.py        # Market data coordination
-│   │   ├── operations.py     # Business logic operations
-│   │   ├── cache.py          # Data caching system
-│   │   └── providers/        # Market data provider integrations
-│   └── ta/                   # Technical analysis tools
-├── chart/                     # Charting and visualization
-├── trade_logging/             # Comprehensive logging system
-│   ├── trade_logger.py       # Core trade logging functionality
-│   ├── trade_logger_ui.py    # Trade logger user interface
-│   └── logs/                 # Application logs storage
-├── plays/                     # Trading plays management (state-based), pre-DB
-│   ├── closed/               # Completed trading positions
-│   ├── expired/              # Expired options
-│   ├── new/                  # New trading opportunities
-│   ├── open/                 # Currently active positions
-│   ├── pending-closing/      # Positions pending closure
-│   ├── pending-opening/      # Positions pending opening
-│   ├── old/                  # Archived plays
-│   └── temp/                 # Temporary/OSO plays
-├── tools/                     # User-accessible toolkit
-│   ├── auto_play_creator.py  # Automated play generation (for testing purposes)
-│   ├── play_creation_tool.py # Interactive play creation
-│   ├── play-edit-tool.py     # Advanced play editing with safety features
-│   ├── view_plays.py         # Play viewing and management
-│   ├── option_data_fetcher.py # Options data retrieval
-│   ├── get_alpaca_info.py    # Alpaca account information
-│   ├── system_status.py      # System health monitoring
-│   ├── configuration.py      # Configuration management
-│   └── [multiple other tools] # JSON processing, CSV ingestion, etc.
-├── utils/                     # General utility functions
-├── watchdog/                  # System monitoring and health checks
-├── state/                     # System state management and persistence
-├── strategy/                  # Trading strategy definitions
-├── reference/                 # Reference materials and templates
-├── src/                       # Windows Service code
-│   ├── service/              # Windows service integration
-│   └── state/                # State management components
-└── tests/                     # Test suites and validations
-```
 
 ## Getting Started
 
@@ -126,7 +74,7 @@ pip install -e . --pre
      - **Trading parameters**: Set your desired values for risk management, trading behavior, etc.
      - **System preferences**: Logging levels, watchdog settings, etc.
 
-### Running the System
+### Running the Trading System
 
 Goldflipper offers multiple interfaces and execution modes:
 
@@ -137,9 +85,9 @@ The Text User Interface provides an intuitive way to interact with all system fe
 python goldflipper\goldflipper_tui.py
 ```
 
-#### 2. **Console Mode**
+#### 2. **Windows Service Mode**
+- Runs on startup as daemon
 
-#### 3. **Windows Service Mode**
 
 ## Key Features
 
@@ -176,6 +124,7 @@ python goldflipper\goldflipper_tui.py
 - **State persistence** with automatic backup and recovery
 - **Error handling** with graceful degradation and retry logic
 - **Market hours validation** and holiday awareness
+
 
 ## Market Data Providers
 
@@ -218,6 +167,60 @@ market_data_providers:
 - **Logging levels**: Debug, info, warning, error
 - **Display options**: Chart settings, option chain columns
 - **File paths**: Custom directory structures
+
+## Directory Structure
+
+Goldflipper Classic is roughly organized into the following directory structure:
+(Simplified for brevity, access the codebase to discover the full content.)
+
+```
+goldflipper/
+├── config/                     # Configuration files and settings
+│   ├── config.py              # Configuration management
+│   └── settings_template.yaml # Configuration template
+├── data/                      # Data handling modules
+│   ├── greeks/               # Options Greeks calculations
+│   ├── indicators/           # Technical indicators
+│   ├── market/               # Market data handling and management
+│   │   ├── manager.py        # Market data coordination
+│   │   ├── operations.py     # Business logic operations
+│   │   ├── cache.py          # Data caching system
+│   │   └── providers/        # Market data provider integrations
+│   └── ta/                   # Technical analysis tools
+├── chart/                     # Charting and visualization
+├── trade_logging/             # Comprehensive logging system
+│   ├── trade_logger.py       # Core trade logging functionality
+│   ├── trade_logger_ui.py    # Trade logger user interface
+│   └── logs/                 # Application logs storage
+├── plays/                     # Trading plays management (state-based), pre-DB
+│   ├── closed/               # Completed trading positions
+│   ├── expired/              # Expired options
+│   ├── new/                  # New trading opportunities
+│   ├── open/                 # Currently active positions
+│   ├── pending-closing/      # Positions pending closure
+│   ├── pending-opening/      # Positions pending opening
+│   ├── old/                  # Archived plays
+│   └── temp/                 # Temporary/OSO plays
+├── tools/                     # User-accessible toolkit
+│   ├── auto_play_creator.py  # Automated play generation (for testing purposes)
+│   ├── play_creation_tool.py # Interactive play creation
+│   ├── play-edit-tool.py     # Advanced play editing with safety features
+│   ├── view_plays.py         # Play viewing and management
+│   ├── option_data_fetcher.py # Options data retrieval
+│   ├── get_alpaca_info.py    # Alpaca account information
+│   ├── system_status.py      # System health monitoring
+│   ├── configuration.py      # Configuration management
+│   └── [multiple other tools] # JSON processing, CSV ingestion, etc.
+├── utils/                     # General utility functions
+├── watchdog/                  # System monitoring and health checks
+├── state/                     # System state management and persistence
+├── strategy/                  # Trading strategy definitions
+├── reference/                 # Reference materials and templates
+├── src/                       # Windows Service code
+│   ├── service/              # Windows service integration
+│   └── state/                # State management components
+└── tests/                     # Test suites and validations
+```
 
 ## License
 
