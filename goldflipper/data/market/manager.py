@@ -175,6 +175,41 @@ class MarketDataManager:
             display.error(f"Error getting stock price for {symbol}: {str(e)}")
             return None
             
+    def get_next_earnings_date(self, symbol: str) -> Optional[datetime]:
+        """Get the next upcoming earnings report date for a symbol.
+
+        This is a thin wrapper around the MarketData.app provider's
+        earnings endpoint, with simple cycle caching. If the
+        MarketDataApp provider is not configured or the API returns no
+        upcoming earnings, this returns None.
+        """
+        try:
+            cache_key = f"earnings_next:{symbol}"
+            if cached := self.cache.get(cache_key):
+                return cached
+
+            provider = self.providers.get("marketdataapp")
+            if not provider or not hasattr(provider, "get_next_earnings_date"):
+                self.logger.info("MarketDataApp provider not available for earnings lookup")
+                return None
+
+            # Allow provider-specific symbol mapping
+            try:
+                sym = translate_symbol("marketdataapp", symbol)
+            except Exception:
+                sym = symbol
+
+            self.logger.info(f"Fetching next earnings date for {symbol} via MarketDataApp")
+            next_dt = provider.get_next_earnings_date(sym)
+
+            if next_dt is not None:
+                self.cache.set(cache_key, next_dt)
+            return next_dt
+
+        except Exception as e:
+            self.logger.error(f"Error getting next earnings date for {symbol}: {e}")
+            return None
+
     def get_option_quote(self, contract_symbol: str) -> Optional[Dict[str, float]]:
         """Get option quote data with cycle caching"""
         try:

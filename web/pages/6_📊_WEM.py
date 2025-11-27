@@ -7,8 +7,6 @@ This page provides functionality for:
 3. Exporting data to Excel
 4. Managing user preferences for WEM stocks
 
-RECENT FIXES (2025-06-21):
-==========================
 - Fixed MarketDataApp provider option splitting logic to use 'side' field instead of symbol parsing
 - Resolved database schema mismatch where web app used different database than command-line tools
 - Added proper database path configuration in web launcher to ensure consistency
@@ -20,8 +18,6 @@ RECENT FIXES (2025-06-21):
   * S1/S2: Stock price ± WEM Points (stock price levels ~$580-610)
 - Fixed Delta 16+/- calculation to use actual delta values from option chain
 
-NEW FEATURES (Current Session):
-===============================
 - Added modular Delta 16+/- quality validation system with UI controls
 - Validation checks include:
   * Strike coverage and density validation
@@ -35,8 +31,6 @@ NEW FEATURES (Current Session):
 - Comprehensive logging of validation results and warnings
 - Graceful degradation: poor quality matches are rejected only when validation enabled
 
-TECHNICAL DETAILS:
-==================
 WEM Calculation Method: Automated Full Chain Analysis with Holiday Handling
 - Gets full weekly option chain for next Friday expiration (with smart holiday adjustment)
 - Auto-detects ATM strike closest to current stock price
@@ -46,8 +40,6 @@ WEM Calculation Method: Automated Full Chain Analysis with Holiday Handling
 - Additionally calculates proper Delta 16+/- values using actual option deltas
 - Uses MarketDataApp provider with proper call/put separation
 
-HOLIDAY HANDLING:
-=================
 - Automatically detects US market holidays (Independence Day, Christmas, etc.)
 - When Friday is a holiday, adjusts expiration to Thursday (industry standard)
 - Includes comprehensive fallback mechanism to try alternative expiration dates
@@ -149,6 +141,7 @@ if not logger.handlers:  # Only set up basic logging if no handlers exist
 import streamlit as st
 import pandas as pd
 import numpy as np
+from scipy import stats  # For normal distribution functions (delta validation)
 from datetime import timedelta
 import sys
 import os
@@ -300,6 +293,128 @@ def get_market_data_manager():
         logger.error(f"Failed to initialize market data manager: {str(e)}", exc_info=True)
         return None
 
+def _sanitize_for_json(obj: Any) -> Any:
+    """
+    Recursively convert numpy types and other non-JSON-serializable objects to Python native types.
+    
+    This is needed because the sanity check results may contain numpy booleans, numpy floats, etc.
+    that Python's JSON encoder cannot handle.
+    
+    Args:
+        obj: Any object that needs to be made JSON-serializable
+        
+    Returns:
+        JSON-serializable version of the object
+    """
+    import numpy as np
+    
+    if obj is None:
+        return None
+    elif isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    elif isinstance(obj, (np.integer, int)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, float)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, str):
+        return str(obj)
+    elif hasattr(obj, 'isoformat'):  # datetime objects
+        return obj.isoformat()
+    else:
+        # Try to convert to string as last resort
+        try:
+            return str(obj)
+        except:
+            return None
+
+
+def _derive_delta_16_warnings_from_meta(stock_dict: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Derive delta 16+/- warning levels from stored meta_data.
+    
+    Checks the stored sanity check results and delta calculation info to determine
+    if warnings should be displayed for the delta 16 values.
+    
+    Args:
+        stock_dict: Stock dictionary with meta_data
+        
+    Returns:
+        dict with 'delta_16_plus_warning' and 'delta_16_minus_warning' values
+    """
+    plus_warning = 'none'
+    minus_warning = 'none'
+    
+    symbol = stock_dict.get('symbol', 'UNKNOWN')
+
+    meta = stock_dict.get('meta_data', {})
+    
+    if not isinstance(meta, dict):
+        return {'delta_16_plus_warning': plus_warning, 'delta_16_minus_warning': minus_warning}
+    
+    # First, check if warnings were directly stored (preferred - most accurate)
+    stored_warnings = meta.get('delta_16_warnings', {})
+    if isinstance(stored_warnings, dict):
+        if stored_warnings.get('delta_16_plus_warning') in ('minor', 'major'):
+            plus_warning = stored_warnings['delta_16_plus_warning']
+        if stored_warnings.get('delta_16_minus_warning') in ('minor', 'major'):
+            minus_warning = stored_warnings['delta_16_minus_warning']
+        # If we found stored warnings, return them directly
+        if plus_warning != 'none' or minus_warning != 'none':
+            return {'delta_16_plus_warning': plus_warning, 'delta_16_minus_warning': minus_warning}
+    
+    # Fallback: derive from delta_16_calculation accuracy info
+    delta_calc = meta.get('delta_16_calculation', {})
+    if isinstance(delta_calc, dict):
+        # Check quality_warning flags first (more direct)
+        if delta_calc.get('delta_16_plus_quality_warning') is True:
+            plus_warning = 'major'
+        if delta_calc.get('delta_16_minus_quality_warning') is True:
+            minus_warning = 'major'
+        
+        # If no quality warning, check accuracy thresholds
+        if plus_warning == 'none':
+            plus_accuracy = delta_calc.get('delta_16_plus_accuracy')
+            if plus_accuracy is not None and plus_accuracy > 0.10:
+                plus_warning = 'major'
+            elif plus_accuracy is not None and plus_accuracy > 0.03:
+                plus_warning = 'minor'
+        
+        if minus_warning == 'none':
+            minus_accuracy = delta_calc.get('delta_16_minus_accuracy')
+            if minus_accuracy is not None and minus_accuracy > 0.10:
+                minus_warning = 'major'
+            elif minus_accuracy is not None and minus_accuracy > 0.03:
+                minus_warning = 'minor'
+    
+    # Also check sanity_checks if stored (for additional issues)
+    sanity = meta.get('sanity_checks', {})
+    if isinstance(sanity, dict) and sanity:  # Non-empty dict
+        checks = sanity.get('checks', {})
+        warnings_list = sanity.get('warnings', [])
+        
+        # Check call-specific issues
+        call_distance = checks.get('call_strike_distance', {})
+        if isinstance(call_distance, dict) and call_distance.get('is_valid') is False:
+            plus_warning = 'major'
+        elif plus_warning != 'major' and any('call' in str(w).lower() or 'Call' in str(w) for w in warnings_list):
+            plus_warning = 'minor'
+        
+        # Check put-specific issues
+        put_distance = checks.get('put_strike_distance', {})
+        if isinstance(put_distance, dict) and put_distance.get('is_valid') is False:
+            minus_warning = 'major'
+        elif minus_warning != 'major' and any('put' in str(w).lower() or 'Put' in str(w) for w in warnings_list):
+            minus_warning = 'minor'
+    
+    return {'delta_16_plus_warning': plus_warning, 'delta_16_minus_warning': minus_warning}
+
+
 def get_wem_stocks(session: Session, from_date=None, to_date=None, symbols=None) -> List[Dict[str, Any]]:
     """
     Get WEM stocks from database with optional filtering.
@@ -327,6 +442,12 @@ def get_wem_stocks(session: Session, from_date=None, to_date=None, symbols=None)
     # Execute query and convert to dictionaries
     stocks = query.all()
     stock_dicts = [stock.to_dict() for stock in stocks]
+    
+    # Derive warning levels from meta_data for each stock
+    for stock_dict in stock_dicts:
+        warnings = _derive_delta_16_warnings_from_meta(stock_dict)
+        stock_dict['delta_16_plus_warning'] = warnings['delta_16_plus_warning']
+        stock_dict['delta_16_minus_warning'] = warnings['delta_16_minus_warning']
     
     # Define preferred order for display (matches default stocks order)
     preferred_order = ['SPY', 'QQQ', 'VIX', 'NKE', 'SHOP', 'DLTR', 'WMT', 'TSLA', 'COIN', 'SBUX', 'PLTR', 'AMD', 'DIS']
@@ -515,6 +636,9 @@ def update_wem_stock(session: Session, stock_data: Dict[str, Any]) -> bool:
                 if value is None and hasattr(wem_stock, key) and getattr(wem_stock, key) is not None:
                     # Skip setting None over existing value (preserve is_default, etc.)
                     continue
+                # Sanitize meta_data to ensure JSON serializable (convert numpy types, etc.)
+                if key == 'meta_data' and isinstance(value, dict):
+                    value = _sanitize_for_json(value)
                 setattr(wem_stock, key, value)
         
         # Commit the changes
@@ -620,8 +744,29 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         else:
             logger.info(f"Using {data_source} data with {pricing_mode} for {symbol}: ${current_price:.2f}")
         
+        # Step 1.5: Get upcoming earnings date (best-effort, non-fatal)
+        upcoming_earnings_iso = None
+        try:
+            manager = get_market_data_manager()
+        except Exception:
+            manager = None
+
+        if manager and hasattr(manager, 'get_next_earnings_date'):
+            try:
+                earnings_dt = manager.get_next_earnings_date(symbol)
+                if earnings_dt is not None:
+                    # Normalize to ISO string in UTC for storage/display
+                    if earnings_dt.tzinfo is None:
+                        upcoming_earnings_iso = earnings_dt.replace(tzinfo=timezone.utc).isoformat()
+                    else:
+                        upcoming_earnings_iso = earnings_dt.astimezone(timezone.utc).isoformat()
+            except Exception as _e:
+                # Swallow earnings lookup failures; WEM calc should continue
+                upcoming_earnings_iso = None
+
         # Step 2: Determine appropriate expiration date from provider expirations
-        manager = get_market_data_manager()
+        manager = manager or get_market_data_manager()
+        
         if not manager:
             logger.error("No market data manager available")
             return None
@@ -774,11 +919,23 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         else:
             logger.warning("No delta 16 validation config found in session state")
         
-        delta_16_results = calculate_delta_16_values(weekly_option_chain, expiration_str, validation_config)
+        delta_16_results = calculate_delta_16_values(
+            weekly_option_chain, 
+            expiration_str, 
+            validation_config,
+            spot_price=current_price  # Pass actual spot price for sanity checks
+        )
         
         if delta_16_results:
             logger.info(f"  Delta 16+ Call: ${delta_16_results['delta_16_plus']['strike']} (delta: {delta_16_results['delta_16_plus']['delta']:.4f})")
             logger.info(f"  Delta 16- Put: ${delta_16_results['delta_16_minus']['strike']} (delta: {delta_16_results['delta_16_minus']['delta']:.4f})")
+            
+            # Log sanity check results if available
+            sanity = delta_16_results.get('sanity_checks', {})
+            if sanity.get('errors'):
+                logger.warning(f"  ⚠️ Sanity check errors: {sanity['errors']}")
+            if sanity.get('warnings'):
+                logger.info(f"  Sanity check warnings: {len(sanity['warnings'])} warnings")
         else:
             logger.warning(f"Could not calculate Delta 16 values for {symbol} - delta values not available in option chain")
             logger.info("NOTE: Black-Scholes calculation method (Method 2) will be added as fallback in future update")
@@ -945,8 +1102,46 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
         delta_validation_status = "none"  # none, pass, warning, error
         delta_validation_message = ""
         
+        # Determine warning levels for delta 16+/- values (for display suffixes)
+        # 'none' = no issues, 'minor' = warnings (shows ?), 'major' = errors (shows !)
+        delta_16_plus_warning = 'none'
+        delta_16_minus_warning = 'none'
+        
         if delta_16_results:
             validation_results = delta_16_results.get('validation_results', {})
+            sanity_checks = delta_16_results.get('sanity_checks', {})
+            
+            # Check hard threshold (always runs, regardless of validation_config)
+            if validation_results.get('hard_threshold_exceeded', False):
+                # Check which one(s) exceeded the hard threshold
+                if delta_16_results.get('delta_16_plus', {}).get('quality_warning', False):
+                    delta_16_plus_warning = 'major'
+                if delta_16_results.get('delta_16_minus', {}).get('quality_warning', False):
+                    delta_16_minus_warning = 'major'
+            
+            # Check sanity check results
+            if sanity_checks.get('overall_valid') is not None:  # Sanity checks ran
+                sanity_errors = sanity_checks.get('errors', [])
+                sanity_warnings = sanity_checks.get('warnings', [])
+                sanity_check_details = sanity_checks.get('checks', {})
+                
+                # Check call-specific issues
+                call_distance = sanity_check_details.get('call_strike_distance', {})
+                if call_distance.get('is_valid') is False:  # Explicitly False (not None/skipped)
+                    delta_16_plus_warning = 'major'  # Strike distance error is major
+                elif any('call' in str(w).lower() or 'Call' in str(w) for w in sanity_warnings):
+                    if delta_16_plus_warning != 'major':
+                        delta_16_plus_warning = 'minor'
+                
+                # Check put-specific issues
+                put_distance = sanity_check_details.get('put_strike_distance', {})
+                if put_distance.get('is_valid') is False:  # Explicitly False (not None/skipped)
+                    delta_16_minus_warning = 'major'  # Strike distance error is major
+                elif any('put' in str(w).lower() or 'Put' in str(w) for w in sanity_warnings):
+                    if delta_16_minus_warning != 'major':
+                        delta_16_minus_warning = 'minor'
+            
+            # Optional validation system (if enabled)
             if validation_results.get('validation_enabled', False):
                 quality_check = validation_results.get('quality_check', {})
                 match_check = validation_results.get('match_check', {})
@@ -979,7 +1174,9 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             'itm_put_strike': float(itm_put_strike),
             'straddle_strangle': float(straddle_premium + strangle_premium),  # Combined straddle + strangle
             'delta_16_plus': float(delta_16_plus_strike) if delta_16_plus_strike is not None else None,  # Actual Delta 16+ strike
+            'delta_16_plus_warning': delta_16_plus_warning,  # 'none', 'minor' (?), or 'major' (!)
             'delta_16_minus': float(delta_16_minus_strike) if delta_16_minus_strike is not None else None,  # Actual Delta 16- strike
+            'delta_16_minus_warning': delta_16_minus_warning,  # 'none', 'minor' (?), or 'major' (!)
             'delta_range': float(delta_range) if delta_range is not None else None,
             'delta_range_pct': float(delta_range_pct) if delta_range_pct is not None else None,
             'straddle_2': float(straddle_2) if straddle_2 is not None else None,  # Stock Price + WEM Points
@@ -997,6 +1194,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                 'data_source_mode': data_source,
                 'pricing_mode': pricing_mode,
                 'use_friday_close': use_friday_close,
+                'upcoming_earnings_date': upcoming_earnings_iso,
                 'vix_futures_friday_close': float(spread_base_price) if (symbol.upper() == 'VIX' and spread_base_price is not None) else None,
                 'vix_base_source': vix_base_source if symbol.upper() == 'VIX' else None,
                 'atm_call_premium': float(atm_call_mid),
@@ -1019,7 +1217,18 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                     'delta_16_minus_actual_delta': float(delta_16_results['delta_16_minus']['delta']) if delta_16_results else None,
                     'delta_16_plus_accuracy': float(delta_16_results['delta_16_plus']['delta_accuracy']) if delta_16_results else None,
                     'delta_16_minus_accuracy': float(delta_16_results['delta_16_minus']['delta_accuracy']) if delta_16_results else None,
+                    # Convert to Python bool to ensure JSON serializable
+                    'delta_16_plus_quality_warning': bool(delta_16_results['delta_16_plus'].get('quality_warning', False)) if delta_16_results else None,
+                    'delta_16_minus_quality_warning': bool(delta_16_results['delta_16_minus'].get('quality_warning', False)) if delta_16_results else None,
                     'fallback_todo': 'Black-Scholes calculation method (Method 2) to be implemented'
+                },
+                # Store sanity check results for warning derivation on load
+                # Note: Sanitize to ensure JSON serializable (convert numpy types to Python native)
+                'sanity_checks': _sanitize_for_json(delta_16_results.get('sanity_checks', {})) if delta_16_results else {},
+                # Store the computed warning levels directly for easier access
+                'delta_16_warnings': {
+                    'delta_16_plus_warning': str(delta_16_plus_warning),  # Ensure string
+                    'delta_16_minus_warning': str(delta_16_minus_warning)  # Ensure string
                 },
                 'previous_friday_date': previous_friday_date.isoformat() if (use_friday_close and 'previous_friday_date' in locals()) else None,
                 'previous_friday_close': float(previous_friday_close) if use_friday_close and 'previous_friday_close' in locals() and previous_friday_close else None,
@@ -1048,15 +1257,6 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
     except Exception as e:
         logger.error(f"Error calculating WEM for {symbol}: {str(e)}", exc_info=True)
         return None
-
-
-
-
-
-
-
-
-
 
 
 def _get_weekly_cache_file() -> Path:
@@ -1410,7 +1610,7 @@ def _get_weekly_option_chain(symbol: str, expiration_date: datetime, use_friday_
     Args:
         symbol: Stock symbol (e.g., 'AAPL')
         expiration_date: Options expiration date (typically next Friday)
-        use_friday_close: If True, uses cache (Friday close mode), if False bypasses cache (Most Recent mode)
+        use_friday_close: If True, uses cache (Friday close mode), if False bypasses cache (testing mode)
         
     Returns:
         dict: Dictionary with 'calls' and 'puts' DataFrames containing:
@@ -1708,7 +1908,49 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     # Create DataFrame and handle any date/time fields
     df = pd.DataFrame(stocks)
     
-    # Keep last_updated in ISO format, only format for display in the column config
+    # Extract upcoming earnings date from meta_data if present and expose
+    # it as a top-level column for display/export.
+    if 'upcoming_earnings_date' not in df.columns:
+        try:
+            def _extract_earnings(meta):
+                try:
+                    if isinstance(meta, dict):
+                        # Prefer top-level key first, then nested under meta_data
+                        if 'upcoming_earnings_date' in meta and meta['upcoming_earnings_date']:
+                            return meta['upcoming_earnings_date']
+                        inner = meta.get('meta_data') if isinstance(meta.get('meta_data'), dict) else None
+                        if inner and inner.get('upcoming_earnings_date'):
+                            return inner['upcoming_earnings_date']
+                except Exception:
+                    return None
+                return None
+
+            if 'meta_data' in df.columns:
+                df['upcoming_earnings_date'] = df['meta_data'].apply(_extract_earnings)
+            else:
+                df['upcoming_earnings_date'] = None
+        except Exception:
+            df['upcoming_earnings_date'] = None
+
+    # Normalize upcoming earnings date to a simple YYYY-MM-DD string
+    # for consistent display/export, using an em dash when missing.
+    if 'upcoming_earnings_date' in df.columns:
+        try:
+            def _format_earnings_cell(val):
+                if val in (None, "", "—"):
+                    return "—"
+                try:
+                    if isinstance(val, datetime):
+                        dt = val
+                    else:
+                        dt = datetime.fromisoformat(str(val).replace('Z', '+00:00'))
+                    return dt.date().isoformat()
+                except Exception:
+                    return "—"
+
+            df['upcoming_earnings_date'] = df['upcoming_earnings_date'].apply(_format_earnings_cell)
+        except Exception:
+            df['upcoming_earnings_date'] = "—"
     
     # Format numeric columns with specified formatting rules and proper significant figures
     def format_number(x, col_name):
@@ -1786,13 +2028,65 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     # Apply formatting to columns
     numeric_cols = df.select_dtypes(include=['float', 'int']).columns
     for col in numeric_cols:
-        # Skip validation status columns from numeric formatting
-        if col not in ['delta_validation_status', 'delta_validation_message']:
+        # Skip validation status columns and warning level columns from numeric formatting
+        if col not in ['delta_validation_status', 'delta_validation_message', 
+                       'delta_16_plus_warning', 'delta_16_minus_warning']:
             df[col] = df[col].apply(lambda x: format_number(x, col))
     
     # Format validation status column if it exists
     if 'delta_validation_status' in df.columns:
         df['delta_validation_status'] = df['delta_validation_status'].apply(format_validation_status)
+    
+    # Apply warning suffixes to delta_16 values: (?) for minor, (!) for major
+    def apply_warning_suffix(value, warning_level):
+        """Append warning suffix based on warning level"""
+        if pd.isna(value) or value == "—" or value is None:
+            return value
+        value_str = str(value)
+        # Normalize warning level to string and check
+        warning_str = str(warning_level).lower().strip() if warning_level else 'none'
+        if warning_str == 'minor':
+            return f"{value_str} (?)"
+        elif warning_str == 'major':
+            return f"{value_str} (!)"
+        return value_str
+    
+    # Check warning column presence
+    has_plus_warning = 'delta_16_plus_warning' in df.columns
+    has_minus_warning = 'delta_16_minus_warning' in df.columns
+    logger.debug(f"Warning columns present: plus={has_plus_warning}, minus={has_minus_warning}")
+    
+    # Apply suffixes to delta_16_plus
+    if 'delta_16_plus' in df.columns:
+        has_warning_col = 'delta_16_plus_warning' in df.columns
+        for idx in df.index:
+            warning = df.at[idx, 'delta_16_plus_warning'] if has_warning_col else 'none'
+            df.at[idx, 'delta_16_plus'] = apply_warning_suffix(df.at[idx, 'delta_16_plus'], warning)
+    
+    # Apply suffixes to delta_16_minus
+    if 'delta_16_minus' in df.columns:
+        has_warning_col = 'delta_16_minus_warning' in df.columns
+        for idx in df.index:
+            warning = df.at[idx, 'delta_16_minus_warning'] if has_warning_col else 'none'
+            df.at[idx, 'delta_16_minus'] = apply_warning_suffix(df.at[idx, 'delta_16_minus'], warning)
+    
+    # Also apply to delta_range and delta_range_pct if either delta_16 has a warning
+    if 'delta_range' in df.columns:
+        for idx in df.index:
+            plus_warning = df.at[idx, 'delta_16_plus_warning'] if 'delta_16_plus_warning' in df.columns else 'none'
+            minus_warning = df.at[idx, 'delta_16_minus_warning'] if 'delta_16_minus_warning' in df.columns else 'none'
+            # Use the worse of the two warnings
+            combined_warning = 'major' if (plus_warning == 'major' or minus_warning == 'major') else \
+                              ('minor' if (plus_warning == 'minor' or minus_warning == 'minor') else 'none')
+            df.at[idx, 'delta_range'] = apply_warning_suffix(df.at[idx, 'delta_range'], combined_warning)
+    
+    if 'delta_range_pct' in df.columns:
+        for idx in df.index:
+            plus_warning = df.at[idx, 'delta_16_plus_warning'] if 'delta_16_plus_warning' in df.columns else 'none'
+            minus_warning = df.at[idx, 'delta_16_minus_warning'] if 'delta_16_minus_warning' in df.columns else 'none'
+            combined_warning = 'major' if (plus_warning == 'major' or minus_warning == 'major') else \
+                              ('minor' if (plus_warning == 'minor' or minus_warning == 'minor') else 'none')
+            df.at[idx, 'delta_range_pct'] = apply_warning_suffix(df.at[idx, 'delta_range_pct'], combined_warning)
     
     # Ensure there's a WEM Points value for each stock - calculate if missing
     if 'straddle_strangle' in df.columns:
@@ -1816,7 +2110,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
         'symbol', 'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread',
         'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
         'delta_range', 'delta_range_pct', 'straddle_strangle', 'delta_validation_status', 
-        'delta_validation_message', 'last_updated'
+        'delta_validation_message', 'last_updated', 'upcoming_earnings_date'
     ]
     
     # For horizontal layout, filter out 'symbol' from selectable metrics
@@ -1829,7 +2123,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     default_metrics = [
         'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread', 
         'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-        'delta_range', 'delta_range_pct'
+        'delta_range', 'delta_range_pct', 'upcoming_earnings_date'
     ]
     
     metrics = metrics or default_metrics
@@ -1871,7 +2165,8 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
         'delta_range_pct': 'Delta Range %',
         'delta_validation_status': 'Δ Status',
         'delta_validation_message': 'Δ Details',
-        'last_updated': 'Last Updated'
+        'last_updated': 'Last Updated',
+        'upcoming_earnings_date': 'Earnings Date'
     }
     
     # Dynamically update ATM display name with the actual Friday date being used
@@ -1911,7 +2206,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
         df = df.set_index('symbol').T
         
         # In transposed view, the metrics become the index
-        # Filter out metrics that shouldn't be displayed as rows
+        # Filter rows that match our valid metrics - only include metrics that actually exist in the transposed df
         valid_metrics = [m for m in metrics if m != 'symbol']
         
         # Filter rows that match our valid metrics - only include metrics that actually exist in the transposed df
@@ -1995,7 +2290,9 @@ def create_stub_wem_record(symbol: str) -> Dict[str, Any]:
         'itm_put_strike': None,
         'straddle_strangle': None,
         'delta_16_plus': None,
+        'delta_16_plus_warning': 'none',  # No warning for stub records
         'delta_16_minus': None,
+        'delta_16_minus_warning': 'none',  # No warning for stub records
         'delta_range': None,
         'delta_range_pct': None,
         'straddle_2': None,
@@ -2192,6 +2489,469 @@ class Delta16ValidationConfig:
         self.min_delta_std = 0.05  # Minimum delta standard deviation for good distribution
         self.max_bid_ask_spread_pct = 0.10  # Maximum bid-ask spread as % of mid price (10%)
         self.min_coverage_ratio = 0.8  # Minimum ratio of acceptable options on both sides
+
+
+# ============================================================================
+# Delta 16+/- "Check Your Work" Validation Functions
+# These provide independent verification that the selected strikes are correct
+# ============================================================================
+
+def validate_delta_monotonicity(df: pd.DataFrame, option_type: str) -> Dict[str, Any]:
+    """
+    Verify that delta is strictly monotonic with strike price.
+    
+    For CALLS: Delta should DECREASE as strike INCREASES (higher strike = more OTM = lower delta)
+    For PUTS: Delta should INCREASE (become less negative) as strike INCREASES
+    
+    Args:
+        df: DataFrame with 'strike' and 'delta' columns
+        option_type: 'call' or 'put'
+        
+    Returns:
+        dict with 'is_valid', 'violations', and 'message'
+    """
+    result = {
+        'is_valid': True,
+        'violations': [],
+        'violation_count': 0,
+        'total_pairs': 0,
+        'message': ''
+    }
+    
+    # Filter for valid deltas and sort by strike
+    valid_df = df[df['delta'].notna()].sort_values('strike').reset_index(drop=True)
+    
+    if len(valid_df) < 2:
+        result['message'] = f"Insufficient data points ({len(valid_df)}) for monotonicity check"
+        return result
+    
+    violations = []
+    total_pairs = len(valid_df) - 1
+    
+    for i in range(len(valid_df) - 1):
+        strike_low = valid_df.iloc[i]['strike']
+        strike_high = valid_df.iloc[i + 1]['strike']
+        delta_low = valid_df.iloc[i]['delta']
+        delta_high = valid_df.iloc[i + 1]['delta']
+        
+        if option_type == 'call':
+            # Calls: delta should decrease as strike increases
+            if delta_high >= delta_low:
+                violations.append({
+                    'strikes': (strike_low, strike_high),
+                    'deltas': (delta_low, delta_high),
+                    'issue': f"Call delta did not decrease: {delta_low:.4f} -> {delta_high:.4f}"
+                })
+        else:  # put
+            # Puts: delta should increase (less negative) as strike increases
+            if delta_high <= delta_low:
+                violations.append({
+                    'strikes': (strike_low, strike_high),
+                    'deltas': (delta_low, delta_high),
+                    'issue': f"Put delta did not increase: {delta_low:.4f} -> {delta_high:.4f}"
+                })
+    
+    result['violations'] = violations
+    result['violation_count'] = len(violations)
+    result['total_pairs'] = total_pairs
+    result['is_valid'] = len(violations) == 0
+    
+    if violations:
+        result['message'] = f"Delta monotonicity violated: {len(violations)}/{total_pairs} pairs have incorrect ordering"
+        logger.warning(f"Delta monotonicity check ({option_type}s): {result['message']}")
+    else:
+        result['message'] = f"Delta monotonicity OK: all {total_pairs} pairs correctly ordered"
+        logger.debug(f"Delta monotonicity check ({option_type}s): PASSED")
+    
+    return result
+
+
+def validate_delta_via_black_scholes(
+    strike: float, 
+    spot: float, 
+    reported_delta: float, 
+    implied_vol: float,
+    days_to_expiry: float,
+    option_type: str,
+    risk_free_rate: float = 0.05
+) -> Dict[str, Any]:
+    """
+    Verify reported delta against Black-Scholes theoretical delta.
+    
+    For a call: Delta ≈ N(d1)
+    For a put: Delta ≈ N(d1) - 1
+    
+    Where d1 = [ln(S/K) + (r + σ²/2)τ] / (σ√τ)
+    
+    Args:
+        strike: Option strike price
+        spot: Current underlying spot price
+        reported_delta: The delta value from the API
+        implied_vol: Implied volatility (as decimal, e.g., 0.20 for 20%)
+        days_to_expiry: Days until expiration
+        option_type: 'call' or 'put'
+        risk_free_rate: Risk-free interest rate (default 5%)
+        
+    Returns:
+        dict with 'is_valid', 'theoretical_delta', 'deviation', and 'message'
+    """
+    result = {
+        'is_valid': True,
+        'theoretical_delta': None,
+        'reported_delta': reported_delta,
+        'deviation': None,
+        'deviation_pct': None,
+        'message': ''
+    }
+    
+    # Input validation
+    if strike <= 0 or spot <= 0 or implied_vol <= 0 or days_to_expiry <= 0:
+        result['message'] = f"Invalid inputs: strike={strike}, spot={spot}, iv={implied_vol}, dte={days_to_expiry}"
+        result['is_valid'] = False
+        return result
+    
+    try:
+        # Calculate time to expiry in years
+        tau = days_to_expiry / 365.0
+        
+        # Calculate d1
+        d1 = (np.log(spot / strike) + (risk_free_rate + (implied_vol ** 2) / 2) * tau) / (implied_vol * np.sqrt(tau))
+        
+        # Calculate theoretical delta
+        if option_type == 'call':
+            theoretical_delta = stats.norm.cdf(d1)
+        else:  # put
+            theoretical_delta = stats.norm.cdf(d1) - 1
+        
+        result['theoretical_delta'] = theoretical_delta
+        result['deviation'] = abs(reported_delta - theoretical_delta)
+        
+        # Calculate percentage deviation relative to target delta magnitude
+        target_magnitude = abs(reported_delta) if abs(reported_delta) > 0.01 else 0.16
+        result['deviation_pct'] = result['deviation'] / target_magnitude
+        
+        # Allow some tolerance (10% of delta magnitude) for market dynamics
+        tolerance = 0.10 * target_magnitude  # 10% relative tolerance
+        result['is_valid'] = result['deviation'] <= tolerance
+        
+        if result['is_valid']:
+            result['message'] = (
+                f"B-S validation OK: theoretical={theoretical_delta:.4f}, "
+                f"reported={reported_delta:.4f}, deviation={result['deviation']:.4f}"
+            )
+            logger.debug(f"Black-Scholes validation ({option_type}): PASSED - {result['message']}")
+        else:
+            result['message'] = (
+                f"B-S validation WARNING: theoretical={theoretical_delta:.4f}, "
+                f"reported={reported_delta:.4f}, deviation={result['deviation']:.4f} "
+                f"({result['deviation_pct']:.1%} of delta)"
+            )
+            logger.warning(f"Black-Scholes validation ({option_type}): {result['message']}")
+            
+    except Exception as e:
+        result['message'] = f"Black-Scholes calculation error: {str(e)}"
+        result['is_valid'] = False
+        logger.error(f"Black-Scholes validation error: {e}")
+    
+    return result
+
+
+def validate_strike_distance_sanity(
+    strike: float,
+    spot: float,
+    implied_vol: float,
+    days_to_expiry: float,
+    reported_delta: float,
+    option_type: str
+) -> Dict[str, Any]:
+    """
+    Verify strike distance using the 1 standard deviation sanity check.
+    
+    A 16-delta option should be roughly 0.8-1.0σ away from spot.
+    This is because N^(-1)(0.16) ≈ -0.994, meaning:
+    - For a 16-delta CALL: strike should be ~1σ ABOVE spot (OTM)
+    - For a 16-delta PUT: strike should be ~1σ BELOW spot (OTM)
+    
+    The expected distance is: distance_σ = |ln(K/S)| / (σ√τ) ≈ 0.8 to 1.1
+    
+    Args:
+        strike: Option strike price
+        spot: Current underlying spot price
+        implied_vol: Implied volatility (as decimal)
+        days_to_expiry: Days until expiration
+        reported_delta: The reported delta value
+        option_type: 'call' or 'put'
+        
+    Returns:
+        dict with 'is_valid', 'sigma_distance', 'expected_range', and 'message'
+    """
+    result = {
+        'is_valid': True,
+        'sigma_distance': None,
+        'expected_sigma_range': (0.6, 1.4),  # Reasonable range for ~16 delta
+        'strike_pct_from_spot': None,
+        'expected_pct_range': None,
+        'message': ''
+    }
+    
+    if strike <= 0 or spot <= 0 or implied_vol <= 0 or days_to_expiry <= 0:
+        result['message'] = "Invalid inputs for sanity check"
+        result['is_valid'] = False
+        return result
+    
+    try:
+        # Calculate time to expiry in years
+        tau = days_to_expiry / 365.0
+        sqrt_tau = np.sqrt(tau)
+        
+        # Calculate sigma distance: how many standard deviations is strike from spot?
+        # log_moneyness = ln(K/S), positive for K > S, negative for K < S
+        log_moneyness = np.log(strike / spot)
+        sigma_distance = abs(log_moneyness) / (implied_vol * sqrt_tau)
+        
+        result['sigma_distance'] = sigma_distance
+        result['strike_pct_from_spot'] = (strike / spot - 1) * 100  # As percentage
+        
+        # Expected percentage distance: σ√τ * 100%
+        expected_pct = implied_vol * sqrt_tau * 100
+        result['expected_pct_range'] = (expected_pct * 0.6, expected_pct * 1.4)
+        
+        # For delta ~0.16, we expect sigma_distance between 0.6 and 1.4
+        # This is because N^(-1)(0.16) ≈ -0.994, but market factors add some variance
+        min_sigma, max_sigma = result['expected_sigma_range']
+        
+        # Check direction is correct
+        direction_ok = True
+        if option_type == 'call' and strike < spot:
+            direction_ok = False
+            result['message'] = f"CALL strike ${strike} is BELOW spot ${spot:.2f} - should be OTM (above)"
+        elif option_type == 'put' and strike > spot:
+            direction_ok = False
+            result['message'] = f"PUT strike ${strike} is ABOVE spot ${spot:.2f} - should be OTM (below)"
+        
+        if not direction_ok:
+            result['is_valid'] = False
+            logger.error(f"Strike direction sanity check: {result['message']}")
+            return result
+        
+        # Check sigma distance is in reasonable range
+        if sigma_distance < min_sigma:
+            result['is_valid'] = False
+            result['message'] = (
+                f"Strike too close to spot: {sigma_distance:.2f}σ away "
+                f"(expected {min_sigma}-{max_sigma}σ for ~16 delta). "
+                f"Strike ${strike} vs Spot ${spot:.2f} ({result['strike_pct_from_spot']:.2f}%)"
+            )
+            logger.warning(f"Strike distance sanity ({option_type}): {result['message']}")
+        elif sigma_distance > max_sigma:
+            result['is_valid'] = False
+            result['message'] = (
+                f"Strike too far from spot: {sigma_distance:.2f}σ away "
+                f"(expected {min_sigma}-{max_sigma}σ for ~16 delta). "
+                f"Strike ${strike} vs Spot ${spot:.2f} ({result['strike_pct_from_spot']:.2f}%)"
+            )
+            logger.warning(f"Strike distance sanity ({option_type}): {result['message']}")
+        else:
+            result['message'] = (
+                f"Strike distance OK: {sigma_distance:.2f}σ away from spot "
+                f"(expected {min_sigma}-{max_sigma}σ). "
+                f"Strike ${strike} vs Spot ${spot:.2f} ({result['strike_pct_from_spot']:.2f}%)"
+            )
+            logger.debug(f"Strike distance sanity ({option_type}): PASSED")
+        
+    except Exception as e:
+        result['message'] = f"Sanity check calculation error: {str(e)}"
+        result['is_valid'] = False
+        logger.error(f"Strike distance sanity error: {e}")
+    
+    return result
+
+
+def run_delta_16_sanity_checks(
+    delta_16_plus_option: pd.Series,
+    delta_16_minus_option: pd.Series,
+    calls_df: pd.DataFrame,
+    puts_df: pd.DataFrame,
+    spot_price: float,
+    days_to_expiry: float
+) -> Dict[str, Any]:
+    """
+    Run all "check your work" sanity validations for delta-16 selection.
+    
+    Checks performed:
+    1. Delta monotonicity (delta is strictly monotonic with strike)
+    2. Black-Scholes probability check (reported delta ≈ N(d1))
+    3. Strike distance sanity (option is ~0.8-1.0σ from spot)
+    
+    Args:
+        delta_16_plus_option: Selected call option (pandas Series)
+        delta_16_minus_option: Selected put option (pandas Series)
+        calls_df: Full calls DataFrame
+        puts_df: Full puts DataFrame
+        spot_price: Current underlying price
+        days_to_expiry: Days until expiration
+        
+    Returns:
+        dict with all validation results and overall status
+    """
+    results = {
+        'overall_valid': True,
+        'checks': {},
+        'warnings': [],
+        'errors': []
+    }
+    
+    logger.info("Running Delta 16+/- sanity checks ('check your work' validations)")
+    
+    try:
+        # ===== Check 1: Delta Monotonicity =====
+        logger.debug("Sanity Check 1: Delta Monotonicity")
+        
+        calls_monotonicity = validate_delta_monotonicity(calls_df, 'call')
+        puts_monotonicity = validate_delta_monotonicity(puts_df, 'put')
+        
+        results['checks']['calls_monotonicity'] = calls_monotonicity
+        results['checks']['puts_monotonicity'] = puts_monotonicity
+        
+        if not calls_monotonicity['is_valid']:
+            results['warnings'].append(f"Call delta monotonicity issue: {calls_monotonicity['message']}")
+        if not puts_monotonicity['is_valid']:
+            results['warnings'].append(f"Put delta monotonicity issue: {puts_monotonicity['message']}")
+        
+        # ===== Check 2 & 3: Black-Scholes and Strike Distance for selected options =====
+        # Extract data from selected options - NO FALLBACKS, skip check if data missing
+        call_strike = float(delta_16_plus_option['strike'])
+        call_delta = float(delta_16_plus_option['delta'])
+        call_iv_raw = delta_16_plus_option.get('implied_volatility', delta_16_plus_option.get('iv', None))
+        call_iv = None if (call_iv_raw is None or pd.isna(call_iv_raw) or call_iv_raw == 0) else float(call_iv_raw)
+        
+        put_strike = float(delta_16_minus_option['strike'])
+        put_delta = float(delta_16_minus_option['delta'])
+        put_iv_raw = delta_16_minus_option.get('implied_volatility', delta_16_minus_option.get('iv', None))
+        put_iv = None if (put_iv_raw is None or pd.isna(put_iv_raw) or put_iv_raw == 0) else float(put_iv_raw)
+        
+        # Check 2a: Black-Scholes for call (SKIP if IV not available - no fallbacks)
+        if call_iv is not None:
+            logger.debug(f"Sanity Check 2: Black-Scholes validation (Call: K={call_strike}, δ={call_delta:.4f}, IV={call_iv:.2%})")
+            bs_call = validate_delta_via_black_scholes(
+                strike=call_strike,
+                spot=spot_price,
+                reported_delta=call_delta,
+                implied_vol=call_iv,
+                days_to_expiry=days_to_expiry,
+                option_type='call'
+            )
+            results['checks']['bs_call_validation'] = bs_call
+            if not bs_call['is_valid']:
+                results['warnings'].append(f"Call B-S validation: {bs_call['message']}")
+        else:
+            logger.info("Sanity Check 2 (Call B-S): SKIPPED - IV not available (no fallback used)")
+            results['checks']['bs_call_validation'] = {
+                'is_valid': None,  # None = not run, distinct from True/False
+                'message': 'SKIPPED: IV not available in option data',
+                'skipped': True
+            }
+        
+        # Check 2b: Black-Scholes for put (SKIP if IV not available - no fallbacks)
+        if put_iv is not None:
+            logger.debug(f"Sanity Check 2: Black-Scholes validation (Put: K={put_strike}, δ={put_delta:.4f}, IV={put_iv:.2%})")
+            bs_put = validate_delta_via_black_scholes(
+                strike=put_strike,
+                spot=spot_price,
+                reported_delta=put_delta,
+                implied_vol=put_iv,
+                days_to_expiry=days_to_expiry,
+                option_type='put'
+            )
+            results['checks']['bs_put_validation'] = bs_put
+            if not bs_put['is_valid']:
+                results['warnings'].append(f"Put B-S validation: {bs_put['message']}")
+        else:
+            logger.info("Sanity Check 2 (Put B-S): SKIPPED - IV not available (no fallback used)")
+            results['checks']['bs_put_validation'] = {
+                'is_valid': None,
+                'message': 'SKIPPED: IV not available in option data',
+                'skipped': True
+            }
+        
+        # Check 3a: Strike distance sanity for call (SKIP if IV not available - no fallbacks)
+        if call_iv is not None:
+            logger.debug(f"Sanity Check 3: Strike distance (Call: K={call_strike} vs S={spot_price:.2f})")
+            dist_call = validate_strike_distance_sanity(
+                strike=call_strike,
+                spot=spot_price,
+                implied_vol=call_iv,
+                days_to_expiry=days_to_expiry,
+                reported_delta=call_delta,
+                option_type='call'
+            )
+            results['checks']['call_strike_distance'] = dist_call
+            if not dist_call['is_valid']:
+                results['errors'].append(f"Call strike distance: {dist_call['message']}")
+                results['overall_valid'] = False
+        else:
+            logger.info("Sanity Check 3 (Call strike distance): SKIPPED - IV not available (no fallback used)")
+            results['checks']['call_strike_distance'] = {
+                'is_valid': None,
+                'message': 'SKIPPED: IV not available in option data',
+                'skipped': True
+            }
+        
+        # Check 3b: Strike distance sanity for put (SKIP if IV not available - no fallbacks)
+        if put_iv is not None:
+            logger.debug(f"Sanity Check 3: Strike distance (Put: K={put_strike} vs S={spot_price:.2f})")
+            dist_put = validate_strike_distance_sanity(
+                strike=put_strike,
+                spot=spot_price,
+                implied_vol=put_iv,
+                days_to_expiry=days_to_expiry,
+                reported_delta=put_delta,
+                option_type='put'
+            )
+            results['checks']['put_strike_distance'] = dist_put
+            if not dist_put['is_valid']:
+                results['errors'].append(f"Put strike distance: {dist_put['message']}")
+                results['overall_valid'] = False
+        else:
+            logger.info("Sanity Check 3 (Put strike distance): SKIPPED - IV not available (no fallback used)")
+            results['checks']['put_strike_distance'] = {
+                'is_valid': None,
+                'message': 'SKIPPED: IV not available in option data',
+                'skipped': True
+            }
+        
+        # ===== Summary =====
+        total_checks = len(results['checks'])
+        # Count only checks that actually ran (is_valid is True or False, not None/skipped)
+        run_checks = [c for c in results['checks'].values() if c.get('is_valid') is not None]
+        skipped_checks = total_checks - len(run_checks)
+        passed_checks = sum(1 for c in run_checks if c.get('is_valid', False) is True)
+        
+        results['summary'] = {
+            'total_checks': total_checks,
+            'run_checks': len(run_checks),
+            'skipped_checks': skipped_checks,
+            'passed_checks': passed_checks,
+            'warnings_count': len(results['warnings']),
+            'errors_count': len(results['errors'])
+        }
+        
+        logger.info(f"Sanity checks complete: {passed_checks}/{len(run_checks)} passed "
+                   f"({skipped_checks} skipped due to missing IV data), "
+                   f"{len(results['warnings'])} warnings, {len(results['errors'])} errors")
+        
+        if results['errors']:
+            logger.warning(f"⚠️ Sanity check ERRORS (potential wrong strike selection):")
+            for error in results['errors']:
+                logger.warning(f"  - {error}")
+        
+    except Exception as e:
+        logger.error(f"Error running sanity checks: {str(e)}", exc_info=True)
+        results['errors'].append(f"Sanity check exception: {str(e)}")
+        results['overall_valid'] = False
+    
+    return results
+
 
 def validate_delta_16_quality(calls_df: pd.DataFrame, puts_df: pd.DataFrame, 
                              expiration_date: str, config: Delta16ValidationConfig) -> Dict[str, Any]:
@@ -2424,13 +3184,19 @@ def validate_delta_16_matches(delta_16_plus_option: pd.Series, delta_16_minus_op
     return results
 
 def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expiration_date: str, 
-                             validation_config: Optional[Delta16ValidationConfig] = None) -> Optional[Dict[str, Any]]:
+                             validation_config: Optional[Delta16ValidationConfig] = None,
+                             spot_price: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """
     Calculate Delta 16+ (call) and Delta 16- (put) using direct lookup method from option chain.
     
     This is the most accurate method when delta values are available in the option chain
     as it uses actual market-derived deltas that incorporate real implied volatilities,
     volatility smile/skew effects, and current market conditions.
+    
+    Now includes "check your work" sanity validations:
+    1. Delta monotonicity check (delta strictly monotonic with strike)
+    2. Black-Scholes probability check (reported delta ≈ N(d1))
+    3. Strike distance sanity check (~0.8-1.0σ from spot for 16-delta)
     
     Args:
         option_chain_dict: Dictionary containing option data:
@@ -2440,12 +3206,15 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
             }
         expiration_date: Specific expiration date to filter options (YYYY-MM-DD format)
         validation_config: Optional validation configuration object
+        spot_price: Optional current underlying price (for sanity checks). If not provided,
+                   will be estimated from ATM strike where call/put deltas are closest to 0.5
     
     Returns:
         dict: {
             'delta_16_plus': {'strike': float, 'delta': float, 'price': float, ...},
             'delta_16_minus': {'strike': float, 'delta': float, 'price': float, ...},
-            'validation_results': {...}  # Validation check results
+            'validation_results': {...},  # Validation check results
+            'sanity_checks': {...}  # "Check your work" validation results
         } or None if calculation fails
     """
     logger.info(f"Calculating Delta 16+/- values for expiration {expiration_date}")
@@ -2491,13 +3260,33 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
         valid_calls = calls_df[calls_df['delta'].notna() & (calls_df['delta'] > 0)]
         valid_puts = puts_df[puts_df['delta'].notna() & (puts_df['delta'] < 0)]
         
+        # Diagnostic logging: Show delta data availability and distribution
+        total_calls = len(calls_df)
+        total_puts = len(puts_df)
+        calls_with_delta = calls_df['delta'].notna().sum()
+        puts_with_delta = puts_df['delta'].notna().sum()
+        
+        logger.info(f"Delta data availability: Calls {calls_with_delta}/{total_calls}, Puts {puts_with_delta}/{total_puts}")
+        
         if valid_calls.empty or valid_puts.empty:
-            logger.error("No valid options with delta values found")
+            logger.error(f"No valid options with delta values found. "
+                        f"Calls with positive delta: {len(valid_calls)}, "
+                        f"Puts with negative delta: {len(valid_puts)}")
             return None
+        
+        # Log delta distribution for debugging wrong strike selection
+        call_deltas = valid_calls['delta'].sort_values()
+        put_deltas = valid_puts['delta'].sort_values()
+        logger.debug(f"Call delta range: {call_deltas.min():.4f} to {call_deltas.max():.4f} ({len(valid_calls)} options)")
+        logger.debug(f"Put delta range: {put_deltas.min():.4f} to {put_deltas.max():.4f} ({len(valid_puts)} options)")
         
         # Target delta values
         TARGET_CALL_DELTA = 0.16
         TARGET_PUT_DELTA = -0.16
+        
+        # HARD QUALITY THRESHOLD: Maximum acceptable deviation from target delta
+        # This is ALWAYS enforced regardless of validation_config to prevent obviously wrong selections
+        HARD_MAX_DELTA_DEVIATION = 0.10  # 10% absolute deviation (i.e., 0.06 to 0.26 acceptable range for calls)
         
         # Find Delta 16+ (Call with delta closest to +0.16)
         call_delta_diffs = (valid_calls['delta'] - TARGET_CALL_DELTA).abs()
@@ -2509,7 +3298,28 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
         delta_16_minus_idx = put_delta_diffs.idxmin()
         delta_16_minus_option = valid_puts.loc[delta_16_minus_idx]
         
-        # Validate the specific matches
+        # Calculate deviations BEFORE any optional validation
+        call_delta_diff = abs(float(delta_16_plus_option['delta']) - TARGET_CALL_DELTA)
+        put_delta_diff = abs(float(delta_16_minus_option['delta']) - TARGET_PUT_DELTA)
+        
+        # HARD QUALITY CHECK: Log warnings for significant deviations (always runs)
+        if call_delta_diff > HARD_MAX_DELTA_DEVIATION:
+            logger.warning(
+                f"⚠️ Delta 16+ QUALITY WARNING: Selected call has delta {delta_16_plus_option['delta']:.4f} "
+                f"(deviation {call_delta_diff:.4f} from target {TARGET_CALL_DELTA}). "
+                f"Strike ${delta_16_plus_option['strike']} may not be the correct Delta 16+ option! "
+                f"Available call deltas range: {call_deltas.min():.4f} to {call_deltas.max():.4f}"
+            )
+        
+        if put_delta_diff > HARD_MAX_DELTA_DEVIATION:
+            logger.warning(
+                f"⚠️ Delta 16- QUALITY WARNING: Selected put has delta {delta_16_minus_option['delta']:.4f} "
+                f"(deviation {put_delta_diff:.4f} from target {TARGET_PUT_DELTA}). "
+                f"Strike ${delta_16_minus_option['strike']} may not be the correct Delta 16- option! "
+                f"Available put deltas range: {put_deltas.min():.4f} to {put_deltas.max():.4f}"
+            )
+        
+        # Validate the specific matches (optional validation)
         match_validation = validate_delta_16_matches(delta_16_plus_option, delta_16_minus_option, validation_config)
         
         # If match validation fails and validation is enabled, return None
@@ -2523,17 +3333,82 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
         for warning in match_validation['warnings']:
             logger.warning(f"Delta 16+/- match warning: {warning}")
         
-        # Quality validation - ensure we found reasonable matches
-        call_delta_diff = abs(float(delta_16_plus_option['delta']) - TARGET_CALL_DELTA)
-        put_delta_diff = abs(float(delta_16_minus_option['delta']) - TARGET_PUT_DELTA)
-        
         # Log the accuracy of our matches
         logger.info(f"Delta 16+ match accuracy: {call_delta_diff:.4f} (target: {TARGET_CALL_DELTA}, found: {delta_16_plus_option['delta']:.4f})")
         logger.info(f"Delta 16- match accuracy: {put_delta_diff:.4f} (target: {TARGET_PUT_DELTA}, found: {delta_16_minus_option['delta']:.4f})")
         
+        # ===== "CHECK YOUR WORK" SANITY VALIDATIONS =====
+        # NO FALLBACKS - only run sanity checks if we have actual spot price and valid expiration
+        estimated_spot = spot_price  # Use provided spot price only
+        days_to_expiry = None
+        
+        # Calculate days to expiry - NO FALLBACK
+        try:
+            exp_date = datetime.strptime(expiration_date, '%Y-%m-%d')
+            days_to_expiry = max(1, (exp_date - datetime.now()).days)  # At least 1 day
+            logger.debug(f"Days to expiry: {days_to_expiry}")
+        except Exception as e:
+            logger.warning(f"Could not parse expiration date for sanity check: {e}")
+            days_to_expiry = None  # No fallback - will skip checks that need DTE
+        
+        # Run sanity checks only if we have required data (no fallbacks)
+        if estimated_spot is not None and days_to_expiry is not None:
+            sanity_results = run_delta_16_sanity_checks(
+                delta_16_plus_option=delta_16_plus_option,
+                delta_16_minus_option=delta_16_minus_option,
+                calls_df=calls_df,
+                puts_df=puts_df,
+                spot_price=estimated_spot,
+                days_to_expiry=days_to_expiry
+            )
+            
+            # Log sanity check summary
+            summary = sanity_results.get('summary', {})
+            run_count = summary.get('run_checks', summary.get('total_checks', 0))
+            skipped = summary.get('skipped_checks', 0)
+            if sanity_results['overall_valid']:
+                logger.info(f"✅ Sanity checks PASSED: {summary.get('passed_checks', 0)}/{run_count} "
+                           f"({skipped} skipped)")
+            else:
+                logger.warning(f"⚠️ Sanity checks found issues: {summary.get('errors_count', 0)} errors, "
+                              f"{summary.get('warnings_count', 0)} warnings, {skipped} skipped")
+        else:
+            # Skip sanity checks entirely if missing required data - NO FALLBACKS
+            missing = []
+            if estimated_spot is None:
+                missing.append("spot_price")
+            if days_to_expiry is None:
+                missing.append("days_to_expiry (could not parse expiration)")
+            logger.info(f"⏭️ Sanity checks SKIPPED: missing required data ({', '.join(missing)}) - no fallbacks used")
+            sanity_results = {
+                'overall_valid': None,  # None = not run, distinct from True/False
+                'checks': {},
+                'warnings': [],
+                'errors': [],
+                'summary': {
+                    'total_checks': 0,
+                    'run_checks': 0,
+                    'skipped_checks': 0,
+                    'passed_checks': 0,
+                    'warnings_count': 0,
+                    'errors_count': 0
+                },
+                'skipped_reason': f"Missing required data: {', '.join(missing)}"
+            }
+        
         # Calculate mid prices for the delta 16 options
         delta_16_plus_price = (float(delta_16_plus_option['bid']) + float(delta_16_plus_option['ask'])) / 2
         delta_16_minus_price = (float(delta_16_minus_option['bid']) + float(delta_16_minus_option['ask'])) / 2
+        
+        # Extract expiration from selected options (if available) for verification
+        call_expiration = delta_16_plus_option.get('expiration', '')
+        put_expiration = delta_16_minus_option.get('expiration', '')
+        
+        # Verify expirations match the expected date
+        if call_expiration and call_expiration != expiration_date:
+            logger.warning(f"⚠️ Delta 16+ call expiration mismatch: expected {expiration_date}, got {call_expiration}")
+        if put_expiration and put_expiration != expiration_date:
+            logger.warning(f"⚠️ Delta 16- put expiration mismatch: expected {expiration_date}, got {put_expiration}")
         
         # Package results
         results = {
@@ -2544,7 +3419,9 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
                 'bid': float(delta_16_plus_option['bid']),
                 'ask': float(delta_16_plus_option['ask']),
                 'type': 'call',
-                'delta_accuracy': call_delta_diff  # How close to exact 0.16
+                'expiration': call_expiration if call_expiration else expiration_date,
+                'delta_accuracy': call_delta_diff,  # How close to exact 0.16
+                'quality_warning': call_delta_diff > HARD_MAX_DELTA_DEVIATION
             },
             'delta_16_minus': {
                 'strike': float(delta_16_minus_option['strike']),
@@ -2553,13 +3430,20 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
                 'bid': float(delta_16_minus_option['bid']),
                 'ask': float(delta_16_minus_option['ask']),
                 'type': 'put',
-                'delta_accuracy': put_delta_diff  # How close to exact -0.16
+                'expiration': put_expiration if put_expiration else expiration_date,
+                'delta_accuracy': put_delta_diff,  # How close to exact -0.16
+                'quality_warning': put_delta_diff > HARD_MAX_DELTA_DEVIATION
             },
             'validation_results': {
                 'quality_check': validation_results,
                 'match_check': match_validation,
-                'validation_enabled': validation_config.enabled
-            }
+                'validation_enabled': validation_config.enabled,
+                'hard_threshold_exceeded': call_delta_diff > HARD_MAX_DELTA_DEVIATION or put_delta_diff > HARD_MAX_DELTA_DEVIATION
+            },
+            'sanity_checks': sanity_results,  # "Check your work" validation results
+            'spot_price_used': estimated_spot,  # Spot price used for sanity checks
+            'days_to_expiry': days_to_expiry,  # DTE used for sanity checks
+            'requested_expiration': expiration_date  # Store for reference
         }
         
         logger.info(f"Successfully calculated Delta 16 values:")
@@ -2568,6 +3452,19 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
         
         if validation_config.enabled:
             logger.info(f"  Validation: {validation_results['summary']['passed_checks']}/{validation_results['summary']['total_checks']} checks passed")
+        
+        # Log sanity check summary
+        sanity_summary = sanity_results.get('summary', {})
+        if sanity_results.get('overall_valid') is None:
+            # Sanity checks were skipped entirely
+            skip_reason = sanity_results.get('skipped_reason', 'missing required data')
+            logger.info(f"  Sanity Checks: SKIPPED ({skip_reason})")
+        else:
+            run_checks = sanity_summary.get('run_checks', sanity_summary.get('total_checks', 0))
+            skipped = sanity_summary.get('skipped_checks', 0)
+            logger.info(f"  Sanity Checks: {sanity_summary.get('passed_checks', 0)}/{run_checks} passed "
+                       f"({skipped} skipped, {sanity_summary.get('warnings_count', 0)} warnings, "
+                       f"{sanity_summary.get('errors_count', 0)} errors)")
         
         return results
         
@@ -3342,7 +4239,8 @@ def main():
         all_metrics = [
             'symbol', 'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread',
             'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-            'delta_range', 'delta_range_pct', 'straddle_strangle', 'last_updated'
+            'delta_range', 'delta_range_pct', 'straddle_strangle', 'last_updated',
+            'upcoming_earnings_date'
         ]
         
         # For horizontal layout, filter out 'symbol' from selectable metrics
@@ -3355,7 +4253,7 @@ def main():
         default_metrics = [
             'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread', 
             'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-            'delta_range', 'delta_range_pct'
+            'delta_range', 'delta_range_pct', 'upcoming_earnings_date'
         ]
         if layout == 'vertical':
             default_metrics.insert(0, 'symbol')
@@ -4116,7 +5014,8 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                 'S1': (data_format, data_format_alt),
                 'Delta 16 (-)': (data_format, data_format_alt),
                 'Delta Range': (data_format, data_format_alt),
-                'Delta Range %': (percent_3dec_format, percent_3dec_format_alt)
+                'Delta Range %': (percent_3dec_format, percent_3dec_format_alt),
+                'Earnings Date': (center_format, center_format_alt),
             }
             
             # Write row labels and data
@@ -4156,14 +5055,40 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                                     base_format, alt_format = metric_formats[metric_display_name]
                                     cell_format = alt_format if col_idx % 2 == 1 else base_format
                                     
-                                    # Convert percentage strings to numbers for Excel's built-in percentage formats
-                                    if isinstance(value, str) and '%' in value:
+                                    # Special handling for Earnings Date: format as MM/DD/YY in Excel
+                                    if metric_display_name == 'Earnings Date' and isinstance(value, str) and value not in ('', '—'):
                                         try:
-                                            percentage_text = value.replace('%', '').strip()
+                                            # value is normalized as YYYY-MM-DD; handle full ISO as well
+                                            dt = datetime.fromisoformat(value)
+                                            value = dt.strftime('%m/%d/%y')
+                                        except Exception:
+                                            # Fallback to original string on parse error
+                                            pass
+
+                                    # Extract warning suffix and clean value for Excel formatting
+                                    warning_suffix = ""
+                                    clean_value = value
+                                    if isinstance(value, str):
+                                        # Check for warning suffixes: (?) for minor, (!) for major
+                                        if ' (?)' in value:
+                                            warning_suffix = ' (?)'
+                                            clean_value = value.replace(' (?)', '')
+                                        elif ' (!)' in value:
+                                            warning_suffix = ' (!)'
+                                            clean_value = value.replace(' (!)', '')
+                                    
+                                    # Convert percentage strings to numbers for Excel's built-in percentage formats
+                                    if isinstance(clean_value, str) and '%' in clean_value:
+                                        try:
+                                            percentage_text = clean_value.replace('%', '').strip()
                                             # Use Decimal for exact arithmetic to avoid floating point errors
                                             percentage_decimal = Decimal(percentage_text)
                                             numeric_value = float(percentage_decimal / Decimal('100'))
-                                            worksheet.write(row_idx, col_idx + 1, numeric_value, cell_format)
+                                            # If there's a warning suffix, write as text with suffix to preserve it
+                                            if warning_suffix:
+                                                worksheet.write(row_idx, col_idx + 1, f"{clean_value}{warning_suffix}", cell_format)
+                                            else:
+                                                worksheet.write(row_idx, col_idx + 1, numeric_value, cell_format)
                                         except:
                                             worksheet.write(row_idx, col_idx + 1, value, cell_format)
                                     else:
@@ -4176,7 +5101,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                                             # Reconstruct a minimal symbol->status map if possible
                                             if "Δ Status" in wem_df.get('df', pd.DataFrame()).index:
                                                 pass  # horizontal mode uses transposed df; hard to map here reliably
-                                        # Note: robust highlighting is implemented for vertical layout below
+                                            # Note: robust highlighting is implemented for vertical layout below
                                     except Exception:
                                         pass
                 
@@ -4216,14 +5141,39 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                                 else:
                                     cell_format = data_format_alt if is_alt_row else data_format
                                 
-                                # Convert percentage strings to numbers for Excel's built-in percentage formats
-                                if isinstance(value, str) and '%' in value:
+                                # Special handling for upcoming_earnings_date: format as MM/DD/YY in Excel
+                                if field == 'upcoming_earnings_date' and isinstance(value, str) and value not in ('', '—'):
                                     try:
-                                        percentage_text = value.replace('%', '').strip()
+                                        dt = datetime.fromisoformat(value)
+                                        value = dt.strftime('%m/%d/%y')
+                                    except Exception:
+                                        # Fallback to original string on parse error
+                                        pass
+                                    
+                                # Extract warning suffix and clean value for Excel formatting
+                                warning_suffix = ""
+                                clean_value = value
+                                if isinstance(value, str):
+                                    # Check for warning suffixes: (?) for minor, (!) for major
+                                    if ' (?)' in value:
+                                        warning_suffix = ' (?)'
+                                        clean_value = value.replace(' (?)', '')
+                                    elif ' (!)' in value:
+                                        warning_suffix = ' (!)'
+                                        clean_value = value.replace(' (!)', '')
+                                
+                                # Convert percentage strings to numbers for Excel's built-in percentage formats
+                                if isinstance(clean_value, str) and '%' in clean_value:
+                                    try:
+                                        percentage_text = clean_value.replace('%', '').strip()
                                         # Use Decimal for exact arithmetic to avoid floating point errors
                                         percentage_decimal = Decimal(percentage_text)
                                         numeric_value = float(percentage_decimal / Decimal('100'))
-                                        worksheet.write(row_idx + 1, col_idx, numeric_value, cell_format)
+                                        # If there's a warning suffix, write as text with suffix to preserve it
+                                        if warning_suffix:
+                                            worksheet.write(row_idx + 1, col_idx, f"{clean_value}{warning_suffix}", cell_format)
+                                        else:
+                                            worksheet.write(row_idx + 1, col_idx, numeric_value, cell_format)
                                     except:
                                         worksheet.write(row_idx + 1, col_idx, value, cell_format)
                                 else:

@@ -91,6 +91,56 @@ class MarketDataAppProvider(MarketDataProvider):
         self._check_rate_limit()
         return self.session.get(url, headers=self.headers, params=params)
 
+    def get_next_earnings_date(self, symbol: str) -> Optional[datetime]:
+        """Get the next upcoming earnings report date for a symbol.
+
+        Uses /v1/stocks/earnings/{symbol}/ and returns the earliest
+        future reportDate as a UTC datetime, or None if not available.
+        """
+        try:
+            url = f"{self.base_url}/stocks/earnings/{symbol}/"
+            resp = self._make_request(url)
+
+            # Treat no-content / not-found as "no upcoming earnings" without error
+            if resp.status_code in (204, 404):
+                logging.info(f"No earnings data for {symbol} (status {resp.status_code})")
+                return None
+
+            if resp.status_code not in (200, 203):
+                logging.warning(f"Earnings endpoint status {resp.status_code} for {symbol}")
+                return None
+
+            data = resp.json()
+            if not isinstance(data, dict) or data.get('s') != 'ok':
+                msg = data.get('errmsg', 'unknown payload') if isinstance(data, dict) else str(data)
+                logging.warning(f"Earnings payload not ok for {symbol}: {msg}")
+                return None
+
+            # MarketData.app returns arrays per field; prefer reportDate if present
+            raw_dates = data.get('reportDate') or data.get('date')
+            if not raw_dates or not isinstance(raw_dates, list):
+                return None
+
+            now_utc = datetime.utcnow()
+            future_dates = []
+            for ts in raw_dates:
+                try:
+                    # API returns unix seconds; support ints/strings
+                    ts_int = int(ts)
+                    dt = datetime.utcfromtimestamp(ts_int)
+                    if dt >= now_utc:
+                        future_dates.append(dt)
+                except Exception:
+                    continue
+
+            if not future_dates:
+                return None
+
+            return min(future_dates)
+        except Exception as e:
+            logging.error(f"Error fetching earnings for {symbol}: {e}")
+            return None
+
     def get_stock_price(self, symbol: str, regular_hours_only: bool = False) -> float:
         """Get current price for stocks or indices."""
         paths = [f"/stocks/quotes/{symbol}/"]
@@ -282,23 +332,39 @@ class MarketDataAppProvider(MarketDataProvider):
                 if isinstance(v, list) and len(v) == length:
                     return v
                 return [default] * length
+            
+            # Use None for greeks so we can distinguish "API returned 0" from "API didn't return"
+            # This allows downstream code to properly filter out options without delta data
+            def safe_list_nullable(k):
+                """Return list from API or None values (will become NaN in DataFrame)"""
+                v = data.get(k)
+                if isinstance(v, list) and len(v) == length:
+                    return v
+                return [None] * length
+            
             df = pd.DataFrame({
                 'optionSymbol': data['optionSymbol'],
                 'side': safe_list('side', 'call' if 'side=call' in url else 'put'),
                 'strike': safe_list('strike', 0.0),
+                'expiration': safe_list('expiration', expiration_date),  # Capture expiration from API or use requested date
                 'bid': safe_list('bid', 0.0),
                 'ask': safe_list('ask', 0.0),
                 'last': safe_list('last', 0.0),
                 'volume': safe_list('volume', 0),
                 'openInterest': safe_list('openInterest', 0),
-                'iv': safe_list('iv', 0.0),
+                'iv': safe_list_nullable('iv'),  # Use nullable for IV
                 'inTheMoney': safe_list('inTheMoney', False),
-                'delta': safe_list('delta', 0.0),
-                'gamma': safe_list('gamma', 0.0),
-                'theta': safe_list('theta', 0.0),
-                'vega': safe_list('vega', 0.0),
-                'rho': safe_list('rho', 0.0),
+                'delta': safe_list_nullable('delta'),  # Use nullable for delta
+                'gamma': safe_list_nullable('gamma'),  # Use nullable for gamma
+                'theta': safe_list_nullable('theta'),  # Use nullable for theta
+                'vega': safe_list_nullable('vega'),    # Use nullable for vega
+                'rho': safe_list_nullable('rho'),      # Use nullable for rho
             })
+            
+            # Log delta availability for debugging
+            delta_count = df['delta'].notna().sum()
+            logging.debug(f"Chain {url.split('side=')[1] if 'side=' in url else 'unknown'}: {len(df)} options, {delta_count} have delta values")
+            
             return df
 
         calls_raw = fetch_side(url_calls)
@@ -358,6 +424,8 @@ class MarketDataAppProvider(MarketDataProvider):
         logging.info(f"MarketDataApp: Post-standardization columns: {df.columns.tolist()}")
         
         # Add missing columns with default values
+        # Note: Greeks columns (delta, gamma, etc.) use NaN as default to indicate "no data"
+        # This allows downstream code to distinguish "API returned 0" from "no data available"
         standard_columns = {
             'symbol': '',
             'strike': 0.0,
@@ -368,24 +436,31 @@ class MarketDataAppProvider(MarketDataProvider):
             'last': 0.0,
             'volume': 0.0,
             'open_interest': 0.0,
-            'implied_volatility': 0.0,
-            'delta': 0.0,
-            'gamma': 0.0,
-            'theta': 0.0,
-            'vega': 0.0,
-            'rho': 0.0
+            'implied_volatility': float('nan'),  # NaN = no data
+            'delta': float('nan'),               # NaN = no data  
+            'gamma': float('nan'),               # NaN = no data
+            'theta': float('nan'),               # NaN = no data
+            'vega': float('nan'),                # NaN = no data
+            'rho': float('nan')                  # NaN = no data
         }
         
         for col, default_value in standard_columns.items():
             if col not in df.columns:
                 df[col] = default_value
         
-        # Ensure numeric columns are float
-        numeric_cols = ['strike', 'bid', 'ask', 'last', 'volume', 'open_interest', 
-                       'implied_volatility', 'delta', 'gamma', 'theta', 'vega', 'rho']
-        for col in numeric_cols:
+        # Ensure numeric columns are float - split into two groups:
+        # 1. Price/volume columns: fill NaN with 0.0 (safe default for pricing)
+        price_volume_cols = ['strike', 'bid', 'ask', 'last', 'volume', 'open_interest']
+        for col in price_volume_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+        
+        # 2. Greeks columns: preserve NaN to indicate "no data from API"
+        # This is critical for delta-16 calculation to know if delta is truly 0 vs unavailable
+        greeks_cols = ['implied_volatility', 'delta', 'gamma', 'theta', 'vega', 'rho']
+        for col in greeks_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')  # Don't fill NaN
                 
         return df
 
