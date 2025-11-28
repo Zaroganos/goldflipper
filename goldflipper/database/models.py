@@ -1096,6 +1096,7 @@ class WEMStock(Base):
     delta_16_minus = Column(Float)
     delta_range = Column(Float)
     delta_range_pct = Column(Float)
+    rsi = Column(Float)  # RSI-14 momentum indicator
     notes = Column(Text)
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     meta_data = Column(JSON)
@@ -1132,6 +1133,7 @@ class WEMStock(Base):
             'delta_16_minus': self.delta_16_minus,
             'delta_range': self.delta_range,
             'delta_range_pct': self.delta_range_pct,
+            'rsi': self.rsi,
             'notes': self.notes,
             'last_updated': self.last_updated.isoformat() if self.last_updated else None,
             'meta_data': self.meta_data

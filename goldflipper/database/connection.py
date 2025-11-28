@@ -69,16 +69,8 @@ from sqlalchemy.pool import QueuePool
 from .models import Base
 
 # Optional imports for resolving application version dynamically
-try:
-    from importlib.metadata import PackageNotFoundError, version as get_dist_version  # Python 3.8+
-except Exception:  # pragma: no cover - compatibility fallback (not expected on >=3.11)
-    get_dist_version = None
-    PackageNotFoundError = Exception
-
-try:  # Python 3.11+
-    import tomllib  # type: ignore
-except Exception:  # pragma: no cover
-    tomllib = None
+from importlib.metadata import PackageNotFoundError, version as get_dist_version
+import tomllib  # type: ignore
 
 # Configure logging
 logging.basicConfig(
@@ -141,9 +133,11 @@ class DatabaseConfig:
     def _get_default_base_dir(self) -> Path:
         """Return OS-appropriate default base directory for Goldflipper data.
 
-        Windows: %LOCALAPPDATA%\Goldflipper
+        Windows: %LOCALAPPDATA%\\Goldflipper
         macOS:   ~/Library/Application Support/Goldflipper
         Linux:   $XDG_DATA_HOME/goldflipper or ~/.local/share/goldflipper
+
+        MAKE SURE WINDOWS PATHS ARE CORRECTLY ESCAPED!!!
         """
         try:
             if sys.platform.startswith('win'):

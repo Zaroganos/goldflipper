@@ -149,7 +149,7 @@ import shutil
 from typing import List, Dict, Any, Optional, Union
 from uuid import UUID
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, text, inspect
 
 # Add the project root to the Python path
 sys.path.append(str(project_root))
@@ -175,6 +175,7 @@ from goldflipper.data.market.tickers.VIX.vix_lib import (
     select_vix_required_options_from_chain,
     robust_mid as vix_robust_mid,
 )
+from goldflipper.data.indicators.rsi import RSICalculator
 
 # Helpers
 def _get_desktop_dir() -> str:
@@ -764,6 +765,60 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                 # Swallow earnings lookup failures; WEM calc should continue
                 upcoming_earnings_iso = None
 
+        # Step 1.6: Calculate RSI (best-effort, non-fatal)
+        # RSI requires ~20+ days of historical close prices for RSI-14 calculation
+        rsi_value = None
+        try:
+            manager = manager or get_market_data_manager()
+            if manager:
+                # Request ~30 days of daily data to ensure enough for RSI-14 calculation
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=45)  # Extra buffer for weekends/holidays
+                
+                # Try to get historical data - VIX needs special handling
+                hist_symbol = symbol if symbol.upper() != 'VIX' else 'VIX'
+                historical_df = None
+                
+                # Get historical data from the provider
+                if hasattr(manager, 'get_historical_data'):
+                    try:
+                        historical_df = manager.get_historical_data(hist_symbol, start_date, end_date, interval='1d')
+                    except Exception as hist_err:
+                        logger.debug(f"Failed to get historical data for RSI from manager: {hist_err}")
+                
+                # Fallback: try direct provider access if manager method fails
+                if historical_df is None or historical_df.empty:
+                    for prov_name, provider in (manager.providers or {}).items():
+                        if hasattr(provider, 'get_historical_data'):
+                            try:
+                                historical_df = provider.get_historical_data(hist_symbol, start_date, end_date, interval='1d')
+                                if historical_df is not None and not historical_df.empty:
+                                    logger.debug(f"Got historical data for RSI from {prov_name}")
+                                    break
+                            except Exception:
+                                continue
+                
+                # Calculate RSI if we have enough data
+                if historical_df is not None and not historical_df.empty:
+                    # Find the close column (handle different column naming conventions)
+                    close_col = None
+                    for col in ['close', 'Close', 'adj_close', 'Adj Close']:
+                        if col in historical_df.columns:
+                            close_col = col
+                            break
+                    
+                    if close_col and len(historical_df) >= 15:  # Need at least 15 days for RSI-14
+                        close_prices = historical_df[close_col]
+                        rsi_value = RSICalculator.calculate_from_prices(close_prices, period=14)
+                        if rsi_value is not None:
+                            logger.info(f"Calculated RSI-14 for {symbol}: {rsi_value:.2f}")
+                    else:
+                        logger.debug(f"Insufficient data for RSI calculation for {symbol}: {len(historical_df) if historical_df is not None else 0} rows")
+        except Exception as rsi_err:
+            # RSI calculation failure should not block WEM calculation
+            logger.warning(f"RSI calculation failed for {symbol}: {rsi_err}")
+            rsi_value = None
+
         # Step 2: Determine appropriate expiration date from provider expirations
         manager = manager or get_market_data_manager()
         
@@ -1159,6 +1214,16 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
                 else:
                     delta_validation_status = "pass"
                     delta_validation_message = "Validation passed"
+            
+            # Escalate warning level if we forced the calculation to proceed after a validation failure
+            forced_quality = validation_results.get('quality_check', {}).get('forced_proceed')
+            forced_match = validation_results.get('match_check', {}).get('forced_proceed')
+            if forced_quality or forced_match:
+                delta_16_plus_warning = 'major'
+                delta_16_minus_warning = 'major'
+                if delta_validation_status in ("none", "", None):
+                    delta_validation_status = "error"
+                    delta_validation_message = "Validation failed - forced proceed"
         
         result = {
             'symbol': symbol,
@@ -1183,6 +1248,7 @@ def calculate_expected_move(session: Session, stock_data: Dict[str, Any], regula
             'straddle_1': float(straddle_1) if straddle_1 is not None else None,  # Stock Price - WEM Points
             'delta_validation_status': delta_validation_status,  # For UI highlighting
             'delta_validation_message': delta_validation_message,  # For tooltips/details
+            'rsi': float(rsi_value) if rsi_value is not None else None,  # RSI-14 momentum indicator
             'meta_data': {
                 'calculation_timestamp': datetime.now(timezone.utc).isoformat(),
                 'calculation_method': 'automated_full_chain_analysis',
@@ -1476,17 +1542,26 @@ def _extract_required_options_from_chain(calls: pd.DataFrame, puts: pd.DataFrame
                 return bid
             return None
 
-        def _valid_option(row: pd.Series, is_vix: bool) -> bool:
+        def _valid_option(row: pd.Series, is_vix: bool, option_label: str) -> bool:
             # Require a strike and at least one viable price field
             if 'strike' not in row or pd.isna(row['strike']):
                 return False
-            if is_vix:
-                return _mid_from_row(row) is not None
-            # Non-VIX strict rule: both sides present and > 0
-            try:
-                return float(row.get('bid', 0) or 0) > 0 and float(row.get('ask', 0) or 0) > 0
-            except Exception:
+            mid_price = _mid_from_row(row)
+            if mid_price is None:
                 return False
+            if not is_vix:
+                try:
+                    bid = float(row.get('bid', 0) or 0)
+                    ask = float(row.get('ask', 0) or 0)
+                except Exception:
+                    bid = ask = 0.0
+                if bid <= 0 or ask <= 0:
+                    logger.warning(
+                        f"One-sided pricing for {option_label} in {symbol}: "
+                        f"bid={row.get('bid')}, ask={row.get('ask')}, last={row.get('last')} - "
+                        "continuing with available price data"
+                    )
+            return True
         # Get all available strikes from both calls and puts
         all_strikes = sorted(set(calls['strike'].tolist() + puts['strike'].tolist()))
         logger.debug(f"Available strikes for {symbol}: {len(all_strikes)} strikes from {min(all_strikes)} to {max(all_strikes)}")
@@ -1575,7 +1650,7 @@ def _extract_required_options_from_chain(calls: pd.DataFrame, puts: pd.DataFrame
             ('ATM Call', atm_call), ('ATM Put', atm_put), 
             ('ITM Call', itm_call), ('ITM Put', itm_put)
         ]:
-            if not _valid_option(option_data, is_vix):
+            if not _valid_option(option_data, is_vix, option_name):
                 logger.error(
                     f"Invalid pricing for {option_name} in {symbol}: "
                     f"bid={option_data.get('bid')}, ask={option_data.get('ask')}, last={option_data.get('last')}"
@@ -1896,8 +1971,6 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     Returns:
         dict: Dictionary with the table data and column configuration
     """
-    st.info("Creating WEM table...")
-    
     if not stocks:
         st.warning("No stock data available. Try updating the data first.")
         return {"df": pd.DataFrame(), "columns": []}
@@ -1998,6 +2071,8 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
                 formatted_percentage = round(percentage_val, digits)
                 return f"{formatted_percentage:.{digits}f}%"
         
+        elif col_name == 'rsi':
+            return f"{num_val:.1f}"
         else:
             # Fetched values - use original formatting logic
             # Max digits before decimal (max_digits), always show 2 decimal places minimum
@@ -2109,8 +2184,8 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     all_metrics = [
         'symbol', 'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread',
         'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-        'delta_range', 'delta_range_pct', 'straddle_strangle', 'delta_validation_status', 
-        'delta_validation_message', 'last_updated', 'upcoming_earnings_date'
+        'delta_range', 'delta_range_pct', 'straddle_strangle', 'rsi',
+        'delta_validation_status', 'delta_validation_message', 'last_updated', 'upcoming_earnings_date'
     ]
     
     # For horizontal layout, filter out 'symbol' from selectable metrics
@@ -2123,7 +2198,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     default_metrics = [
         'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread', 
         'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-        'delta_range', 'delta_range_pct', 'upcoming_earnings_date'
+        'delta_range', 'delta_range_pct', 'rsi', 'upcoming_earnings_date'
     ]
     
     metrics = metrics or default_metrics
@@ -2163,10 +2238,16 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
         'delta_16_minus': 'Delta 16 (-)',
         'delta_range': 'Delta Range',
         'delta_range_pct': 'Delta Range %',
+        'rsi': 'RSI',
         'delta_validation_status': 'Δ Status',
         'delta_validation_message': 'Δ Details',
         'last_updated': 'Last Updated',
         'upcoming_earnings_date': 'Earnings Date'
+    }
+    # Keep a mapping of raw metric keys to their display names for downstream filtering
+    metric_label_map = {
+        metric: column_display_names.get(metric, metric.replace('_', ' ').title())
+        for metric in all_metrics
     }
     
     # Dynamically update ATM display name with the actual Friday date being used
@@ -2219,7 +2300,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
             valid_metrics = available_metrics
         
         # Rename index with pretty names
-        df.index = [column_display_names.get(idx, idx.replace('_', ' ').title()) for idx in df.index]
+        df.index = [metric_label_map.get(idx, column_display_names.get(idx, idx.replace('_', ' ').title())) for idx in df.index]
         
         # Configure columns - each stock symbol is a column (including those with missing data)
         stock_symbols = original_df['symbol'].tolist()
@@ -2252,6 +2333,9 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
                 # For percentage columns, we've already formatted them as strings with % sign
                 column_type = "text"  # Changed from "number" to "text" to preserve % sign
                 column_format = None  # No format needed since we've already formatted the values
+            elif metric == 'rsi':
+                column_type = "number"
+                column_format = "%.1f"  # RSI displayed with 1 decimal place (0-100 scale)
             
             columns.append({
                 "field": metric,
@@ -2262,7 +2346,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
             })
     
     logger.info(f"Created table with {df.shape[0]} rows, {df.shape[1]} columns")
-    return {"df": df, "columns": columns}
+    return {"df": df, "columns": columns, "metric_label_map": metric_label_map}
 
 def create_stub_wem_record(symbol: str) -> Dict[str, Any]:
     """
@@ -2299,6 +2383,7 @@ def create_stub_wem_record(symbol: str) -> Dict[str, Any]:
         'straddle_1': None,
         'delta_validation_status': "none",  # Use "none" instead of None for display
         'delta_validation_message': "Market data unavailable",
+        'rsi': None,  # RSI-14 momentum indicator
         'notes': "Calculation failed - market data unavailable",
         'meta_data': {
             'calculation_timestamp': datetime.now(timezone.utc).isoformat(),
@@ -3242,15 +3327,16 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
         
         # Run quality validation checks first
         validation_results = validate_delta_16_quality(calls_df, puts_df, expiration_date, validation_config)
+        quality_failed = validation_config.enabled and not validation_results['overall_pass']
         
-        # If validation is enabled and fails, return None
-        if validation_config.enabled and not validation_results['overall_pass']:
+        if quality_failed:
             logger.error("Delta 16+/- validation failed:")
             for error in validation_results['errors']:
                 logger.error(f"  - {error}")
             for warning in validation_results['warnings']:
                 logger.warning(f"  - {warning}")
-            return None
+            # Continue with calculation but flag failure so downstream UI can show ❌
+            validation_results['forced_proceed'] = True
         
         # Log validation warnings even if overall pass
         for warning in validation_results['warnings']:
@@ -3322,12 +3408,13 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
         # Validate the specific matches (optional validation)
         match_validation = validate_delta_16_matches(delta_16_plus_option, delta_16_minus_option, validation_config)
         
-        # If match validation fails and validation is enabled, return None
-        if validation_config.enabled and not match_validation['overall_pass']:
+        # If match validation fails and validation is enabled, log but continue
+        match_failed = validation_config.enabled and not match_validation['overall_pass']
+        if match_failed:
             logger.error("Delta 16+/- match validation failed:")
             for error in match_validation['errors']:
                 logger.error(f"  - {error}")
-            return None
+            match_validation['forced_proceed'] = True
         
         # Log match validation warnings
         for warning in match_validation['warnings']:
@@ -3513,84 +3600,84 @@ def main():
     st.title("📊 Weekly Expected Moves (WEM)")
     st.subheader("Options-derived expected price ranges for the upcoming week")
     
-    # Debug section - always visible to help troubleshoot Friday logic
-    with st.expander("🔍 Debug: Friday Logic Check", expanded=False):
-        st.markdown("**Current Time & Friday Logic Debug**")
-        
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        
-        # Show current time in different timezones
-        current_local = datetime.now()
-        try:
-            market_tz = ZoneInfo('America/New_York')
-            current_ny = datetime.now(market_tz)
-            col1, col2 = st.columns(2)
+    # Debug section - visible only when debug toggle enabled
+    if st.session_state.get('show_debug_panels', False):
+        with st.expander("🔍 Debug: Friday Logic Check", expanded=False):
+            st.markdown("**Current Time & Friday Logic Debug**")
             
-            with col1:
-                st.text(f"Local: {current_local.strftime('%Y-%m-%d %H:%M:%S')}")
-                st.text(f"NY: {current_ny.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-                st.text(f"Day: {current_ny.strftime('%A')}")
-                st.text(f"Is Friday: {current_ny.weekday() == 4}")
+            from zoneinfo import ZoneInfo
             
-            with col2:
-                                # Check market close time
-                market_close_time = current_ny.replace(hour=16, minute=0, second=0, microsecond=0)
-                st.text(f"Market close: {market_close_time.strftime('%H:%M:%S %Z')}")
-                st.text(f"After close: {current_ny >= market_close_time}")
+            # Show current time in different timezones
+            current_local = datetime.now()
+            try:
+                market_tz = ZoneInfo('America/New_York')
+                current_ny = datetime.now(market_tz)
+                col1, col2 = st.columns(2)
                 
-                # Test find_previous_friday function
-                try:
-                    # Import the function locally to avoid scope issues
-                    from goldflipper.utils.market_holidays import find_previous_friday
-                    friday_result = find_previous_friday()
-                    st.text(f"Function result: {friday_result.date()}")
-                    expected = "Today" if current_ny.weekday() == 4 and current_ny >= market_close_time else "Last Friday"
-                    st.text(f"Expected: {expected}")
+                with col1:
+                    st.text(f"Local: {current_local.strftime('%Y-%m-%d %H:%M:%S')}")
+                    st.text(f"NY: {current_ny.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                    st.text(f"Day: {current_ny.strftime('%A')}")
+                    st.text(f"Is Friday: {current_ny.weekday() == 4}")
+                
+                with col2:
+                                    # Check market close time
+                    market_close_time = current_ny.replace(hour=16, minute=0, second=0, microsecond=0)
+                    st.text(f"Market close: {market_close_time.strftime('%H:%M:%S %Z')}")
+                    st.text(f"After close: {current_ny >= market_close_time}")
                     
-                    # Show if this matches expectation
-                    if current_ny.weekday() == 4 and current_ny >= market_close_time:
-                        if friday_result.date() == current_ny.date():
-                            st.success("✅ CORRECT: Using today's Friday close")
-                        else:
-                            st.error(f"❌ ISSUE: Using {friday_result.date()} instead of today")
-                    else:
-                        if friday_result.date() < current_ny.date() and friday_result.date().weekday() == 4:
-                            st.success("✅ CORRECT: Using last Friday")
-                        else:
-                            st.error(f"❌ ISSUE: Unexpected result {friday_result.date()}")
-                            
-                except Exception as e:
-                    st.error(f"Function error: {e}")
-                    
-                # Test find_next_friday_expiration function
-                try:
-                    from goldflipper.utils.market_holidays import find_next_friday_expiration
-                    next_friday_result = find_next_friday_expiration()
-                    st.text(f"Next Friday result: {next_friday_result.date()}")
-                    
-                    # Check if this is correct (should be next Friday, not today)
-                    if current_ny.weekday() == 4:  # Today is Friday
-                        if next_friday_result.date() > current_ny.date():
-                            st.success("✅ CORRECT: Next Friday is in the future")
-                        else:
-                            st.error(f"❌ ISSUE: Next Friday should be future, got {next_friday_result.date()}")
-                    else:
-                        # Not Friday, should be next Friday
-                        days_until_friday = (4 - current_ny.weekday()) % 7
-                        if days_until_friday == 0:
-                            days_until_friday = 7  # Next Friday
-                        expected_next_friday = current_ny.date() + timedelta(days=days_until_friday)
-                        if next_friday_result.date() == expected_next_friday:
-                            st.success("✅ CORRECT: Next Friday calculated correctly")
-                        else:
-                            st.error(f"❌ ISSUE: Expected {expected_next_friday}, got {next_friday_result.date()}")
+                    # Test find_previous_friday function
+                    try:
+                        # Import the function locally to avoid scope issues
+                        from goldflipper.utils.market_holidays import find_previous_friday
+                        friday_result = find_previous_friday()
+                        st.text(f"Function result: {friday_result.date()}")
+                        expected = "Today" if current_ny.weekday() == 4 and current_ny >= market_close_time else "Last Friday"
+                        st.text(f"Expected: {expected}")
                         
-                except Exception as e:
-                    st.error(f"Next Friday function error: {e}")
-                    
-        except Exception as e:
-            st.error(f"Timezone error: {e}")
+                        # Show if this matches expectation
+                        if current_ny.weekday() == 4 and current_ny >= market_close_time:
+                            if friday_result.date() == current_ny.date():
+                                st.success("✅ CORRECT: Using today's Friday close")
+                            else:
+                                st.error(f"❌ ISSUE: Using {friday_result.date()} instead of today")
+                        else:
+                            if friday_result.date() < current_ny.date() and friday_result.date().weekday() == 4:
+                                st.success("✅ CORRECT: Using last Friday")
+                            else:
+                                st.error(f"❌ ISSUE: Unexpected result {friday_result.date()}")
+                                
+                    except Exception as e:
+                        st.error(f"Function error: {e}")
+                        
+                    # Test find_next_friday_expiration function
+                    try:
+                        from goldflipper.utils.market_holidays import find_next_friday_expiration
+                        next_friday_result = find_next_friday_expiration()
+                        st.text(f"Next Friday result: {next_friday_result.date()}")
+                        
+                        # Check if this is correct (should be next Friday, not today)
+                        if current_ny.weekday() == 4:  # Today is Friday
+                            if next_friday_result.date() > current_ny.date():
+                                st.success("✅ CORRECT: Next Friday is in the future")
+                            else:
+                                st.error(f"❌ ISSUE: Next Friday should be future, got {next_friday_result.date()}")
+                        else:
+                            # Not Friday, should be next Friday
+                            days_until_friday = (4 - current_ny.weekday()) % 7
+                            if days_until_friday == 0:
+                                days_until_friday = 7  # Next Friday
+                            expected_next_friday = current_ny.date() + timedelta(days=days_until_friday)
+                            if next_friday_result.date() == expected_next_friday:
+                                st.success("✅ CORRECT: Next Friday calculated correctly")
+                            else:
+                                st.error(f"❌ ISSUE: Expected {expected_next_friday}, got {next_friday_result.date()}")
+                            
+                    except Exception as e:
+                        st.error(f"Next Friday function error: {e}")
+                        
+            except Exception as e:
+                st.error(f"Timezone error: {e}")
     
     # Get available symbols from database for the symbol selector (at top level for broader scope)
     try:
@@ -3622,6 +3709,15 @@ def main():
     # Sidebar configuration
     with st.sidebar:
         st.header("WEM Configuration")
+        
+        # Debug toggle controls visibility of optional diagnostic panels
+        show_debug_panels = st.checkbox(
+            "Show Debug Panels",
+            value=st.session_state.get('show_debug_panels', False),
+            key="wem_debug_toggle",
+            help="Enable to display additional debugging panels in the main view."
+        )
+        st.session_state.show_debug_panels = show_debug_panels
         
         # Data source and pricing mode toggles - DEFINE FIRST before any buttons that use them
         st.subheader("Data Source & Pricing")
@@ -3661,12 +3757,6 @@ def main():
         # Add informational text about the data source and pricing mode
         data_source_text = "Friday Close" if use_friday_close else "Most Recent"
         pricing_mode_text = "Regular Hours" if regular_hours_only else "Extended Hours"
-        st.caption(f"📊 **{data_source_text}** data using **{pricing_mode_text}** pricing")
-        
-        if use_friday_close:
-            st.caption("✅ Standard WEM calculation using previous Friday's close price")
-        else:
-            st.caption("🧪 Testing mode using most recent market data")
         
         # Delta 16 Validation Controls - MOVED TO TOP so config is available for WEM button
         st.subheader("Delta 16+/- Validation")
@@ -3770,13 +3860,6 @@ def main():
         
         # Store in session state for use in calculations
         st.session_state.delta_16_validation_config = validation_config
-        
-        # Show current validation status
-        if validation_enabled:
-            st.success("✅ Delta 16+/- validation enabled")
-            st.caption(f"📊 Current thresholds: Max deviation {max_delta_deviation:.2f}, Min strikes {min_strike_count}")
-        else:
-            st.info("⚠️ Delta 16+/- validation disabled - calculations will accept any closest match")
 
         # Show debug tools only when debug mode is enabled
         debug_enabled = settings.get('logging', {}).get('debug', {}).get('enabled', False)
@@ -3797,7 +3880,6 @@ def main():
             # Simple Friday date test (debug mode only)
             if st.button("🧪 Test Current Friday Date", help="Test what date find_previous_friday returns right now"):
                 from goldflipper.utils.market_holidays import find_previous_friday
-                from datetime import datetime
                 
                 current_date = datetime.now().date()
                 friday_date = find_previous_friday().date()
@@ -4239,8 +4321,8 @@ def main():
         all_metrics = [
             'symbol', 'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread',
             'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-            'delta_range', 'delta_range_pct', 'straddle_strangle', 'last_updated',
-            'upcoming_earnings_date'
+            'delta_range', 'delta_range_pct', 'straddle_strangle', 'rsi',
+            'last_updated', 'upcoming_earnings_date'
         ]
         
         # For horizontal layout, filter out 'symbol' from selectable metrics
@@ -4253,7 +4335,7 @@ def main():
         default_metrics = [
             'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread', 
             'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-            'delta_range', 'delta_range_pct', 'upcoming_earnings_date'
+            'delta_range', 'delta_range_pct', 'rsi', 'upcoming_earnings_date'
         ]
         if layout == 'vertical':
             default_metrics.insert(0, 'symbol')
@@ -4393,7 +4475,6 @@ def main():
         # Get WEM stocks from database within a context manager
         with get_db_connection() as db_session:
             # Check if wem_stocks table exists, if not initialize the database
-            from sqlalchemy import inspect
             inspector = inspect(db_session.bind)
             existing_tables = inspector.get_table_names()
             
@@ -4632,43 +4713,56 @@ def main():
         with st.container():
             st.subheader("Weekly Expected Moves")
             
-            # Show current calculation settings
-            current_data_source = "Friday Close" if st.session_state.get('use_friday_close', True) else "Most Recent"
-            current_pricing = "Regular Hours" if st.session_state.get('regular_hours_only', True) else "Extended Hours"
+            # Show validation status information only when debug panels enabled
+            if st.session_state.get('show_debug_panels', False):
+                if hasattr(st.session_state, 'delta_16_validation_config') and st.session_state.delta_16_validation_config.enabled:
+                    validation_info = st.expander("🔍 Delta 16+/- Validation Status", expanded=False)
+                    with validation_info:
+                        st.write("**How validation works:**")
+                        st.write("• **❌ Errors**: Validation failures that block calculation entirely")
+                        st.write("• **⚠️ Warnings**: Quality issues detected but calculation proceeds")
+                        st.write("• **✅ Pass**: All validation checks passed successfully")
+                        st.write("• **➖ N/A**: No delta values available in option chain")
+                        
+                        st.write("**Active validation checks:**")
+                        config = st.session_state.delta_16_validation_config
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write(f"• Max delta deviation: **{config.max_delta_deviation:.2f}**")
+                            st.write(f"• Min strike count: **{config.min_strike_count}**")
+                            st.write(f"• Max strike interval: **${config.max_strike_interval:.1f}**")
+                        with col2:
+                            st.write(f"• Min days to expiry: **{config.min_days_to_expiry}**")
+                            st.write(f"• Min delta std dev: **{config.min_delta_std:.2f}**")
+                            st.write(f"• Max bid-ask spread: **{config.max_bid_ask_spread_pct:.1%}**")
+                        
+                        st.caption("💡 **Why you see deltas with warnings**: Warnings indicate potential quality issues but still allow calculation. Only errors completely block delta calculation.")
+                else:
+                    st.info("⚠️ **Validation disabled** - Delta 16+/- values use closest available matches regardless of quality")
             
-            st.info(f"📊 **Current WEM Settings**: {current_data_source} data using {current_pricing} pricing")
-            
-            # Show validation status information
-            if hasattr(st.session_state, 'delta_16_validation_config') and st.session_state.delta_16_validation_config.enabled:
-                validation_info = st.expander("🔍 Delta 16+/- Validation Status", expanded=False)
-                with validation_info:
-                    st.info("✅ **Quality validation is ENABLED** for Delta 16+/- calculations")
-                    st.write("**How validation works:**")
-                    st.write("• **❌ Errors**: Validation failures that block calculation entirely")
-                    st.write("• **⚠️ Warnings**: Quality issues detected but calculation proceeds")
-                    st.write("• **✅ Pass**: All validation checks passed successfully")
-                    st.write("• **➖ N/A**: No delta values available in option chain")
-                    
-                    st.write("**Active validation checks:**")
-                    config = st.session_state.delta_16_validation_config
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write(f"• Max delta deviation: **{config.max_delta_deviation:.2f}**")
-                        st.write(f"• Min strike count: **{config.min_strike_count}**")
-                        st.write(f"• Max strike interval: **${config.max_strike_interval:.1f}**")
-                    with col2:
-                        st.write(f"• Min days to expiry: **{config.min_days_to_expiry}**")
-                        st.write(f"• Min delta std dev: **{config.min_delta_std:.2f}**")
-                        st.write(f"• Max bid-ask spread: **{config.max_bid_ask_spread_pct:.1%}**")
-                    
-                    st.caption("💡 **Why you see deltas with warnings**: Warnings indicate potential quality issues but still allow calculation. Only errors completely block delta calculation.")
-            else:
-                st.info("⚠️ **Validation disabled** - Delta 16+/- values use closest available matches regardless of quality")
-            
+            metric_label_map = wem_df.get('metric_label_map', {})
+
             if layout == "horizontal":
                 # Filter only the rows that exist in the transposed dataframe
-                valid_metrics = [metric for metric in selected_metrics if metric in wem_df['df'].index]
+                normalized_metrics = []
+                for metric in selected_metrics:
+                    if metric == 'symbol':
+                        continue
+                    # Prefer direct match first (in case the user already selected the pretty label)
+                    if metric in wem_df['df'].index:
+                        normalized_metrics.append(metric)
+                        continue
+                    display_label = metric_label_map.get(metric, metric)
+                    normalized_metrics.append(display_label)
+                # Deduplicate while preserving order
+                seen = set()
+                ordered_metrics = []
+                for metric in normalized_metrics:
+                    if metric in wem_df['df'].index and metric not in seen:
+                        ordered_metrics.append(metric)
+                        seen.add(metric)
+                valid_metrics = ordered_metrics
                 
                 # Apply the filter if we have valid metrics
                 if valid_metrics:
@@ -5015,6 +5109,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                 'Delta 16 (-)': (data_format, data_format_alt),
                 'Delta Range': (data_format, data_format_alt),
                 'Delta Range %': (percent_3dec_format, percent_3dec_format_alt),
+                'RSI': (data_format, data_format_alt),
                 'Earnings Date': (center_format, center_format_alt),
             }
             

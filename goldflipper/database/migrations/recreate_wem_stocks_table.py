@@ -2,7 +2,8 @@
 Migration Script: Recreate WEM Stocks Table with Complete Schema
 
 This script ensures that the wem_stocks table has all required columns
-including the 'wem' column. It will:
+matching the current SQLAlchemy model (including wem_points/straddle/strangle/RSI
+support). It will:
 1. Check if the table exists and has the correct schema
 2. If not, it will back up existing data
 3. Drop and recreate the table with the full schema
@@ -41,9 +42,9 @@ def upgrade():
             existing_columns = [column['name'] for column in inspector.get_columns('wem_stocks')]
             logger.info(f"Existing columns in wem_stocks: {existing_columns}")
             
-            # Check if 'wem' column exists
-            if 'wem' in existing_columns:
-                logger.info("The 'wem' column already exists in wem_stocks table, no action needed.")
+            required_columns = {'wem_points', 'straddle', 'strangle', 'rsi'}
+            if required_columns.issubset(set(existing_columns)):
+                logger.info("wem_stocks table already has the required columns; no action needed.")
                 return
             
             # Get all data from the table before recreating it
@@ -76,7 +77,9 @@ def upgrade():
                 Column('symbol', String, nullable=False),
                 Column('is_default', Boolean, default=False),
                 Column('atm_price', Float),
-                Column('wem', Float),  # Ensure WEM column is included
+                Column('wem_points', Float),
+                Column('straddle', Float),
+                Column('strangle', Float),
                 Column('straddle_strangle', Float),
                 Column('wem_spread', Float),
                 Column('delta_16_plus', Float),
@@ -85,9 +88,10 @@ def upgrade():
                 Column('delta_16_minus', Float),
                 Column('delta_range', Float),
                 Column('delta_range_pct', Float),
+                Column('rsi', Float),
                 Column('notes', Text),
                 Column('last_updated', DateTime),
-                Column('meta_data', Text)  # JSON as text
+                Column('meta_data', Text)  # JSON stored as text
             )
             
             # Create the table with the new schema
@@ -101,13 +105,21 @@ def upgrade():
                 for record in data_backup:
                     # Convert the record to a format suitable for insertion
                     # Remove fields that don't exist in the new schema or add defaults
+                    allowed_columns = {column.name for column in wem_stocks.columns}
                     insert_record = {}
                     for key, value in record.items():
-                        if key in existing_columns:
+                        if key in allowed_columns:
                             insert_record[key] = value
                     
-                    # Add missing columns with default values
-                    insert_record.setdefault('wem', None)
+                    # Map legacy columns to the new schema when possible
+                    if insert_record.get('wem_points') is None:
+                        legacy_wem = record.get('wem')
+                        if legacy_wem is not None:
+                            insert_record['wem_points'] = legacy_wem
+                    
+                    # Add missing columns with default values so INSERT covers the whole schema
+                    for column_name in allowed_columns:
+                        insert_record.setdefault(column_name, None)
                     
                     # Convert any JSON data stored as string
                     if 'meta_data' in insert_record and isinstance(insert_record['meta_data'], dict):

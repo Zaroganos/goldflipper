@@ -9,7 +9,7 @@ WARNING: This will delete all existing data in the affected tables.
 """
 
 import logging
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
@@ -33,13 +33,15 @@ def upgrade():
             tables = inspector.get_table_names()
             
             # For each model we want to recreate
-            models_to_recreate = ['wem_stocks']  # Add others as needed
+            # Collect actual Table objects from the models we want to recreate
+            models_to_recreate = [WEMStock.__table__]  # Add other model.__table__ entries as needed
             
-            for table_name in models_to_recreate:
+            for table in models_to_recreate:
+                table_name = table.name
                 if table_name in tables:
                     logger.info(f"Dropping table {table_name}...")
                     # Drop the table
-                    session.execute(f"DROP TABLE {table_name}")
+                    session.execute(text(f"DROP TABLE {table_name}"))
                     session.commit()
                     logger.info(f"Table {table_name} dropped successfully")
             
@@ -62,6 +64,6 @@ if __name__ == "__main__":
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
-    logger.info("Running table recreation script directly")
+    logger.info("Running table recreation script ...")
     upgrade()
     logger.info("Completed table recreation") 
