@@ -5,9 +5,9 @@ setlocal enabledelayedexpansion
 set SCRIPT_PATH=%~dp0
 cd /d %SCRIPT_PATH%
 
-:: Launch the application via uv-managed environment
-echo Goldflipper starting in interactive mode with uv...
-uv run goldflipper %*
+:: Launch the desktop TUI (goldflipper.launcher) via uv-managed environment
+echo Goldflipper Multistrat is starting up ...
+uv run python -m goldflipper.launcher %*
 if errorlevel 1 (
     echo Error occurred while running Goldflipper
     pause

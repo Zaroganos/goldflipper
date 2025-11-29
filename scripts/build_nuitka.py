@@ -10,8 +10,19 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENTRY_POINT_CANDIDATES = [
+    PROJECT_ROOT / "src" / "goldflipper" / "launcher.py",
+    PROJECT_ROOT / "goldflipper" / "launcher.py",
     PROJECT_ROOT / "src" / "goldflipper" / "run.py",
     PROJECT_ROOT / "goldflipper" / "run.py",
+]
+DATA_MAPPINGS = [
+    (PROJECT_ROOT / "goldflipper" / "config", "goldflipper/config"),
+    (PROJECT_ROOT / "goldflipper" / "reference", "goldflipper/reference"),
+    (
+        PROJECT_ROOT / "goldflipper" / "tools" / "play-template.json",
+        "goldflipper/tools/play-template.json",
+    ),
+    (PROJECT_ROOT / "goldflipper.ico", "goldflipper.ico"),
 ]
 OUTPUT_DIR = PROJECT_ROOT / "dist"
 APP_NAME = "goldflipper"
@@ -32,6 +43,18 @@ def build() -> None:
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    data_flags: list[str] = []
+    for src, dest in DATA_MAPPINGS:
+        if not src.exists():
+            print(f"[WARN] Data path missing, skipping: {src}")
+            continue
+        flag = (
+            f"--include-data-dir={src}={dest}"
+            if src.is_dir()
+            else f"--include-data-files={src}={dest}"
+        )
+        data_flags.append(flag)
+
     cmd = [
         sys.executable,
         "-m",
@@ -48,13 +71,9 @@ def build() -> None:
         # Modern Nuitka handles pywin32 automatically; no extra plugin flag
         "--follow-imports",
         "--prefer-source-code",
-        # Data directories (uncomment / duplicate as mappings are finalized)
-        # "--include-data-dir=src/goldflipper/config=goldflipper/config",
-        # "--include-data-dir=src/goldflipper/reference=goldflipper/reference",
-        # "--include-data-files=src/goldflipper/tools/play-template.json="
-        # "goldflipper/tools/play-template.json",
-        str(entry_point),
     ]
+    cmd.extend(data_flags)
+    cmd.append(str(entry_point))
 
     print(f"Building {APP_NAME} with Nuitka...")
     print(f"Entry point : {entry_point}")

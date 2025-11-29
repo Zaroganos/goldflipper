@@ -106,7 +106,7 @@ name = "goldflipper"
 version = "0.1.0"  # Extract from setup.py
 description = "Trading automation and analysis tool"  # Extract from setup.py
 readme = "README.md"
-requires-python = ">=3.11,<3.14"  # Update from 3.10+ to modern range
+requires-python = ">=3.12,<3.14"  # Update from 3.10+ to modern range
 authors = [
     # Extract from setup.py if present
 ]
@@ -159,8 +159,8 @@ packages = ["src/goldflipper"]
 
 # Ruff configuration
 [tool.ruff]
-line-length = 88
-target-version = "py311"
+line-length = 150
+target-version = "py312"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -183,7 +183,7 @@ indent-style = "space"
 [tool.pyright]
 include = ["src"]
 exclude = ["**/__pycache__", "**/.venv"]
-pythonVersion = "3.11"
+pythonVersion = "3.12"
 typeCheckingMode = "basic"
 reportMissingTypeStubs = false
 
@@ -324,6 +324,32 @@ reportGeneralTypeIssues = false  # If needed temporarily
 
 **Goal:** Get to a passing baseline, then gradually improve.
 
+### 4.4 Outstanding Ruff Follow-Ups
+
+The initial full `ruff check` still reports legacy cleanliness issues that we deferred while focusing on the NumPy 2 migration. Capture them here so we can tackle them in a later pass:
+
+1. `goldflipper/utils/json_fixer.py`
+   - Remove the unused `was_corrupted` variable inside `_repair_file`.
+   - Wrap or refactor the long logging calls (>88 chars) so they stay within our width limit without losing detail.
+   - Strip trailing whitespace from multiple blank lines and add the missing newline at EOF.
+2. `goldflipper/utils/logging_setup.py`
+   - Reorder imports (and drop the unused `sys` import) per Ruff’s `I001`/`F401` findings.
+   - Clean up the repeated whitespace-only blank lines throughout the file.
+   - Shorten the compression/rotation helper lines that currently exceed 88 characters.
+
+Keep this list updated as we chip away at the lint backlog so Phase 4 stays actionable.
+
+### 4.5 WebSockets Deprecation Warning (tracking)
+
+Pytest currently emits `DeprecationWarning: websockets.legacy is deprecated` because `websockets==15.x` now warns whenever the legacy namespace is imported. None of our modules reference `websockets` directly, so the warning most likely comes from a dependency (candidates: `alpaca-py` market data streaming, or `textual`, which still ships its own websockets shim). Action plan:
+
+- ✅ Stay on the latest `websockets` release to keep security fixes.
+- ✅ Keep `alpaca-py` pinned to the current series (0.43.x at the moment); they are actively migrating their streaming layer.
+- ⏳ Monitor `textual` releases (current lock: 6.7.0) for notes about dropping `websockets.legacy`.
+- 📌 Once upstream removes the legacy import, rerun the suite to confirm the warning disappears. No local code changes required unless we later adopt `websockets` directly.
+
+This section is purely informational—no immediate work needed beyond periodically revisiting the dependency changelogs.
+
 ---
 
 ## Phase 5: Update Bootstrap and Launch Scripts
@@ -362,10 +388,10 @@ Write-Host "Setup complete! Run 'uv run goldflipper' to start." -ForegroundColor
 python -m goldflipper.run
 ```
 
-**NEW:**
+**NEW (TUI launcher):**
 ```batch
 @echo off
-uv run goldflipper
+uv run python -m goldflipper.launcher
 ```
 
 ### 5.3 Update run_console.bat
@@ -437,6 +463,8 @@ goto end
 ---
 
 ## Phase 6: Configure Nuitka for Windows
+
+> **Status – 2025-11-29:** Completed. Launcher-based Nuitka build tested; ready to proceed with Phase 9 validation work.
 
 ### 6.1 Identify Entry Point and Data Files
 
@@ -613,7 +641,7 @@ Add new section after installation instructions:
 ## Development Setup (Modern)
 
 ### Prerequisites
-- Python 3.11-3.13
+- Python 3.12-3.13
 - [uv](https://docs.astral.sh/uv/) package manager
 
 ### Quick Start
@@ -705,7 +733,7 @@ Create `docs/DEVELOPMENT.md`:
 ## Technology Stack
 
 ### Core
-- **Python 3.11-3.13**
+- **Python 3.12-3.13**
 - **Package Manager**: uv
 - **Build Backend**: hatchling (for Python packaging)
 - **Distribution**: Nuitka (for standalone executables)
@@ -1023,7 +1051,6 @@ python -m goldflipper.run
 ```
 
 Both methods work, but uv is faster and recommended for development.
-```
 
 ---
 
@@ -1230,7 +1257,7 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        python-version: ['3.11', '3.12', '3.13']
+        python-version: ['3.12', '3.13']
     
     steps:
     - uses: actions/checkout@v4

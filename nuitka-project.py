@@ -6,7 +6,7 @@ https://nuitka.net/doc/nuitka-project-options.html
 """
 
 # Main entry point
-NUITKA_MAIN = "src/goldflipper/run.py"
+NUITKA_MAIN = "goldflipper/launcher.py"
 
 # Output configuration
 NUITKA_OUTPUT_DIR = "dist"
@@ -26,11 +26,10 @@ NUITKA_PLUGIN_ENABLE = ["anti-bloat", "tk-inter"]
 # Import handling
 NUITKA_FOLLOW_IMPORTS = True
 
-# Data files (uncomment and adjust per docs/migration/nuitka-requirements.md)
-# NUITKA_DATA_FILES = [
-#     ("src/goldflipper/config", "goldflipper/config"),
-#     ("src/goldflipper/reference", "goldflipper/reference"),
-#     ("src/goldflipper/tools/play-template.json", "goldflipper/tools/play-template.json"),  # noqa: E501
-# ]
-
-
+# Data files ("source", "destination" tuples)
+NUITKA_DATA_FILES = [
+    ("goldflipper/config", "goldflipper/config"),
+    ("goldflipper/reference", "goldflipper/reference"),
+    ("goldflipper/tools/play-template.json", "goldflipper/tools/play-template.json"),
+    ("goldflipper.ico", "goldflipper.ico"),
+]
