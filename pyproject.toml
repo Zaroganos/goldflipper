@@ -30,6 +30,7 @@ dependencies = [
     "charset-normalizer>=3.4.0",
     "urllib3>=2.5.0",
     "PyYAML>=6.0.3",
+    "ruamel.yaml>=0.18.6",
     "colorama>=0.4.6",
     "rich>=14.0.0",
     "mplfinance>=0.12.10b0",
