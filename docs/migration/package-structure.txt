@@ -1,0 +1,12 @@
+Folder PATH listing
+Volume serial number is 000000B8 2AFE:10C1
+C:\USERS\ILIYA\DOCUMENTS\GITHUB\GOLDFLIPPER_MULTISTRAT\GOLDFLIPPER\SRC
+³   __init__.py
+³   
+ÃÄÄÄservice
+³       service_wrapper.py
+³       
+ÀÄÄÄstate
+        state_manager.py
+        __init__.py
+        

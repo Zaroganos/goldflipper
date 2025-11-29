@@ -19,18 +19,18 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Installing dependencies...
-python -m pip install pywin32
+where uv >nul 2>nul
 if errorlevel 1 (
-    echo Error installing dependencies
+    echo Error: uv is not installed or not on PATH.
+    echo Install uv first: powershell -c "irm https://astral.sh/uv/install.ps1 ^| iex"
     pause
     exit /b 1
 )
 
-echo Installing Goldflipper in development mode...
-python -m pip install -e .
+echo Syncing dependencies with uv...
+uv sync
 if errorlevel 1 (
-    echo Error installing Goldflipper
+    echo Error installing dependencies via uv
     pause
     exit /b 1
 )
@@ -40,7 +40,7 @@ mkdir "%ProgramData%\Goldflipper\logs" 2>nul
 icacls "%ProgramData%\Goldflipper" /grant "Users":(OI)(CI)F /T
 
 echo Installing Goldflipper Trading Service...
-python -m goldflipper.run --startup auto install
+uv run python -m goldflipper.run --startup auto install
 if errorlevel 1 (
     echo Error installing service
     pause

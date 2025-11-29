@@ -1,14 +1,16 @@
-import win32serviceutil
-import win32service
-import win32event
-import servicemanager
-import sys
 import os
+import sys
 import time
-from datetime import datetime
-from pathlib import Path
 import traceback  # Add this for detailed error tracking
+from pathlib import Path
+from typing import Any
+
+import servicemanager
+import win32event
+import win32service
+import win32serviceutil
 from goldflipper.utils.logging_setup import configure_logging
+
 
 class GoldflipperService(win32serviceutil.ServiceFramework):
     _svc_name_ = "GoldflipperService"
@@ -20,25 +22,28 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
             win32serviceutil.ServiceFramework.__init__(self, args)
             self.stop_event = win32event.CreateEvent(None, 0, 0, None)
             self.running = False
-            
+
             # Set up base directories
-            self.base_dir = Path(os.environ.get('PROGRAMDATA', '')) / 'Goldflipper'
-            self.log_dir = self.base_dir / 'logs'
+            self.base_dir = Path(os.environ.get("PROGRAMDATA", "")) / "Goldflipper"
+            self.log_dir = self.base_dir / "logs"
             self.log_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Initialize logging
             self._setup_logging()
-            
+
         except Exception as e:
-            servicemanager.LogErrorMsg(f"Service initialization failed: {str(e)}\n{traceback.format_exc()}")
+            servicemanager.LogErrorMsg(
+                f"Service initialization failed: {str(e)}\n{traceback.format_exc()}"
+            )
             raise
 
     def _setup_logging(self):
         """Set up logging to file and Windows Event Log"""
         import logging
-        log_file = self.log_dir / 'service.log'
+
+        log_file = self.log_dir / "service.log"
         configure_logging(service_mode=True, log_file=log_file)
-        self.logger = logging.getLogger('GoldflipperService')
+        self.logger = logging.getLogger("GoldflipperService")
         self.logger.info("Logging initialized")
 
     def SvcStop(self):
@@ -49,7 +54,9 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
             win32event.SetEvent(self.stop_event)
             self.running = False
         except Exception as e:
-            self.logger.error(f"Error during service stop: {str(e)}\n{traceback.format_exc()}")
+            self.logger.error(
+                f"Error during service stop: {str(e)}\n{traceback.format_exc()}"
+            )
             raise
 
     def SvcDoRun(self):
@@ -60,11 +67,11 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
             servicemanager.LogMsg(
                 servicemanager.EVENTLOG_INFORMATION_TYPE,
                 servicemanager.PYS_SERVICE_STARTED,
-                (self._svc_name_, '')
+                (self._svc_name_, ""),
             )
-            
+
             self.main()
-            
+
         except Exception as e:
             error_msg = f"Service failed: {str(e)}\n{traceback.format_exc()}"
             self.logger.error(error_msg)
@@ -75,14 +82,30 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
         """Main service logic"""
         try:
             self.logger.info("Initializing main service components")
-            from goldflipper.watchdog.watchdog_manager import WatchdogManager
-            from goldflipper.core import monitor_plays_continuously
             from goldflipper.config.config import config
+            from goldflipper.core import monitor_plays_continuously
+            from goldflipper.watchdog.watchdog_manager import WatchdogManager
 
             # Check if watchdog is enabled in config
-            watchdog_enabled = config.get('watchdog', 'enabled', default=False)
-            watchdog_check_interval = config.get('watchdog', 'check_interval', default=30)
-            
+            watchdog_enabled = bool(config.get("watchdog", "enabled", default=False))
+            raw_interval: Any = config.get("watchdog", "check_interval", default=30)
+            watchdog_check_interval = 30
+            if isinstance(raw_interval, (int, float, str)):
+                try:
+                    watchdog_check_interval = int(raw_interval)
+                except ValueError:
+                    self.logger.warning(
+                        "Invalid watchdog interval '%s'; defaulting to 30 seconds",
+                        raw_interval,
+                    )
+                    watchdog_check_interval = 30
+            else:
+                self.logger.warning(
+                    "Invalid watchdog interval '%s'; defaulting to 30 seconds",
+                    raw_interval,
+                )
+                watchdog_check_interval = 30
+
             watchdog = None
             if watchdog_enabled:
                 self.logger.info("Watchdog system is enabled")
@@ -90,29 +113,32 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
                 watchdog.start_monitoring()
             else:
                 self.logger.info("Watchdog system is disabled in configuration")
-            
+
             self.logger.info("Starting main service loop")
             while self.running:
                 try:
                     if watchdog:
                         watchdog.update_heartbeat()
-                    
+
                     monitor_plays_continuously()
-                    
+
                     win32event.WaitForSingleObject(self.stop_event, 30000)
                 except Exception as e:
-                    error_msg = f"Error in main loop: {str(e)}\n{traceback.format_exc()}"
+                    error_msg = (
+                        f"Error in main loop: {str(e)}\n{traceback.format_exc()}"
+                    )
                     self.logger.error(error_msg)
                     servicemanager.LogErrorMsg(error_msg)
                     time.sleep(10)
-                    
+
         except Exception as e:
             error_msg = f"Fatal error in main: {str(e)}\n{traceback.format_exc()}"
             self.logger.error(error_msg)
             servicemanager.LogErrorMsg(error_msg)
             raise
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     try:
         if len(sys.argv) == 1:
             servicemanager.Initialize()
@@ -121,5 +147,7 @@ if __name__ == '__main__':
         else:
             win32serviceutil.HandleCommandLine(GoldflipperService)
     except Exception as e:
-        servicemanager.LogErrorMsg(f"Service host error: {str(e)}\n{traceback.format_exc()}")
-        raise 
+        servicemanager.LogErrorMsg(
+            f"Service host error: {str(e)}\n{traceback.format_exc()}"
+        )
+        raise

@@ -74,6 +74,84 @@ pip install -e . --pre
      - **Trading parameters**: Set your desired values for risk management, trading behavior, etc.
      - **System preferences**: Logging levels, watchdog settings, etc.
 
+## Development Setup (Modern)
+
+### Prerequisites
+- Python 3.11-3.13
+- [uv](https://docs.astral.sh/uv/) package manager
+
+### Quick Start
+
+1. **Install uv** (first time only):
+   ```powershell
+   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+
+2. **Clone and setup**:
+   ```powershell
+   git clone <repo-url>
+   cd goldflipper
+   uv sync
+   ```
+
+3. **Run goldflipper**:
+   ```powershell
+   uv run goldflipper
+   ```
+
+### Development Commands
+
+```powershell
+# Run application
+uv run goldflipper
+
+# Run tests
+uv run pytest
+
+# Format code
+uv run ruff format .
+
+# Lint code
+uv run ruff check .
+
+# Type check
+uv run pyright
+
+# Run all quality checks
+scripts\dev.bat check
+
+# Build Windows executable
+uv run python scripts/build_nuitka.py
+```
+
+
+### Adding Dependencies
+
+```powershell
+# Add production dependency
+uv add package-name
+
+# Add development dependency
+uv add --dev package-name
+
+# Update all dependencies
+uv lock --upgrade
+uv sync
+
+# Export legacy requirements (only if you must, and rename from req...s.txt.old first)
+uv pip freeze > requirements.txt
+```
+
+### Building Executable for Distribution
+
+```powershell
+# Build standalone .exe
+uv run python scripts/build_nuitka.py
+
+# Output will be in dist/goldflipper.exe
+# Can be distributed without Python installation
+```
+
 ### Running the Trading System
 
 Goldflipper offers multiple interfaces and execution modes:

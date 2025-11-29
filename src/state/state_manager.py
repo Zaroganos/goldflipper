@@ -1,8 +1,9 @@
 import json
+import logging
 import threading
 import time
 from pathlib import Path
-import logging
+
 
 class StateManager:
     def __init__(self, state_dir: Path):
@@ -16,11 +17,11 @@ class StateManager:
             try:
                 # Create backup before saving
                 self._backup_current_state()
-                
+
                 # Write new state
-                with open(self.state_file, 'w') as f:
+                with open(self.state_file, "w") as f:
                     json.dump(state_data, f, indent=4)
-                
+
                 self.logger.info("State saved successfully")
             except Exception as e:
                 self.logger.error(f"Error saving state: {str(e)}")
@@ -31,13 +32,13 @@ class StateManager:
             try:
                 if not self.state_file.exists():
                     return {}
-                
-                with open(self.state_file, 'r') as f:
+
+                with open(self.state_file) as f:
                     state = json.load(f)
-                
+
                 if self._validate_state(state):
                     return state
-                
+
                 # If validation fails, try to recover from backup
                 return self._recover_from_backup()
             except Exception as e:
@@ -51,21 +52,21 @@ class StateManager:
 
     def _validate_state(self, state: dict) -> bool:
         # Implement state validation logic
-        required_keys = ['timestamp', 'version', 'data']
+        required_keys = ["timestamp", "version", "data"]
         return all(key in state for key in required_keys)
 
     def _recover_from_backup(self) -> dict:
         # Find most recent valid backup
         backups = sorted(self.state_dir.glob("state_backup_*.json"), reverse=True)
-        
+
         for backup in backups:
             try:
-                with open(backup, 'r') as f:
+                with open(backup) as f:
                     state = json.load(f)
                 if self._validate_state(state):
                     self.logger.info(f"Recovered state from backup: {backup.name}")
                     return state
             except Exception:
                 continue
-        
-        return {} 
+
+        return {}

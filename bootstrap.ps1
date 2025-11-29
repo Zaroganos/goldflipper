@@ -154,6 +154,23 @@ function Install-GitIfMissing {
     return $true
 }
 
+function Install-UvIfMissing {
+    if (Test-CommandExists -Name 'uv') { return $true }
+    Write-Section 'uv not found, attempting to install it...'
+    try {
+        powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+    }
+    catch {
+        Write-Host "Failed to install uv automatically: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+    if (-not (Test-CommandExists -Name 'uv')) {
+        Write-Host 'uv installation completed but the executable is still not available on PATH. Please restart the terminal or add $env:USERPROFILE\.cargo\bin to PATH.' -ForegroundColor Yellow
+        return $false
+    }
+    return $true
+}
+
 function Update-Repository {
     param([string]$Path, [string]$Branch)
     $repoUrl = 'https://github.com/Zaroganos/goldflipper.git'
@@ -179,25 +196,17 @@ function Update-Repository {
     }
 }
 
-function Initialize-Venv {
+function Initialize-UvEnvironment {
     param([string]$RepoPath)
-    $venvPath = Join-Path $RepoPath 'venv'
-    $python = Resolve-PythonInvoker
-    if (-not $python) { throw 'Python invoker not found after installation.' }
-    Write-Section 'Creating virtual environment'
-    if (-not (Test-Path $venvPath)) {
-        & $env:ComSpec /c "${python} -m venv `"$venvPath`""
-        if ($LASTEXITCODE -ne 0) { throw 'Failed to create virtual environment.' }
+    Write-Section 'Installing dependencies with uv'
+    Push-Location $RepoPath
+    try {
+        uv sync
+        if ($LASTEXITCODE -ne 0) { throw 'uv sync failed.' }
     }
-    # Activate for current process
-    $scriptsPath = Join-Path $venvPath 'Scripts'
-    $env:VIRTUAL_ENV = $venvPath
-    $env:Path = "$scriptsPath;$($env:Path)"
-
-    Write-Section 'Upgrading pip and installing in development mode'
-    python -m pip install --upgrade pip wheel
-    # Install in development mode (editable install)
-    python -m pip install -e $RepoPath --pre
+    finally {
+        Pop-Location
+    }
 }
 
 function Initialize-Settings {
@@ -207,7 +216,7 @@ function Initialize-Settings {
     Write-Section 'Launching Goldflipper first-run setup wizard'
     Push-Location $RepoPath
     try {
-        python -m goldflipper.first_run_setup
+        uv run python -m goldflipper.first_run_setup
         if ($LASTEXITCODE -ne 0) {
             Write-Host 'Setup wizard was cancelled or failed. Settings will be created from template when TUI starts if needed.' -ForegroundColor Yellow
         }
@@ -222,18 +231,10 @@ function Initialize-Settings {
 function Start-App {
     param([string]$RepoPath)
     Write-Section 'Launching Goldflipper ...'
-    
-    # Ensure venv is activated
-    $venvPath = Join-Path $RepoPath 'venv'
-    $scriptsPath = Join-Path $venvPath 'Scripts'
-    if (Test-Path $scriptsPath) {
-        $env:VIRTUAL_ENV = $venvPath
-        $env:Path = "$scriptsPath;$($env:Path)"
-    }
-    
+
     Push-Location $RepoPath
     try {
-        python .\goldflipper\goldflipper_tui.py
+        uv run goldflipper
     } finally {
         Pop-Location
     }
@@ -243,15 +244,16 @@ try {
     Write-Section 'Goldflipper setup starting...'
     if (-not (Install-GitIfMissing)) { throw 'Git is required but could not be installed.' }
     if (-not (Install-PythonIfMissing)) { throw 'Python is required but could not be installed.' }
+    if (-not (Install-UvIfMissing)) { throw 'uv is required but could not be installed.' }
 
     Update-Repository -Path $InstallPath -Branch $Branch
-    Initialize-Venv -RepoPath $InstallPath
+    Initialize-UvEnvironment -RepoPath $InstallPath
     Initialize-Settings -RepoPath $InstallPath
 
     if (-not $NoLaunch) {
         Start-App -RepoPath $InstallPath
     } else {
-        Write-Host "Setup complete. To launch later: `n`n  `"$InstallPath\\venv\\Scripts\\python.exe`" `"$InstallPath\\goldflipper\\goldflipper_tui.py`"`n" -ForegroundColor Green
+        Write-Host "Setup complete. To launch later: `n`n  Push-Location `"$InstallPath`"`n  uv run goldflipper`n  Pop-Location`n" -ForegroundColor Green
     }
     Write-Section 'Done'
 }
