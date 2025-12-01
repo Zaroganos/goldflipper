@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import yaml
 import os
@@ -203,4 +203,51 @@ class MarketDataManager:
     def start_new_cycle(self):
         """Start a new market data cycle, clearing the cache"""
         self.logger.info("Starting new market data cycle")
-        self.cache.new_cycle() 
+        self.cache.new_cycle()
+    
+    def get_previous_close(self, symbol: str) -> Optional[float]:
+        """
+        Get the previous trading day's closing price for a symbol.
+        
+        Uses historical data provider with caching.
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Previous close price or None if unavailable
+        """
+        try:
+            cache_key = f"previous_close:{symbol}"
+            if cached := self.cache.get(cache_key):
+                return cached
+            
+            self.logger.info(f"Fetching previous close for {symbol}")
+            
+            # Get last 5 days of data to ensure we have previous close
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=7)
+            
+            historical = self._try_providers(
+                'get_historical_data',
+                symbol,
+                start_date,
+                end_date,
+                '1d'  # Daily interval
+            )
+            
+            if historical is not None and not historical.empty and len(historical) >= 2:
+                # Get the second-to-last row's close
+                # (last row is current/partial day)
+                close_col = 'close' if 'close' in historical.columns else 'Close'
+                if close_col in historical.columns:
+                    previous_close = float(historical[close_col].iloc[-2])
+                    self.cache.set(cache_key, previous_close)
+                    return previous_close
+            
+            self.logger.warning(f"Could not get previous close for {symbol}")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error getting previous close for {symbol}: {str(e)}")
+            return None

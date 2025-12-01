@@ -23,6 +23,28 @@ from uuid import UUID
 from typing import Optional, Dict, Any
 from goldflipper.data.market.manager import MarketDataManager
 
+# Import shared strategy modules (Phase 2 extraction)
+# These imports allow core.py functions to delegate to shared modules
+from goldflipper.strategy.shared.play_manager import (
+    UUIDEncoder as _SharedUUIDEncoder,
+    PlayManager as _SharedPlayManager,
+    save_play as _shared_save_play,
+    save_play_improved as _shared_save_play_improved,
+    move_play_to_new as _shared_move_to_new,
+    move_play_to_pending_opening as _shared_move_to_pending_opening,
+    move_play_to_open as _shared_move_to_open,
+    move_play_to_pending_closing as _shared_move_to_pending_closing,
+    move_play_to_closed as _shared_move_to_closed,
+    move_play_to_expired as _shared_move_to_expired,
+    move_play_to_temp as _shared_move_to_temp,
+)
+from goldflipper.strategy.shared.evaluation import (
+    calculate_and_store_price_levels as _shared_calc_price_levels,
+    calculate_and_store_premium_levels as _shared_calc_premium_levels,
+    evaluate_opening_strategy as _shared_eval_opening,
+    evaluate_closing_strategy as _shared_eval_closing,
+)
+
 # ==================================================
 # 1. BROKERAGE DATA RETRIEVAL
 # ==================================================
@@ -223,155 +245,62 @@ def get_option_data(option_contract_symbol: str) -> Optional[Dict[str, float]]:
 # Functions to evaluate whether the market conditions meet the strategy criteria based on trade type.
 
 def calculate_and_store_premium_levels(play, option_data):
-    """Calculate and store TP/SL premium levels in the play data using correct entry price."""
-    # Get entry premium based on entry order type
-    entry_order_type = play.get('entry_point', {}).get('order_type', 'limit at bid')
+    """
+    Calculate and store TP/SL premium levels in the play data using correct entry price.
     
-    if entry_order_type == 'limit at bid':
-        entry_premium = option_data.get('bid', 0.0)
-    elif entry_order_type == 'limit at ask':
-        entry_premium = option_data.get('ask', 0.0)
-    elif entry_order_type == 'limit at mid':
-        entry_premium = option_data.get('mid', 0.0)
-    else:  # 'limit at last' or 'market'
-        entry_premium = option_data.get('last', 0.0)
-    
-    if play['take_profit'].get('premium_pct'):
-        tp_pct = play['take_profit']['premium_pct'] / 100
-        play['take_profit']['TP_option_prem'] = entry_premium * (1 + tp_pct)
-        
-    if play['stop_loss'].get('premium_pct'):
-        sl_pct = play['stop_loss']['premium_pct'] / 100
-        play['stop_loss']['SL_option_prem'] = entry_premium * (1 - sl_pct)
-    
-    # Add contingency SL premium calculation if it exists
-    if play['stop_loss'].get('contingency_premium_pct'):
-        contingency_sl_pct = play['stop_loss']['contingency_premium_pct'] / 100
-        play['stop_loss']['contingency_SL_option_prem'] = entry_premium * (1 - contingency_sl_pct)
+    Thin wrapper that delegates to strategy.shared.evaluation module.
+    """
+    _shared_calc_premium_levels(play, option_data)
 
 def calculate_and_store_price_levels(play, entry_stock_price):
-    """Calculate and store TP/SL stock price levels in the play data."""
-    # Convert entry_stock_price to float if it's a Series
-    if hasattr(entry_stock_price, 'item'):
-        entry_stock_price = float(entry_stock_price.item())
-    else:
-        entry_stock_price = float(entry_stock_price)
-        
-    # Store entry stock price
-    play['entry_point']['entry_stock_price'] = entry_stock_price
+    """
+    Calculate and store TP/SL stock price levels in the play data.
     
-    # Calculate take profit target if using stock price percentage
-    if play['take_profit'].get('stock_price_pct'):
-        tp_pct = play['take_profit']['stock_price_pct'] / 100
-        if play['trade_type'].upper() == "CALL":
-            play['take_profit']['TP_stock_price_target'] = entry_stock_price * (1 + tp_pct)
-        else:  # PUT
-            play['take_profit']['TP_stock_price_target'] = entry_stock_price * (1 - tp_pct)
-    
-    # Calculate stop loss targets if using stock price percentage
-    if play['stop_loss'].get('stock_price_pct'):
-        sl_pct = play['stop_loss']['stock_price_pct'] / 100
-        if play['trade_type'].upper() == "CALL":
-            play['stop_loss']['SL_stock_price_target'] = entry_stock_price * (1 - sl_pct)
-        else:  # PUT
-            play['stop_loss']['SL_stock_price_target'] = entry_stock_price * (1 + sl_pct)
-    
-    # Calculate contingency stop loss target if applicable
-    if play['stop_loss'].get('contingency_stock_price_pct'):
-        contingency_sl_pct = play['stop_loss']['contingency_stock_price_pct'] / 100
-        if play['trade_type'].upper() == "CALL":
-            play['stop_loss']['contingency_SL_stock_price_target'] = entry_stock_price * (1 - contingency_sl_pct)
-        else:  # PUT
-            play['stop_loss']['contingency_SL_stock_price_target'] = entry_stock_price * (1 + contingency_sl_pct)
+    Thin wrapper that delegates to strategy.shared.evaluation module.
+    """
+    _shared_calc_price_levels(play, entry_stock_price)
 
-class UUIDEncoder(json.JSONEncoder):
-    """Custom JSON encoder to handle UUID objects and pandas Series."""
-    def default(self, obj):
-        if isinstance(obj, UUID):
-            return str(obj)
-        if hasattr(obj, 'item'):  # Handle pandas Series/numpy values
-            return obj.item()
-        return json.JSONEncoder.default(self, obj)
+class UUIDEncoder(_SharedUUIDEncoder):
+    """
+    Custom JSON encoder to handle UUID objects and pandas Series.
+    
+    Thin wrapper that inherits from strategy.shared.play_manager.UUIDEncoder.
+    Kept for backward compatibility with existing code.
+    """
+    pass
 
 def save_play(play, play_file):
-    """Save the updated play data to the specified file."""
-    try:
-        with open(play_file, 'w') as f:
-            json.dump(play, f, indent=4, cls=UUIDEncoder)
-        logging.info(f"Play data saved to {play_file}")
-        display.success(f"Play data saved to {play_file}")
-    except Exception as e:
-        logging.error(f"Error saving play data to {play_file}: {e}")
-        display.error(f"Error saving play data to {play_file}: {e}")
+    """
+    Save the updated play data to the specified file.
+    
+    Thin wrapper that delegates to strategy.shared.play_manager module.
+    """
+    _shared_save_play(play, play_file)
 
 
 def save_play_improved(play, play_file):
-    """Improved atomic save for play data (non-breaking: used only by trailing flow)."""
-    try:
-        atomic_write_json(play_file, play, indent=4, encoder=UUIDEncoder)
-        logging.info(f"Play data saved atomically to {play_file}")
-        display.success(f"Play data saved to {play_file}")
-        return True
-    except Exception as e:
-        logging.error(f"Error saving play data to {play_file}: {e}")
-        display.error(f"Error saving play data to {play_file}: {e}")
-        return False
+    """
+    Improved atomic save for play data (non-breaking: used only by trailing flow).
+    
+    Thin wrapper that delegates to strategy.shared.play_manager module.
+    """
+    return _shared_save_play_improved(play, play_file)
 
 def evaluate_opening_strategy(symbol, play):
     """
     Evaluate if opening conditions are met based on stock price and entry point.
-    """
-    logging.debug(f"Evaluating opening strategy for {symbol} using play data...")
-    # display.info(f"Evaluating opening strategy for {symbol} using play data...")
     
-    entry_point = play.get("entry_point", {}).get("stock_price", 0)
-
-    last_price = get_stock_price(symbol)
-    if last_price is None:
-        logging.error(f"Could not get current price for {symbol}")
-        display.error(f"Could not get current price for {symbol}")
-        return False
-        
-    trade_type = play.get("trade_type", "").upper()
-
-    # Get buffer from config instead of hardcoding
-    buffer = config.get('entry_strategy', 'buffer', default=0.05)
-    lower_bound = entry_point - buffer
-    upper_bound = entry_point + buffer
-
-    if trade_type == "CALL" or trade_type == "PUT":
-        # Check if the last price is within ±buffer of the entry point
-        condition_met = lower_bound <= last_price <= upper_bound
-        comparison = f"between {lower_bound:.2f} and {upper_bound:.2f}" if condition_met else f"not within ±{buffer:.2f} of entry point {entry_point:.2f}"
-    else:
-        logging.error(f"Invalid trade type: {trade_type}. Must be CALL or PUT.")
-        display.error(f"Invalid trade type: {trade_type}. Must be CALL or PUT.")
-        return False
-
-    if condition_met:
-        logging.info(f"Opening condition met: Current price {last_price:.2f} is {comparison} for {trade_type}")
-        display.success(f"OPENING: {symbol} condition met! Price {last_price:.2f} is {comparison}")
-    else:
-        logging.debug(f"Opening condition not met: Current price {last_price:.2f} is {comparison} for {trade_type}")
-        # display.info(f"Opening condition {'met' if condition_met else 'not met'}: "
-        #             f"Current price {last_price:.2f} is {comparison} for {trade_type}")
-
-    # Always show a concise evaluation line with the key data and result
-    status_tag = "[HIT]" if condition_met else "[MISS]"
-    message = (
-        f"ENTRY ${symbol} {status_tag}: price ${last_price:.2f} "
-        f"target ${lower_bound:.2f}-${upper_bound:.2f}"
-    )
-    if condition_met:
-        display.success(message)
-    else:
-        display.status(message)
-
-    return condition_met
+    Thin wrapper that delegates to strategy.shared.evaluation module.
+    """
+    return _shared_eval_opening(symbol, play, get_stock_price_fn=get_stock_price)
 
 def evaluate_closing_strategy(symbol, play, play_file=None):
     """
-    Evaluate if closing conditions are met. Supports:
+    Evaluate if closing conditions are met.
+    
+    Thin wrapper that delegates to strategy.shared.evaluation module.
+    
+    Supports:
     - Mixed conditions (e.g., TP by stock price, SL by premium %)
     - Multiple conditions (both stock price AND premium % for either TP or SL)
     - Contingency stop loss with primary and backup conditions
@@ -382,286 +311,19 @@ def evaluate_closing_strategy(symbol, play, play_file=None):
     Args:
         symbol: The underlying symbol
         play: The play data dictionary
-        play_file: Optional path to play file - if provided, will save play after calculating missing targets (stock price or premium)
+        play_file: Optional path to play file - if provided, will save play after calculating missing targets
+    
+    Returns:
+        Dict with condition flags (should_close, is_profit, is_primary_loss, is_contingency_loss, sl_type)
     """
-    logging.debug(f"Evaluating closing strategy for {symbol} using play data...")
-    # display.info(f"Evaluating closing strategy for {symbol} using play data...")
-    
-    # NEW: Get current stock price using our new system
-    last_price = get_stock_price(symbol)
-    if last_price is None:
-        logging.error(f"Could not get current price for {symbol}")
-        display.error(f"Could not get current price for {symbol}")
-        return False
-    
-    trade_type = play.get("trade_type", "").upper()
-    
-    # Initialize condition flags
-    profit_condition = False
-    loss_condition = False
-    contingency_loss_condition = False
-    
-    # Track if we calculated any missing targets (stock price or premium)
-    calculated_values = False
-
-    # Check stock price-based take profit conditions
-    # Check both absolute and percentage-based conditions if both exist (OR logic)
-    if play['take_profit'].get('stock_price') is not None:
-        # Existing absolute price check
-        if trade_type == "CALL":
-            profit_condition = profit_condition or (last_price >= play['take_profit']['stock_price'])
-        elif trade_type == "PUT":
-            profit_condition = profit_condition or (last_price <= play['take_profit']['stock_price'])
-    
-    # Check percentage-based take profit (calculate target if needed)
-    if play['take_profit'].get('stock_price_pct') is not None:
-        # Calculate target if not already stored
-        tp_target = play['take_profit'].get('TP_stock_price_target')
-        if tp_target is None:
-            # Calculate on-the-fly if entry price is available
-            entry_stock_price = play.get('entry_point', {}).get('entry_stock_price')
-            if entry_stock_price is not None:
-                tp_pct = play['take_profit']['stock_price_pct'] / 100
-                if trade_type == "CALL":
-                    tp_target = entry_stock_price * (1 + tp_pct)
-                else:  # PUT
-                    tp_target = entry_stock_price * (1 - tp_pct)
-                # Store it for future use
-                play['take_profit']['TP_stock_price_target'] = tp_target
-                calculated_values = True
-                logging.info(f"Calculated TP_stock_price_target on-the-fly: ${tp_target:.2f}")
-            else:
-                logging.error("Cannot calculate TP_stock_price_target: entry_stock_price not found in play data")
-                tp_target = None
-        
-        # Evaluate if target is available
-        if tp_target is not None:
-            if trade_type == "CALL":
-                profit_condition = profit_condition or (last_price >= tp_target)
-            elif trade_type == "PUT":
-                profit_condition = profit_condition or (last_price <= tp_target)
-    
-    # Get stop loss type
-    sl_type = play['stop_loss'].get('SL_type', 'STOP')  # Default to STOP for backward compatibility
-
-    # Check stock price-based stop loss conditions
-    # Check both absolute and percentage-based conditions if both exist (OR logic)
-    if play['stop_loss'].get('stock_price') is not None:
-        # Existing absolute price check
-        if trade_type == "CALL":
-            loss_condition = loss_condition or (last_price <= play['stop_loss']['stock_price'])
-        elif trade_type == "PUT":
-            loss_condition = loss_condition or (last_price >= play['stop_loss']['stock_price'])
-    
-    # Check percentage-based stop loss (calculate target if needed)
-    if play['stop_loss'].get('stock_price_pct') is not None:
-        # Calculate target if not already stored
-        sl_target = play['stop_loss'].get('SL_stock_price_target')
-        if sl_target is None:
-            # Calculate on-the-fly if entry price is available
-            entry_stock_price = play.get('entry_point', {}).get('entry_stock_price')
-            if entry_stock_price is not None:
-                sl_pct = play['stop_loss']['stock_price_pct'] / 100
-                if trade_type == "CALL":
-                    sl_target = entry_stock_price * (1 - sl_pct)
-                else:  # PUT
-                    sl_target = entry_stock_price * (1 + sl_pct)
-                # Store it for future use
-                play['stop_loss']['SL_stock_price_target'] = sl_target
-                calculated_values = True
-                logging.info(f"Calculated SL_stock_price_target on-the-fly: ${sl_target:.2f}")
-            else:
-                logging.error("Cannot calculate SL_stock_price_target: entry_stock_price not found in play data")
-                sl_target = None
-        
-        # Evaluate if target is available
-        if sl_target is not None:
-            if trade_type == "CALL":
-                loss_condition = loss_condition or (last_price <= sl_target)
-            elif trade_type == "PUT":
-                loss_condition = loss_condition or (last_price >= sl_target)
-    
-    # Check contingency conditions if applicable
-    if sl_type == 'CONTINGENCY':
-        # Check both absolute and percentage-based conditions if both exist (OR logic)
-        if play['stop_loss'].get('contingency_stock_price') is not None:
-            # Existing absolute price check
-            if trade_type == "CALL":
-                contingency_loss_condition = contingency_loss_condition or (last_price <= play['stop_loss']['contingency_stock_price'])
-            elif trade_type == "PUT":
-                contingency_loss_condition = contingency_loss_condition or (last_price >= play['stop_loss']['contingency_stock_price'])
-        
-        # Check percentage-based contingency stop loss (calculate target if needed)
-        if play['stop_loss'].get('contingency_stock_price_pct') is not None:
-            # Calculate target if not already stored
-            contingency_sl_target = play['stop_loss'].get('contingency_SL_stock_price_target')
-            if contingency_sl_target is None:
-                # Calculate on-the-fly if entry price is available
-                entry_stock_price = play.get('entry_point', {}).get('entry_stock_price')
-                if entry_stock_price is not None:
-                    contingency_sl_pct = play['stop_loss']['contingency_stock_price_pct'] / 100
-                    if trade_type == "CALL":
-                        contingency_sl_target = entry_stock_price * (1 - contingency_sl_pct)
-                    else:  # PUT
-                        contingency_sl_target = entry_stock_price * (1 + contingency_sl_pct)
-                    # Store it for future use
-                    play['stop_loss']['contingency_SL_stock_price_target'] = contingency_sl_target
-                    calculated_values = True
-                    logging.info(f"Calculated contingency_SL_stock_price_target on-the-fly: ${contingency_sl_target:.2f}")
-                else:
-                    logging.error("Cannot calculate contingency_SL_stock_price_target: entry_stock_price not found in play data")
-                    contingency_sl_target = None
-            
-            # Evaluate if target is available
-            if contingency_sl_target is not None:
-                if trade_type == "CALL":
-                    contingency_loss_condition = contingency_loss_condition or (last_price <= contingency_sl_target)
-                elif trade_type == "PUT":
-                    contingency_loss_condition = contingency_loss_condition or (last_price >= contingency_sl_target)
-    
-    # Check premium-based conditions if available
-    option_data = get_option_data(play['option_contract_symbol'])
-    if option_data:
-        current_premium = option_data['premium']
-        
-        # Check premium-based take profit
-        if play['take_profit'].get('premium_pct') is not None:
-            tp_target = play['take_profit'].get('TP_option_prem')
-            # Calculate on-the-fly if not stored
-            if tp_target is None:
-                entry_premium = play.get('entry_point', {}).get('entry_premium')
-                if entry_premium is not None:
-                    tp_pct = play['take_profit']['premium_pct'] / 100
-                    tp_target = entry_premium * (1 + tp_pct)
-                    play['take_profit']['TP_option_prem'] = tp_target
-                    calculated_values = True
-                    logging.info(f"Calculated TP_option_prem on-the-fly: ${tp_target:.4f}")
-                else:
-                    logging.error("Cannot calculate TP_option_prem: entry_premium not found in play data")
-                    tp_target = None
-            
-            if tp_target is not None:
-                profit_condition = profit_condition or (current_premium >= tp_target)
-
-        # Check premium-based stop loss - combines with stock price condition using OR
-        if play['stop_loss'].get('premium_pct') is not None:
-            sl_target = play['stop_loss'].get('SL_option_prem')
-            # Calculate on-the-fly if not stored
-            if sl_target is None:
-                entry_premium = play.get('entry_point', {}).get('entry_premium')
-                if entry_premium is not None:
-                    sl_pct = play['stop_loss']['premium_pct'] / 100
-                    sl_target = entry_premium * (1 - sl_pct)
-                    play['stop_loss']['SL_option_prem'] = sl_target
-                    calculated_values = True
-                    logging.info(f"Calculated SL_option_prem on-the-fly: ${sl_target:.4f}")
-                else:
-                    logging.error("Cannot calculate SL_option_prem: entry_premium not found in play data")
-                    sl_target = None
-            
-            if sl_target is not None:
-                loss_condition = loss_condition or (current_premium <= sl_target)
-            
-            # Check contingency premium condition if applicable
-            if sl_type == 'CONTINGENCY' and play['stop_loss'].get('contingency_premium_pct') is not None:
-                contingency_sl_target = play['stop_loss'].get('contingency_SL_option_prem')
-                # Calculate on-the-fly if not stored
-                if contingency_sl_target is None:
-                    entry_premium = play.get('entry_point', {}).get('entry_premium')
-                    if entry_premium is not None:
-                        contingency_sl_pct = play['stop_loss']['contingency_premium_pct'] / 100
-                        contingency_sl_target = entry_premium * (1 - contingency_sl_pct)
-                        play['stop_loss']['contingency_SL_option_prem'] = contingency_sl_target
-                        calculated_values = True
-                        logging.info(f"Calculated contingency_SL_option_prem on-the-fly: ${contingency_sl_target:.4f}")
-                    else:
-                        logging.error("Cannot calculate contingency_SL_option_prem: entry_premium not found in play data")
-                        contingency_sl_target = None
-                
-                if contingency_sl_target is not None:
-                    contingency_loss_condition = contingency_loss_condition or (current_premium <= contingency_sl_target)
-
-    # Consider trailing conditions if enabled (premium-based TP1/TP2)
-    try:
-        from goldflipper.strategy.trailing import trailing_tp_enabled, trailing_sl_enabled, get_trailing_tp_levels
-        if trailing_tp_enabled(play):
-            tp_levels = get_trailing_tp_levels(play)
-            tp1 = tp_levels.get('tp1_premium')
-            tp2 = tp_levels.get('tp2_premium')
-            # If current premium known, evaluate against TP1/TP2
-            if option_data and option_data.get('premium') is not None:
-                current_premium = option_data['premium']
-                if tp1 is not None and current_premium <= tp1:
-                    profit_condition = True
-                    logging.info("Trailing TP1 (floor) condition met by premium")
-                    # display.info("Trailing TP1 (floor) condition met by premium")
-                if tp2 is not None and current_premium >= tp2:
-                    profit_condition = True
-                    logging.info("Trailing TP2 (ceiling) condition met by premium")
-                    # display.info("Trailing TP2 (ceiling) condition met by premium")
-        # SL trailing remains as-is if enabled later
-    except Exception as e:
-        logging.warning(f"Error evaluating trailing conditions: {e}")
-
-    # Log conditions
-    if profit_condition:
-        logging.info("Take profit condition met")
-        display.success(f"CLOSING: {symbol} Take Profit condition met!")
-    if loss_condition:
-        logging.info(f"{'Primary' if sl_type == 'CONTINGENCY' else ''} Stop loss condition met")
-        display.warning(f"CLOSING: {symbol} {'Primary' if sl_type == 'CONTINGENCY' else ''} Stop loss condition met")
-    if contingency_loss_condition:
-        logging.info("Contingency (backup) stop loss condition met")
-        display.error(f"CLOSING: {symbol} Contingency (backup) stop loss condition met")
-
-    # Always show a concise evaluation summary
-    tag = "[HOLD]"
-    reason = "no TP/SL/contingency hit"
-    if profit_condition:
-        tag = "[TP]"
-        reason = "take profit target hit"
-    elif contingency_loss_condition:
-        tag = "[CONT]"
-        reason = "contingency stop loss hit"
-    elif loss_condition:
-        tag = "[SL]"
-        reason = "stop loss target hit"
-
-    eval_parts = [f"EXIT ${symbol} {tag}: price ${last_price:.2f}"]
-    if option_data and option_data.get('premium') is not None:
-        eval_parts.append(f"prem ${option_data['premium']:.4f}")
-    eval_parts.append(reason)
-    exit_message = " | ".join(eval_parts)
-
-    # Color-code exit summary by status tag
-    if tag == "[TP]":
-        display.success(exit_message)
-    elif tag == "[SL]":
-        # Primary stop loss as warning (yellow)
-        display.warning(exit_message)
-    elif tag == "[CONT]":
-        # Contingency stop loss as error (red)
-        display.error(exit_message)
-    else:
-        # HOLD or any other tag stays neutral/white
-        display.status(exit_message)
-
-    # Save play if we calculated missing targets (stock price or premium)
-    if calculated_values and play_file:
-        try:
-            save_play_improved(play, play_file)
-            logging.info(f"Saved play after calculating missing targets: {play_file}")
-        except Exception as e:
-            logging.warning(f"Failed to save play after calculating targets: {e}")
-
-    # Return tuple with condition flags and stop loss type
-    return {
-        'should_close': profit_condition or loss_condition or contingency_loss_condition,
-        'is_profit': profit_condition,
-        'is_primary_loss': loss_condition,
-        'is_contingency_loss': contingency_loss_condition,
-        'sl_type': sl_type
-    }
+    return _shared_eval_closing(
+        symbol, 
+        play, 
+        play_file,
+        get_stock_price_fn=get_stock_price,
+        get_option_data_fn=get_option_data,
+        save_play_fn=save_play_improved
+    )
 
 # ==================================================
 # 4. ORDER PLACEMENT
@@ -1416,229 +1078,65 @@ def monitor_and_manage_position(play, play_file):
 
 # Move to NEW (for OTO triggered plays)
 def move_play_to_new(play_file):
-    """Move play to NEW folder and update status."""
-    try:
-        with open(play_file, 'r') as f:
-            play_data = json.load(f)
-        
-        # Ensure status object exists and set status
-        if 'status' not in play_data:
-            play_data['status'] = {}
-        play_data['status']['play_status'] = 'NEW'
-        
-        # Calculate new path before saving
-        new_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'new')
-        os.makedirs(new_dir, exist_ok=True)
-        new_path = os.path.join(new_dir, os.path.basename(play_file))
-        
-        # Save updated status to original location first
-        with open(play_file, 'w') as f:
-            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
-            
-        # Move file only if it's not already in the target directory
-        if os.path.dirname(play_file) != new_dir:
-            if os.path.exists(new_path):
-                os.remove(new_path)  # Remove any existing file at destination
-            os.rename(play_file, new_path)
-            logging.info(f"Moved play to NEW folder: {new_path}")
-            # display.info(f"Moved play to NEW folder: {new_path}")
-            
-    except Exception as e:
-        logging.error(f"Error moving play to NEW: {str(e)}")
-        display.error(f"Error designating play as NEW: {str(e)}")
-        raise
+    """
+    Move play to NEW folder and update status.
+    
+    Thin wrapper that delegates to strategy.shared.play_manager module.
+    """
+    return _shared_move_to_new(play_file)
 
 # Move to PENDING-OPENING (for plays whose BUY condition has hit but limit order has not yet been filled)
 def move_play_to_pending_opening(play_file):
-    """Move play to PENDING-OPENING folder and update status."""
-    try:
-        with open(play_file, 'r') as f:
-            play_data = json.load(f)
-        
-        # Ensure status object exists and set status
-        if 'status' not in play_data:
-            play_data['status'] = {}
-        play_data['status']['play_status'] = 'PENDING-OPENING'
-        
-        # Calculate new path
-        pending_opening_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'pending-opening')
-        os.makedirs(pending_opening_dir, exist_ok=True)
-        new_path = os.path.join(pending_opening_dir, os.path.basename(play_file))
-        
-        # Save updated status to original location first
-        with open(play_file, 'w') as f:
-            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
-            
-        # Move file
-        if os.path.exists(new_path):
-            os.remove(new_path)
-        os.rename(play_file, new_path)
-        logging.info(f"Moved play to PENDING-OPENING folder: {new_path}")
-        # display.info(f"Moved play to PENDING-OPENING folder: {new_path}")
-        
-    except Exception as e:
-        logging.error(f"Error moving play to PENDING-OPENING: {str(e)}")
-        display.error(f"Error designating play as PENDING-OPENING: {str(e)}")
-        raise
+    """
+    Move play to PENDING-OPENING folder and update status.
+    
+    Thin wrapper that delegates to strategy.shared.play_manager module.
+    """
+    return _shared_move_to_pending_opening(play_file)
 
 def move_play_to_open(play_file):
-    """Move play to OPEN folder and update status."""
-    try:
-        with open(play_file, 'r') as f:
-            play_data = json.load(f)
-        
-        # Ensure status object exists and set status
-        if 'status' not in play_data:
-            play_data['status'] = {}
-        play_data['status']['play_status'] = 'OPEN'
-        
-        # Calculate new path
-        open_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'open')
-        os.makedirs(open_dir, exist_ok=True)
-        new_path = os.path.join(open_dir, os.path.basename(play_file))
-        
-        # Save updated status to original location first
-        with open(play_file, 'w') as f:
-            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
-            
-        # Move file only if it's not already in the target directory
-        if os.path.dirname(play_file) != open_dir:
-            if os.path.exists(new_path):
-                os.remove(new_path)  # Remove any existing file at destination
-            os.rename(play_file, new_path)
-            logging.info(f"Moved play to OPEN folder: {new_path}")
-            # display.info(f"Moved play to OPEN folder: {new_path}")
-            
-        return new_path  # Always return the new path
-    except Exception as e:
-        logging.error(f"Error moving play to OPEN: {str(e)}")
-        display.error(f"Error designating play as OPEN: {str(e)}")
-        raise
+    """
+    Move play to OPEN folder and update status.
+    
+    Thin wrapper that delegates to strategy.shared.play_manager module.
+    """
+    return _shared_move_to_open(play_file)
 
 # Move to PENDING-CLOSING (for plays whose SELL condition has hit but limit order has not yet been filled)
 def move_play_to_pending_closing(play_file):
-    with open(play_file, 'r') as f:
-        play_data = json.load(f)
-    play_data['status']['play_status'] = 'PENDING-CLOSING'
-    pending_closing_dir = os.path.join(os.path.dirname(play_file), '..', 'pending-closing')
-    os.makedirs(pending_closing_dir, exist_ok=True)
-    new_path = os.path.join(pending_closing_dir, os.path.basename(play_file))
-    os.rename(play_file, new_path)
-    logging.info(f"Moved play to PENDING-CLOSING folder: {new_path}")
-    # display.info(f"Moved play to PENDING-CLOSING folder: {new_path}")
+    """
+    Move play to PENDING-CLOSING folder and update status.
+    
+    Thin wrapper that delegates to strategy.shared.play_manager module.
+    """
+    return _shared_move_to_pending_closing(play_file)
 
 # Move to CLOSED (for plays whose TP or SL condition has hit)
 def move_play_to_closed(play_file):
-    """Move play to CLOSED folder and update status."""
-    try:
-        with open(play_file, 'r') as f:
-            play_data = json.load(f)
-        
-        play_data['status'].update({
-            'play_status': 'CLOSED',
-            'position_exists': False,
-        })
-        
-        # Calculate new path before saving
-        closed_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'closed')
-        os.makedirs(closed_dir, exist_ok=True)
-        new_path = os.path.join(closed_dir, os.path.basename(play_file))
-        
-        # Save to original location first
-        with open(play_file, 'w') as f:
-            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
-            
-        # Move file only if it's not already in the target directory
-        if os.path.dirname(play_file) != closed_dir:
-            if os.path.exists(new_path):
-                os.remove(new_path)  # Remove any existing file at destination
-            os.rename(play_file, new_path)
-            logging.info(f"Moved play to CLOSED folder: {new_path}")
-            # display.info(f"Moved play to CLOSED folder: {new_path}")
-            
-    except Exception as e:
-        logging.error(f"Error moving play to CLOSED: {str(e)}")
-        display.error(f"Error designating play as CLOSED: {str(e)}")
-        raise
+    """
+    Move play to CLOSED folder and update status.
+    
+    Thin wrapper that delegates to strategy.shared.play_manager module.
+    """
+    return _shared_move_to_closed(play_file)
 
 # Move to EXPIRED (for plays which have expired, and OCO triggered plays)
 def move_play_to_expired(play_file):
-    """Move play to EXPIRED folder and update status."""
-    try:
-        with open(play_file, 'r') as f:
-            play_data = json.load(f)
-        
-        play_data['status'].update({
-            'play_status': 'EXPIRED',
-            'position_exists': False,
-            'order_id': None,
-            'order_status': None,
-            'closing_order_id': None,
-            'closing_order_status': None,
-        })
-        
-        # Calculate new path before saving
-        expired_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'expired')
-        os.makedirs(expired_dir, exist_ok=True)
-        new_path = os.path.join(expired_dir, os.path.basename(play_file))
-        
-        # Save to original location first
-        with open(play_file, 'w') as f:
-            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
-            
-        # Move file only if it's not already in the target directory
-        if os.path.dirname(play_file) != expired_dir:
-            if os.path.exists(new_path):
-                os.remove(new_path)  # Remove any existing file at destination
-            os.rename(play_file, new_path)
-            logging.info(f"Moved play to EXPIRED folder: {new_path}")
-            # display.info(f"Moved play to EXPIRED folder: {new_path}")
-            
-    except Exception as e:
-        logging.error(f"Error moving play to EXPIRED: {str(e)}")
-        display.error(f"Error designating play as EXPIRED: {str(e)}")
-        raise
+    """
+    Move play to EXPIRED folder and update status.
+    
+    Thin wrapper that delegates to strategy.shared.play_manager module.
+    """
+    return _shared_move_to_expired(play_file)
 
 # Move to TEMP (for plays recycled by OCO or held for later activation)
 def move_play_to_temp(play_file):
-    """Move play to TEMP folder and update status for recycling."""
-    try:
-        with open(play_file, 'r') as f:
-            play_data = json.load(f)
-        
-        # Ensure status object exists and set status
-        if 'status' not in play_data:
-            play_data['status'] = {}
-        play_data['status'].update({
-            'play_status': 'TEMP',
-            'position_exists': False,
-            'order_id': None,
-            'order_status': None,
-            'closing_order_id': None,
-            'closing_order_status': None,
-        })
-        
-        # Calculate new path before saving
-        temp_dir = os.path.join(os.path.dirname(os.path.dirname(play_file)), 'temp')
-        os.makedirs(temp_dir, exist_ok=True)
-        new_path = os.path.join(temp_dir, os.path.basename(play_file))
-        
-        # Save to original location first
-        with open(play_file, 'w') as f:
-            json.dump(play_data, f, indent=4, cls=UUIDEncoder)
-            
-        # Move file only if it's not already in the target directory
-        if os.path.dirname(play_file) != temp_dir:
-            if os.path.exists(new_path):
-                os.remove(new_path)  # Remove any existing file at destination
-            os.rename(play_file, new_path)
-            logging.info(f"Moved play to TEMP folder: {new_path}")
-            # display.info(f"Moved play to TEMP folder: {new_path}")
-            
-    except Exception as e:
-        logging.error(f"Error moving play to TEMP: {str(e)}")
-        display.error(f"Error designating play as TEMP: {str(e)}")
-        raise
+    """
+    Move play to TEMP folder and update status for recycling.
+    
+    Thin wrapper that delegates to strategy.shared.play_manager module.
+    """
+    return _shared_move_to_temp(play_file)
 
 # ==================================================
 # 6. MAIN TRADE EXECUTION FLOW

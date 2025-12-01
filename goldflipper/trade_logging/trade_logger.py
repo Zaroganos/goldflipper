@@ -56,9 +56,12 @@ class PlayLogger:
     def _create_empty_log(self):
         """Initialize empty CSV with columns and proper dtypes"""
         # Define columns and their appropriate dtypes to prevent warnings
+        # Added 'strategy' and 'action' for multi-strategy support (2025-12-01)
         dtype_dict = {
             'play_name': 'object',
             'symbol': 'object', 
+            'strategy': 'object',  # Strategy type: option_swings, momentum, sell_puts, spreads
+            'action': 'object',    # Order action: BTO, STC, STO, BTC
             'trade_type': 'object',
             'strike_price': 'float64',
             'expiration_date': 'object',
@@ -342,9 +345,15 @@ class PlayLogger:
         if not symbol_value:
             raise ValueError("Missing required field: symbol")
 
+        # Extract strategy and action for multi-strategy support
+        strategy = play_data.get('strategy') or 'option_swings'  # Default to legacy strategy
+        action = play_data.get('action') or 'BTO'  # Default to Buy-To-Open
+        
         play_entry = {
             'play_name': play_data.get('play_name') or (source_filename or ''),
             'symbol': symbol_value,
+            'strategy': strategy,
+            'action': action,
             'trade_type': play_data.get('trade_type') or '',
             'strike_price': safe_float(play_data.get('strike_price')),
             'expiration_date': play_data.get('expiration_date') or '',
@@ -367,10 +376,12 @@ class PlayLogger:
         }
         
         # Read existing DataFrame with proper dtypes to prevent warnings
-        # Define the expected dtypes for consistent behavior
+        # Define the expected dtypes for consistent behavior (with strategy/action for multi-strategy)
         dtype_dict = {
             'play_name': 'object',
-            'symbol': 'object', 
+            'symbol': 'object',
+            'strategy': 'object',
+            'action': 'object',
             'trade_type': 'object',
             'strike_price': 'float64',
             'expiration_date': 'object',
@@ -400,7 +411,7 @@ class PlayLogger:
             # Convert string columns to object dtype to prevent warnings
             string_columns = ['date_atOpen', 'time_atOpen', 'date_atClose', 'time_atClose', 
                             'close_type', 'close_condition', 'status', 'play_name', 'symbol', 
-                            'trade_type', 'expiration_date']
+                            'strategy', 'action', 'trade_type', 'expiration_date']
             for col in string_columns:
                 if col in df.columns:
                     df[col] = df[col].astype('object')
@@ -633,10 +644,12 @@ class PlayLogger:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         
-        # Define friendly column names mapping
+        # Define friendly column names mapping (with strategy/action for multi-strategy)
         column_mapping = {
             'play_name': 'Play Name',
             'symbol': 'Symbol',
+            'strategy': 'Strategy',
+            'action': 'Action',
             'trade_type': 'Trade',
             'strike_price': 'Strike',
             'expiration_date': 'Expiration',
@@ -1038,16 +1051,40 @@ class PlayLogger:
         result['main_file'] = export_path
         return result
 
-    def _create_summary_stats(self) -> pd.DataFrame:
-        """Create summary statistics from the trade log"""
+    def get_unique_strategies(self) -> List[str]:
+        """Get list of unique strategies from the trade log.
+        
+        Returns:
+            List of strategy names found in the data, sorted alphabetically.
+        """
+        try:
+            df = pd.read_csv(self.csv_path)
+            if 'strategy' in df.columns:
+                strategies = df['strategy'].dropna().unique().tolist()
+                return sorted([str(s) for s in strategies if s])
+            return []
+        except Exception as e:
+            logging.error(f"Error getting unique strategies: {str(e)}")
+            return []
+
+    def _create_summary_stats(self, strategy_filter: str = None) -> pd.DataFrame:
+        """Create summary statistics from the trade log.
+        
+        Args:
+            strategy_filter: Optional strategy name to filter by. None or "All" shows all.
+        """
         try:
             df = pd.read_csv(self.csv_path)
             
+            # Apply strategy filter if specified
+            if strategy_filter and strategy_filter != "All" and 'strategy' in df.columns:
+                df = df[df['strategy'] == strategy_filter]
+            
             # Calculate basic statistics
             total_trades = int(len(df))
-            winning_trades = int(len(df[df['profit_loss'] > 0]))
+            winning_trades = int(len(df[df['profit_loss'] > 0])) if total_trades > 0 else 0
             win_rate = float(winning_trades / total_trades * 100) if total_trades > 0 else 0.0
-            total_pl = float(df['profit_loss'].sum())
+            total_pl = float(df['profit_loss'].sum()) if total_trades > 0 else 0.0
             
             # Return as a DataFrame with explicit types
             stats_df = pd.DataFrame({

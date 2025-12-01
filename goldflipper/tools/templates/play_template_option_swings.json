@@ -1,0 +1,125 @@
+{
+  "_template_info": {
+    "name": "Option Swings Play Template",
+    "version": "2.0",
+    "description": "Template for manual option swing trades. Uses BTO/STC order flow.",
+    "strategy": "option_swings",
+    "created": "2025-11-30"
+  },
+  
+  "creator": "user or auto",
+  "play_name": "string",
+  "symbol": "string",
+  "strategy": "option_swings",
+  "playbook": "default",
+  
+  "expiration_date": "MM/DD/YYYY",
+  "trade_type": "CALL or PUT",
+  "action": "BTO",
+  "strike_price": 0.0,
+  "option_contract_symbol": "string",
+  "contracts": 1,
+  "play_expiration_date": "MM/DD/YYYY",
+  
+  "entry_point": {
+    "stock_price": 0.0,
+    "order_type": "market",
+    "entry_premium": 0.0,
+    "entry_stock_price": 0.0
+  },
+  
+  "take_profit": {
+    "TP_type": "Single",
+    "stock_price": 0.0,
+    "stock_price_pct": 0.0,
+    "premium_pct": 50.0,
+    "order_type": "market",
+    "TP_option_prem": 0.0,
+    "TP_stock_price_target": 0.0,
+    "trailing_config": {
+      "enabled": false,
+      "trail_type": "percentage",
+      "trail_distance_pct": 2.0,
+      "trail_distance_fixed": 0.0,
+      "atr_multiplier": 2.0,
+      "atr_period": 14,
+      "activation_threshold_pct": 5.0,
+      "min_profit_lock_pct": 2.0,
+      "update_frequency_seconds": 30
+    },
+    "trail_state": {
+      "current_trail_level": null,
+      "highest_favorable_price": null,
+      "last_update_timestamp": null,
+      "trail_activated": false
+    },
+    "trail_history": []
+  },
+  
+  "stop_loss": {
+    "SL_type": "STOP",
+    "stock_price": 0.0,
+    "stock_price_pct": 0.0,
+    "premium_pct": 25.0,
+    "contingency_stock_price": 0.0,
+    "contingency_stock_price_pct": 0.0,
+    "contingency_premium_pct": 25.0,
+    "order_type": "market",
+    "SL_option_prem": 0.0,
+    "SL_stock_price_target": 0.0,
+    "contingency_SL_option_prem": 0.0,
+    "contingency_SL_stock_price_target": 0.0,
+    "trailing_config": {
+      "enabled": false,
+      "trail_type": "percentage",
+      "trail_distance_pct": 3.0,
+      "trail_distance_fixed": 0.0,
+      "atr_multiplier": 1.5,
+      "atr_period": 14,
+      "breakeven_protection": true,
+      "max_loss_pct": 15.0,
+      "update_frequency_seconds": 30
+    },
+    "trail_state": {
+      "current_trail_level": null,
+      "highest_favorable_price": null,
+      "last_update_timestamp": null,
+      "breakeven_activated": false
+    },
+    "trail_history": []
+  },
+  
+  "play_class": "SIMPLE",
+  "creation_date": "MM/DD/YYYY",
+  
+  "conditional_plays": {
+    "OCO_triggers": [],
+    "OTO_triggers": []
+  },
+  
+  "status": {
+    "play_status": "NEW",
+    "order_id": null,
+    "position_uuid": null,
+    "order_status": null,
+    "position_exists": false,
+    "closing_order_id": null,
+    "closing_order_status": null,
+    "contingency_order_id": null,
+    "contingency_order_status": null,
+    "conditionals_handled": false
+  },
+  
+  "logging": {
+    "delta_atOpen": 0.0,
+    "theta_atOpen": 0.0,
+    "datetime_atOpen": null,
+    "price_atOpen": 0.0,
+    "premium_atOpen": 0.0,
+    "datetime_atClose": null,
+    "price_atClose": 0.0,
+    "premium_atClose": 0.0,
+    "close_type": null,
+    "close_condition": null
+  }
+}

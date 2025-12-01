@@ -1,0 +1,10 @@
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Momentum Gap Trading Template,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Strategy: momentum | Playbook: gap_move or gap_fade | Action: BTO (Buy to Open) → STC (Sell to Close),,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Option Parameters,,,,,,,Gap Info,,,,,Entry Conditions,,,,Take Profit,,,,,Stop Loss,,,,Time Management,,,
+#,Date,Ticket,Expiration (Contract),GTD,Playbook,Trade Type,Gap Type,Gap %,Previous Close,Gap Open,Trade Direction,Entry Stock Price,Order Type,# of Con,Target Delta,TP Prem %,Order Type (TP),Trailing Enabled,Trailing %,SL Prem %,Order Type (SL),SL Type,Same Day Exit,Max Hold Days,Exit Before Close (mins),Notes
+1,12/2025,NVDA,12/13/25,12/06/2025,gap_move,CALL,up,2.5%,140.00,143.50,with_gap,143.00,Limit (Ask),1,0.55,50%,Limit (Bid),Y,10%,30%,Market,LIMIT,N,5,15,Gap up continuation - ride the momentum
+2,12/2025,NVDA,12/13/25,12/06/2025,gap_fade,PUT,up,3.0%,140.00,144.20,fade_gap,144.00,Limit (Ask),1,0.50,40%,Limit (Bid),N,,25%,Market,STOP,Y,1,15,Gap up fade - expect reversal
+3,12/2025,TSLA,12/13/25,12/06/2025,gap_move,PUT,down,-2.0%,250.00,245.00,with_gap,245.50,Limit (Ask),1,0.55,50%,Limit (Bid),Y,10%,30%,Market,LIMIT,N,3,15,Gap down continuation
+4,12/2025,AMD,12/13/25,12/06/2025,gap_fade,CALL,down,-2.5%,140.00,136.50,fade_gap,137.00,Limit (Ask),1,0.50,40%,Limit (Bid),N,,25%,Market,STOP,Y,1,15,Gap down fade - bounce expected

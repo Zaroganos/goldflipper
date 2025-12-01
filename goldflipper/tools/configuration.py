@@ -136,7 +136,7 @@ class SettingsEditor:
 
         header = ttk.Label(
             top_frame,
-            text="Edit settings below. Values are saved safely and atomically.",
+            text="Goldflipper Settings",
             font=("Segoe UI", 11, "bold"),
         )
         header.pack(anchor="w")

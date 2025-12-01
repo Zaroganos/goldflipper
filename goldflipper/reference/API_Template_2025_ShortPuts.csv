@@ -1,0 +1,9 @@
+,,,,,,,,,,,,,,,,,,,,,,,,
+Short Puts - Cash Secured Put Selling Template,,,,,,,,,,,,,,,,,,,,,,,,
+Strategy: sell_puts | Action: STO (Sell to Open) → BTC (Buy to Close),,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,
+Option Parameters,,,,,,,,Entry Conditions,,,,Exit Conditions - Take Profit,,Exit Conditions - Stop Loss,,,Management,,,
+#,Date,Ticket,Expiration (Contract),GTD,Target Delta,Target DTE,Strike Price,Entry Stock Price,Order Type,# of Con,Min Premium,TP Prem % (decrease),Order Type (TP),SL Prem % (increase),Max Loss Multiple,Order Type (SL),Close at DTE,Roll if ITM,Accept Assignment,Notes
+1,12/2025,AAPL,01/17/26,12/27/2025,0.30,45,220,225.00,Limit (Mid),1,0.50,50%,Limit (Mid),200%,2.0,Market,21,Y,N,Cash secured put on quality underlying
+2,12/2025,MSFT,01/17/26,12/27/2025,0.25,45,400,415.00,Limit (Mid),1,0.75,50%,Limit (Mid),200%,2.0,Market,21,Y,N,Sell on support level
+3,12/2025,SPY,01/17/26,12/27/2025,0.30,45,580,595.00,Limit (Mid),1,1.00,50%,Limit (Mid),150%,1.5,Market,21,N,N,Index put - lower premium target

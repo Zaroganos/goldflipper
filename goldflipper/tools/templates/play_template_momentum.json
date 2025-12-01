@@ -1,0 +1,125 @@
+{
+  "_template_info": {
+    "name": "Momentum/Gap Play Template",
+    "version": "1.0",
+    "description": "Template for momentum and gap-based trades. Uses BTO/STC order flow.",
+    "strategy": "momentum",
+    "created": "2025-11-30"
+  },
+  
+  "creator": "user or auto",
+  "play_name": "string",
+  "symbol": "string",
+  "strategy": "momentum",
+  "playbook": "default",
+  
+  "expiration_date": "MM/DD/YYYY",
+  "trade_type": "CALL or PUT",
+  "action": "BTO",
+  "strike_price": 0.0,
+  "option_contract_symbol": "string",
+  "contracts": 1,
+  "play_expiration_date": "MM/DD/YYYY",
+  
+  "entry_point": {
+    "stock_price": 0.0,
+    "order_type": "limit_ask",
+    "entry_premium": 0.0,
+    "entry_stock_price": 0.0,
+    "target_delta": 0.55
+  },
+  
+  "gap_info": {
+    "gap_type": "up or down",
+    "gap_pct": 0.0,
+    "previous_close": 0.0,
+    "gap_open": 0.0,
+    "trade_direction": "with_gap or fade_gap",
+    "confirmation_time": null
+  },
+  
+  "take_profit": {
+    "TP_type": "Multiple",
+    "premium_pct": 50.0,
+    "order_type": "limit_bid",
+    "TP_option_prem": 0.0,
+    "TP_levels": [
+      {"pct": 25, "contracts_pct": 50},
+      {"pct": 50, "contracts_pct": 100}
+    ],
+    "trailing_config": {
+      "enabled": true,
+      "trail_type": "percentage",
+      "trail_distance_pct": 10.0,
+      "activation_threshold_pct": 20.0,
+      "update_frequency_seconds": 30
+    },
+    "trail_state": {
+      "current_trail_level": null,
+      "highest_favorable_price": null,
+      "last_update_timestamp": null,
+      "trail_activated": false
+    },
+    "trail_history": []
+  },
+  
+  "stop_loss": {
+    "SL_type": "LIMIT",
+    "premium_pct": 30.0,
+    "order_type": "market",
+    "SL_option_prem": 0.0,
+    "trailing_config": {
+      "enabled": false
+    },
+    "trail_state": {
+      "current_trail_level": null,
+      "highest_favorable_price": null,
+      "last_update_timestamp": null,
+      "breakeven_activated": false
+    },
+    "trail_history": []
+  },
+  
+  "time_management": {
+    "same_day_exit": false,
+    "max_hold_days": 5,
+    "exit_before_close": true,
+    "exit_minutes_before_close": 15
+  },
+  
+  "play_class": "SIMPLE",
+  "creation_date": "MM/DD/YYYY",
+  
+  "conditional_plays": {
+    "OCO_triggers": [],
+    "OTO_triggers": []
+  },
+  
+  "status": {
+    "play_status": "NEW",
+    "order_id": null,
+    "position_uuid": null,
+    "order_status": null,
+    "position_exists": false,
+    "closing_order_id": null,
+    "closing_order_status": null,
+    "contingency_order_id": null,
+    "contingency_order_status": null,
+    "conditionals_handled": false
+  },
+  
+  "logging": {
+    "delta_atOpen": 0.0,
+    "theta_atOpen": 0.0,
+    "datetime_atOpen": null,
+    "price_atOpen": 0.0,
+    "premium_atOpen": 0.0,
+    "gap_filled_pct": null,
+    "datetime_atClose": null,
+    "price_atClose": 0.0,
+    "premium_atClose": 0.0,
+    "close_type": null,
+    "close_condition": null,
+    "hold_duration_hours": null
+  }
+}

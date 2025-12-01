@@ -28,6 +28,7 @@ The Goldflipper Trading Logger is a comprehensive system for tracking, analyzing
     - Export history viewer with open CSV/Excel/directory actions
     - Save-to-Desktop option for exports
     - Enable Data Backfill toggle (fetch missing Greeks for closed plays)
+    - Strategy Filter dropdown (multi-strategy support, 2025-12-01)
     - Interactive data visualization
     - Real-time updates
 
@@ -42,6 +43,8 @@ The Goldflipper Trading Logger is a comprehensive system for tracking, analyzing
     - Greeks
     - P/L calculations
     - Status tracking
+    - Strategy type
+    - Order action
 
 3.2 Logged Metrics
     a) Basic Trade Information
@@ -50,6 +53,8 @@ The Goldflipper Trading Logger is a comprehensive system for tracking, analyzing
        - Strike Price
        - Expiration Date
        - Contract Count
+       - Strategy type
+       - Order action
 
     b) Performance Metrics
        - Entry Price/Premium
@@ -110,6 +115,8 @@ The Goldflipper Trading Logger is a comprehensive system for tracking, analyzing
 Current CSV columns:
 - play_name (str)
 - symbol (str)
+- strategy (str) - Strategy type: option_swings, momentum, sell_puts, spreads
+- action (str) - Order action: BTO, STC, STO, BTC
 - trade_type (str)
 - strike_price (float)
 - expiration_date (str)
@@ -256,6 +263,12 @@ goldflipper/trade_logging/
 
 15. VERSION HISTORY
 -----------------
+v1.1.0 (2025-12-01) - Multi-Strategy Support
+- Added 'strategy' and 'action' columns to CSV schema
+- Strategy filter dropdown in UI
+- Summary stats now filter by selected strategy
+- Strategy and Action columns in Excel export
+
 v1.0.0 - Initial release
 - Basic logging functionality
 - CSV/Excel export

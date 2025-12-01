@@ -1,17 +1,36 @@
 import os
 import json
 import random
+import copy
 from datetime import datetime, timedelta
 import sys
+from typing import Dict, Any, Optional, List, Tuple
+from enum import Enum
 
 # Add the project root to the Python path
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 sys.path.append(project_root)
 
 from goldflipper.config.config import config
 from goldflipper.utils.display import TerminalDisplay as display
 from goldflipper.data.market.manager import MarketDataManager
 import logging
+
+
+class StrategyType(Enum):
+    """Available strategies for play creation."""
+    OPTION_SWINGS = "option_swings"
+    MOMENTUM = "momentum"
+    SELL_PUTS = "sell_puts"
+    # SPREADS = "spreads"  # Future support
+
+
+class MomentumPlaybook(Enum):
+    """Available playbooks for momentum strategy."""
+    GAP_MOVE = "gap_move"     # Trade with the gap direction
+    GAP_FADE = "gap_fade"     # Trade against the gap
+    MANUAL = "manual"         # No auto-entry conditions
+
 
 class AutoPlayCreator:
     def __init__(self):
@@ -26,28 +45,32 @@ class AutoPlayCreator:
         
         if not self.settings.get('enabled', False):
             raise ValueError("Auto Play Creator is disabled in settings")
+        
+        # Strategy configuration
+        self.current_strategy: StrategyType = StrategyType.OPTION_SWINGS
+        self.current_playbook: Optional[MomentumPlaybook] = None
             
         # Symbol pools
         self.test_symbols = self.settings.get('test_symbols', ['SPY'])
         self.watchlist_symbols = config.get('watchlist', default=[]) or []
         self.use_watchlist = self.settings.get('use_watchlist', True)
 
-        self.entry_buffer = self.settings.get('entry_buffer', 0.01)
-        self.expiration_days = self.settings.get('expiration_days', 7)
-        self.take_profit_pct = self.settings.get('take_profit_pct', 1.0)
-        self.stop_loss_pct = self.settings.get('stop_loss_pct', 0.5)
+        self.entry_buffer = float(self.settings.get('entry_buffer', 0.01))
+        self.expiration_days = int(self.settings.get('expiration_days', 7))
+        self.take_profit_pct = float(self.settings.get('take_profit_pct', 1.0))
+        self.stop_loss_pct = float(self.settings.get('stop_loss_pct', 0.5))
 
         # Simulate-real overrides (used when execution_mode is simulate_real or oco_peer_set)
         sim = self.settings.get('simulate_real', {}) or {}
-        self.entry_buffer_sim = sim.get('entry_buffer', self.entry_buffer)
-        self.take_profit_pct_sim = sim.get('take_profit_pct', self.take_profit_pct)
-        self.stop_loss_pct_sim = sim.get('stop_loss_pct', self.stop_loss_pct)
+        self.entry_buffer_sim = float(sim.get('entry_buffer', self.entry_buffer))
+        self.take_profit_pct_sim = float(sim.get('take_profit_pct', self.take_profit_pct))
+        self.stop_loss_pct_sim = float(sim.get('stop_loss_pct', self.stop_loss_pct))
         
         # OCO peer set overrides (used only when execution_mode is oco_peer_set)
         oco = self.settings.get('oco_peer_set', {}) or {}
-        self.entry_buffer_oco = oco.get('entry_buffer', None)
-        self.take_profit_pct_oco = oco.get('take_profit_pct', None)
-        self.stop_loss_pct_oco = oco.get('stop_loss_pct', None)
+        self.entry_buffer_oco = float(oco['entry_buffer']) if oco.get('entry_buffer') is not None else None
+        self.take_profit_pct_oco = float(oco['take_profit_pct']) if oco.get('take_profit_pct') is not None else None
+        self.stop_loss_pct_oco = float(oco['stop_loss_pct']) if oco.get('stop_loss_pct') is not None else None
         
         # Add execution mode
         self.execution_mode = None  # Will be set later
@@ -61,6 +84,155 @@ class AutoPlayCreator:
 
         # Market data manager
         self.market_data = MarketDataManager()
+        
+        # Load play templates
+        self.templates_dir = os.path.join(
+            os.path.dirname(__file__), 'templates'
+        )
+    
+    # =========================================================================
+    # Strategy Selection Methods
+    # =========================================================================
+    
+    def set_strategy(self, strategy: StrategyType) -> None:
+        """Set the active strategy for play creation."""
+        self.current_strategy = strategy
+        display.info(f"Strategy set to: {strategy.value}")
+    
+    def set_playbook(self, playbook: MomentumPlaybook) -> None:
+        """Set the playbook for momentum strategy."""
+        self.current_playbook = playbook
+        display.info(f"Playbook set to: {playbook.value}")
+    
+    def get_strategy_display_name(self, strategy: StrategyType) -> str:
+        """Get human-readable strategy name."""
+        names = {
+            StrategyType.OPTION_SWINGS: "Option Swings (BTO/STC)",
+            StrategyType.MOMENTUM: "Momentum/Gap (BTO/STC)",
+            StrategyType.SELL_PUTS: "Short Puts (STO/BTC)"
+        }
+        return names.get(strategy, strategy.value)
+    
+    def get_playbook_display_name(self, playbook: MomentumPlaybook) -> str:
+        """Get human-readable playbook name."""
+        names = {
+            MomentumPlaybook.GAP_MOVE: "Gap Move (trade with gap)",
+            MomentumPlaybook.GAP_FADE: "Gap Fade (trade against gap)",
+            MomentumPlaybook.MANUAL: "Manual Entry"
+        }
+        return names.get(playbook, playbook.value)
+    
+    # =========================================================================
+    # Gap Analysis Methods
+    # =========================================================================
+    
+    def calculate_gap_info(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """
+        Calculate gap information for a symbol using market data.
+        
+        Detects pre-market gap by comparing previous close to current price.
+        
+        Returns:
+            Dict with gap_type, gap_pct, previous_close, gap_open, or None if unavailable
+        """
+        try:
+            # Get current price
+            current_price = self.market_data.get_stock_price(symbol)
+            if current_price is None:
+                display.warning(f"Could not get current price for {symbol}")
+                return None
+            
+            # Get previous close from historical data
+            previous_close = self._get_previous_close(symbol)
+            if previous_close is None:
+                display.warning(f"Could not get previous close for {symbol}")
+                return None
+            
+            # Calculate gap - ensure both values are floats
+            current_price = float(current_price)
+            previous_close = float(previous_close)
+            gap_amount = current_price - previous_close
+            gap_pct = (gap_amount / previous_close) * 100
+            
+            if gap_pct > 0:
+                gap_type = "up"
+            elif gap_pct < 0:
+                gap_type = "down"
+            else:
+                gap_type = "flat"
+            
+            return {
+                'gap_type': gap_type,
+                'gap_pct': round(gap_pct, 2),
+                'previous_close': round(previous_close, 2),
+                'gap_open': round(float(current_price), 2),
+                'trade_direction': None,  # Set based on playbook
+                'confirmation_time': None
+            }
+            
+        except Exception as e:
+            logging.error(f"Error calculating gap info for {symbol}: {e}")
+            return None
+    
+    def _get_previous_close(self, symbol: str) -> Optional[float]:
+        """Get previous day's closing price using MarketDataManager."""
+        try:
+            # Use the unified MarketDataManager's get_previous_close method
+            return self.market_data.get_previous_close(symbol)
+        except Exception as e:
+            logging.debug(f"Error getting previous close: {e}")
+            return None
+    
+    def get_trade_type_for_gap(
+        self, 
+        gap_type: str, 
+        trade_direction: str
+    ) -> str:
+        """
+        Determine option type (CALL/PUT) based on gap and direction.
+        
+        Args:
+            gap_type: "up" or "down"
+            trade_direction: "with_gap" or "fade_gap"
+        
+        Returns:
+            "CALL" or "PUT"
+        """
+        if trade_direction == "with_gap":
+            # Trade with the gap direction
+            return "CALL" if gap_type == "up" else "PUT"
+        else:  # fade_gap
+            # Trade against the gap direction
+            return "PUT" if gap_type == "up" else "CALL"
+    
+    # =========================================================================
+    # Template Loading
+    # =========================================================================
+    
+    def load_play_template(self, strategy: StrategyType) -> Dict[str, Any]:
+        """Load the JSON play template for a strategy."""
+        template_map = {
+            StrategyType.OPTION_SWINGS: "play_template_option_swings.json",
+            StrategyType.MOMENTUM: "play_template_momentum.json",
+            StrategyType.SELL_PUTS: "play_template_sell_puts.json"
+        }
+        
+        template_file = template_map.get(strategy)
+        if not template_file:
+            raise ValueError(f"No template for strategy: {strategy}")
+        
+        template_path = os.path.join(self.templates_dir, template_file)
+        
+        if not os.path.exists(template_path):
+            raise FileNotFoundError(f"Template not found: {template_path}")
+        
+        with open(template_path, 'r') as f:
+            template = json.load(f)
+        
+        # Remove template info section
+        template.pop('_template_info', None)
+        
+        return template
         
     def get_market_data(self, symbol):
         """Fetch current market data (price and option chain) for a symbol via MarketDataManager."""
@@ -221,7 +393,22 @@ class AutoPlayCreator:
         return tp_values, sl_values
 
     def create_play_data(self, market_data, trade_type='CALL'):
-        """Create a single play based on market data."""
+        """
+        Create a single play based on market data and current strategy.
+        
+        Routes to strategy-specific creation method.
+        """
+        if self.current_strategy == StrategyType.OPTION_SWINGS:
+            return self._create_option_swings_play(market_data, trade_type)
+        elif self.current_strategy == StrategyType.MOMENTUM:
+            return self._create_momentum_play(market_data, trade_type)
+        elif self.current_strategy == StrategyType.SELL_PUTS:
+            return self._create_sell_puts_play(market_data, trade_type)
+        else:
+            raise ValueError(f"Unsupported strategy: {self.current_strategy}")
+    
+    def _create_option_swings_play(self, market_data, trade_type='CALL'):
+        """Create an Option Swings play (original logic)."""
         current_price = market_data['price']
         options = market_data['calls'] if trade_type == 'CALL' else market_data['puts']
         if options is None or options.empty:
@@ -236,10 +423,10 @@ class AutoPlayCreator:
             entry_price = current_price
         else:
             # For oco_peer_set, prefer oco-specific jitter; otherwise use simulate_real override; fallback to base
-            if self.execution_mode == 'oco_peer_set' and getattr(self, 'entry_buffer_oco', None) is not None:
-                jitter = self.entry_buffer_oco
+            if self.execution_mode == 'oco_peer_set' and self.entry_buffer_oco is not None:
+                jitter: float = self.entry_buffer_oco
             else:
-                jitter = self.entry_buffer_sim if self.entry_buffer_sim is not None else self.entry_buffer
+                jitter = self.entry_buffer_sim
             entry_price = current_price * (1 + random.uniform(-jitter, jitter))
         
         # Generate TP/SL values based on enabled types
@@ -319,6 +506,7 @@ class AutoPlayCreator:
             "symbol": market_data['symbol'],
             "expiration_date": datetime.strptime(market_data['expiration'], '%Y-%m-%d').strftime('%m/%d/%Y'),
             "trade_type": trade_type,
+            "action": "BTO",  # Buy to Open for long positions
             "strike_price": str(strike),
             "option_contract_symbol": option_symbol,
             "contracts": 1,
@@ -327,7 +515,8 @@ class AutoPlayCreator:
             "take_profit": take_profit,
             "stop_loss": stop_loss,
             "play_class": "SIMPLE",
-            "strategy": "Option Swings",
+            "strategy": "option_swings",
+            "playbook": "default",
             "creation_date": datetime.now().strftime('%Y-%m-%d'),
             "status": {
                 "play_status": "NEW",
@@ -340,6 +529,310 @@ class AutoPlayCreator:
                 "contingency_order_id": "",  # Initialize with empty string instead of None
                 "contingency_order_status": "",  # Initialize with empty string instead of None
                 "conditionals_handled": False
+            },
+            "creator": "auto"
+        }
+        
+        return play
+    
+    def _create_momentum_play(self, market_data, trade_type='CALL'):
+        """
+        Create a Momentum/Gap play with gap_info populated.
+        
+        For gap plays, auto-detects gap and sets trade direction based on playbook.
+        """
+        symbol = market_data['symbol']
+        current_price = market_data['price']
+        options = market_data['calls'] if trade_type == 'CALL' else market_data['puts']
+        
+        if options is None or options.empty:
+            raise ValueError("No options data available for selected trade type")
+        
+        strike = self.find_nearest_strike(options, current_price)
+        nearest_idx = (options['strike'] - current_price).abs().idxmin()
+        nearest_row = options.loc[nearest_idx]
+        
+        # Calculate gap info
+        gap_info = self.calculate_gap_info(symbol)
+        if gap_info is None:
+            # Create default gap info if unavailable
+            gap_info = {
+                'gap_type': 'unknown',
+                'gap_pct': 0.0,
+                'previous_close': current_price,
+                'gap_open': current_price,
+                'trade_direction': 'manual',
+                'confirmation_time': None
+            }
+        
+        # Set trade direction based on playbook
+        if self.current_playbook == MomentumPlaybook.GAP_MOVE:
+            gap_info['trade_direction'] = 'with_gap'
+        elif self.current_playbook == MomentumPlaybook.GAP_FADE:
+            gap_info['trade_direction'] = 'fade_gap'
+        else:
+            gap_info['trade_direction'] = 'manual'
+        
+        # Build option symbol
+        selected_exp_str = str(nearest_row.get('expiration') or market_data.get('expiration') or '')
+        expiration_date = datetime.strptime(selected_exp_str, '%Y-%m-%d')
+        strike_tenths_cents = int(round(float(strike) * 1000))
+        padded_strike = f"{strike_tenths_cents:08d}"
+        option_type = "C" if trade_type == "CALL" else "P"
+        option_symbol = f"{symbol}{expiration_date.strftime('%y%m%d')}{option_type}{padded_strike}"
+        
+        # Entry point
+        entry_point = {
+            "stock_price": round(current_price, 2),
+            "order_type": "limit at ask",
+            "entry_premium": 0.0,
+            "entry_stock_price": round(current_price, 2),
+            "target_delta": 0.55
+        }
+        
+        # Take profit with trailing
+        take_profit = {
+            "TP_type": "Multiple",
+            "premium_pct": self.take_profit_pct,
+            "order_type": "limit at bid",
+            "TP_option_prem": 0.0,
+            "TP_levels": [
+                {"pct": 25, "contracts_pct": 50},
+                {"pct": 50, "contracts_pct": 100}
+            ],
+            "trailing_config": {
+                "enabled": True,
+                "trail_type": "percentage",
+                "trail_distance_pct": 10.0,
+                "activation_threshold_pct": 20.0,
+                "update_frequency_seconds": 30
+            },
+            "trail_state": {
+                "current_trail_level": None,
+                "highest_favorable_price": None,
+                "last_update_timestamp": None,
+                "trail_activated": False
+            },
+            "trail_history": []
+        }
+        
+        # Stop loss
+        stop_loss = {
+            "SL_type": "LIMIT",
+            "premium_pct": self.stop_loss_pct,
+            "order_type": "market",
+            "SL_option_prem": 0.0,
+            "trailing_config": {"enabled": False},
+            "trail_state": {
+                "current_trail_level": None,
+                "highest_favorable_price": None,
+                "last_update_timestamp": None,
+                "breakeven_activated": False
+            },
+            "trail_history": []
+        }
+        
+        # Time management
+        time_management = {
+            "same_day_exit": self.current_playbook == MomentumPlaybook.GAP_FADE,
+            "max_hold_days": 5 if self.current_playbook == MomentumPlaybook.GAP_MOVE else 1,
+            "exit_before_close": True,
+            "exit_minutes_before_close": 15
+        }
+        
+        play = {
+            "play_name": self.generate_play_name(option_symbol, prefix="GAP"),
+            "symbol": symbol,
+            "strategy": "momentum",
+            "playbook": self.current_playbook.value if self.current_playbook else "manual",
+            "expiration_date": expiration_date.strftime('%m/%d/%Y'),
+            "trade_type": trade_type,
+            "action": "BTO",
+            "strike_price": str(strike),
+            "option_contract_symbol": option_symbol,
+            "contracts": 1,
+            "play_expiration_date": expiration_date.strftime('%m/%d/%Y'),
+            "entry_point": entry_point,
+            "gap_info": gap_info,
+            "take_profit": take_profit,
+            "stop_loss": stop_loss,
+            "time_management": time_management,
+            "play_class": "SIMPLE",
+            "creation_date": datetime.now().strftime('%Y-%m-%d'),
+            "conditional_plays": {
+                "OCO_triggers": [],
+                "OTO_triggers": []
+            },
+            "status": {
+                "play_status": "NEW",
+                "order_id": None,
+                "position_uuid": None,
+                "order_status": None,
+                "position_exists": False,
+                "closing_order_id": None,
+                "closing_order_status": None,
+                "contingency_order_id": None,
+                "contingency_order_status": None,
+                "conditionals_handled": False
+            },
+            "logging": {
+                "delta_atOpen": 0.0,
+                "theta_atOpen": 0.0,
+                "datetime_atOpen": None,
+                "price_atOpen": 0.0,
+                "premium_atOpen": 0.0,
+                "gap_filled_pct": None,
+                "datetime_atClose": None,
+                "price_atClose": 0.0,
+                "premium_atClose": 0.0,
+                "close_type": None,
+                "close_condition": None,
+                "hold_duration_hours": None
+            },
+            "creator": "auto"
+        }
+        
+        return play
+    
+    def _create_sell_puts_play(self, market_data, trade_type='PUT'):
+        """
+        Create a Sell Puts (short premium) play.
+        
+        Uses STO/BTC order flow. Always creates PUT options.
+        """
+        symbol = market_data['symbol']
+        current_price = market_data['price']
+        options = market_data['puts']  # Always puts for this strategy
+        
+        if options is None or options.empty:
+            raise ValueError("No puts data available for sell_puts strategy")
+        
+        # Find strike approximately 5-10% OTM (below current price)
+        target_strike = current_price * 0.92  # ~8% OTM
+        strike = self.find_nearest_strike(options, target_strike)
+        nearest_idx = (options['strike'] - target_strike).abs().idxmin()
+        nearest_row = options.loc[nearest_idx]
+        
+        # Build option symbol
+        selected_exp_str = str(nearest_row.get('expiration') or market_data.get('expiration') or '')
+        expiration_date = datetime.strptime(selected_exp_str, '%Y-%m-%d')
+        strike_tenths_cents = int(round(float(strike) * 1000))
+        padded_strike = f"{strike_tenths_cents:08d}"
+        option_symbol = f"{symbol}{expiration_date.strftime('%y%m%d')}P{padded_strike}"
+        
+        # Calculate collateral required
+        collateral = float(strike) * 100  # Per contract
+        
+        # Get premium estimate from option data
+        entry_premium = nearest_row.get('bid', 0) or nearest_row.get('lastPrice', 0) or 0.50
+        
+        # Entry point for STO
+        entry_point = {
+            "stock_price": round(current_price, 2),
+            "order_type": "limit at mid",
+            "entry_premium": round(float(entry_premium), 2),
+            "entry_stock_price": round(current_price, 2),
+            "target_delta": 0.30,
+            "target_dte": 45
+        }
+        
+        # Take profit: buy back at 50% of credit received
+        take_profit = {
+            "TP_type": "Single",
+            "premium_pct": 50.0,  # Close when premium drops 50%
+            "order_type": "limit at mid",
+            "TP_option_prem": 0.0,
+            "trailing_config": {"enabled": False},
+            "trail_state": {
+                "current_trail_level": None,
+                "highest_favorable_price": None,
+                "last_update_timestamp": None,
+                "trail_activated": False
+            },
+            "trail_history": []
+        }
+        
+        # Stop loss: close if premium doubles (200% of original)
+        stop_loss = {
+            "SL_type": "LIMIT",
+            "premium_pct": 200.0,  # Close if premium increases 200%
+            "max_loss_multiple": 2.0,
+            "order_type": "market",
+            "SL_option_prem": 0.0,
+            "trailing_config": {"enabled": False},
+            "trail_state": {
+                "current_trail_level": None,
+                "highest_favorable_price": None,
+                "last_update_timestamp": None,
+                "breakeven_activated": False
+            },
+            "trail_history": []
+        }
+        
+        # Position management
+        management = {
+            "close_at_dte": 21,  # Close at 21 DTE
+            "roll_if_itm": True,
+            "accept_assignment": False
+        }
+        
+        # Collateral info
+        collateral_info = {
+            "required": True,
+            "type": "cash",
+            "amount": collateral,
+            "calculated": True
+        }
+        
+        play = {
+            "play_name": self.generate_play_name(option_symbol, prefix="SP"),
+            "symbol": symbol,
+            "strategy": "sell_puts",
+            "playbook": "default",
+            "expiration_date": expiration_date.strftime('%m/%d/%Y'),
+            "trade_type": "PUT",
+            "action": "STO",  # Sell to Open
+            "strike_price": str(strike),
+            "option_contract_symbol": option_symbol,
+            "contracts": 1,
+            "play_expiration_date": expiration_date.strftime('%m/%d/%Y'),
+            "entry_point": entry_point,
+            "take_profit": take_profit,
+            "stop_loss": stop_loss,
+            "management": management,
+            "collateral": collateral_info,
+            "play_class": "SIMPLE",
+            "creation_date": datetime.now().strftime('%Y-%m-%d'),
+            "conditional_plays": {
+                "OCO_triggers": [],
+                "OTO_triggers": []
+            },
+            "status": {
+                "play_status": "NEW",
+                "order_id": None,
+                "position_uuid": None,
+                "order_status": None,
+                "position_exists": False,
+                "closing_order_id": None,
+                "closing_order_status": None,
+                "contingency_order_id": None,
+                "contingency_order_status": None,
+                "conditionals_handled": False
+            },
+            "logging": {
+                "delta_atOpen": 0.0,
+                "theta_atOpen": 0.0,
+                "datetime_atOpen": None,
+                "price_atOpen": 0.0,
+                "premium_atOpen": 0.0,
+                "credit_received": 0.0,
+                "datetime_atClose": None,
+                "price_atClose": 0.0,
+                "premium_atClose": 0.0,
+                "close_type": None,
+                "close_condition": None,
+                "profit_pct_of_max": None,
+                "was_assigned": False
             },
             "creator": "auto"
         }
@@ -446,8 +939,8 @@ class AutoPlayCreator:
 
         return created_plays
 
-    def generate_play_name(self, option_symbol):
-        """Generate a play name following the standard convention with auto prefix and random suffix."""
+    def generate_play_name(self, option_symbol, prefix="AUTO"):
+        """Generate a play name following the standard convention with prefix and random suffix."""
         import random
         import string
         
@@ -457,18 +950,71 @@ class AutoPlayCreator:
         # Get current timestamp in the same format as play_creation_tool
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Combine components: AUTO_symbol_timestamp_randomsuffix
-        return f"AUTO_{option_symbol}_{timestamp}_{random_suffix}"
+        # Combine components: PREFIX_symbol_timestamp_randomsuffix
+        return f"{prefix}_{option_symbol}_{timestamp}_{random_suffix}"
+
+def select_strategy() -> StrategyType:
+    """Interactive strategy selection."""
+    print("\n" + "="*50)
+    print("SELECT STRATEGY")
+    print("="*50)
+    print("1. Option Swings (BTO/STC) - Buy calls/puts, long premium")
+    print("2. Momentum/Gap (BTO/STC) - Gap trading with auto-detection")
+    print("3. Short Puts (STO/BTC) - Sell puts, collect premium")
+    
+    while True:
+        choice = input("\nEnter strategy choice (1-3): ").strip()
+        if choice == '1':
+            return StrategyType.OPTION_SWINGS
+        elif choice == '2':
+            return StrategyType.MOMENTUM
+        elif choice == '3':
+            return StrategyType.SELL_PUTS
+        print("Invalid choice. Please enter 1, 2, or 3.")
+
+
+def select_momentum_playbook() -> MomentumPlaybook:
+    """Interactive playbook selection for momentum strategy."""
+    print("\n" + "="*50)
+    print("SELECT MOMENTUM PLAYBOOK")
+    print("="*50)
+    print("1. Gap Move - Trade WITH the gap direction")
+    print("   (Gap up → CALL, Gap down → PUT)")
+    print("2. Gap Fade - Trade AGAINST the gap direction")
+    print("   (Gap up → PUT, Gap down → CALL)")
+    print("3. Manual - No auto-entry, just create play structure")
+    
+    while True:
+        choice = input("\nEnter playbook choice (1-3): ").strip()
+        if choice == '1':
+            return MomentumPlaybook.GAP_MOVE
+        elif choice == '2':
+            return MomentumPlaybook.GAP_FADE
+        elif choice == '3':
+            return MomentumPlaybook.MANUAL
+        print("Invalid choice. Please enter 1, 2, or 3.")
+
 
 def main():
-    """Main function to create test plays."""
+    """Main function to create test plays with multi-strategy support."""
     try:
         creator = AutoPlayCreator()
         
-        # Present mode options
-        print("\nSelect execution mode:")
+        # Strategy selection
+        strategy = select_strategy()
+        creator.set_strategy(strategy)
+        
+        # Playbook selection for momentum
+        if strategy == StrategyType.MOMENTUM:
+            playbook = select_momentum_playbook()
+            creator.set_playbook(playbook)
+        
+        # Execution mode selection
+        print("\n" + "="*50)
+        print("SELECT EXECUTION MODE")
+        print("="*50)
         print("1. Pure Execution Testing (Entry at current market price)")
-        print("2. Simulate Real Plays")
+        print("2. Simulate Real Plays (with buffer for entry conditions)")
         print("3. OCO Peer Sets (simulate + mutual OCO across the set)")
         
         while True:
@@ -484,6 +1030,7 @@ def main():
         else:
             mode = "oco_peer_set"
         
+        # Number of plays
         while True:
             try:
                 num_plays = int(input("\nEnter number of test plays to create: "))
@@ -493,15 +1040,32 @@ def main():
             except ValueError:
                 print("Please enter a valid number.")
         
+        # Confirmation
+        print("\n" + "="*50)
+        print("CONFIRMATION")
+        print("="*50)
+        print(f"Strategy: {creator.get_strategy_display_name(strategy)}")
+        if strategy == StrategyType.MOMENTUM and creator.current_playbook:
+            print(f"Playbook: {creator.get_playbook_display_name(creator.current_playbook)}")
+        print(f"Mode: {mode}")
+        print(f"Number of plays: {num_plays}")
+        
+        confirm = input("\nProceed? (Y/N): ").strip().upper()
+        if confirm != 'Y':
+            print("Cancelled.")
+            return
+        
+        # Create plays
         created_plays = creator.create_test_plays(num_plays, mode)
         
-        display.info(f"\nCreated {len(created_plays)} test plays in {mode} mode:")
+        display.info(f"\nCreated {len(created_plays)} test plays:")
+        display.info(f"Strategy: {strategy.value}")
         for play in created_plays:
             display.info(f"- {play}")
             
     except Exception as e:
         display.error(f"Error in auto play creation: {e}")
-        logging.error(f"Error in auto play creation: {e}")
+        logging.error(f"Error in auto play creation: {e}", exc_info=True)
 
 if __name__ == "__main__":
     main()

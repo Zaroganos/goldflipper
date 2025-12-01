@@ -1,0 +1,117 @@
+{
+  "_template_info": {
+    "name": "Sell Puts Play Template",
+    "version": "1.0",
+    "description": "Template for cash-secured put selling plays. Uses STO/BTC order flow.",
+    "strategy": "sell_puts",
+    "created": "2025-11-30"
+  },
+  
+  "creator": "user or auto",
+  "play_name": "string",
+  "symbol": "string",
+  "strategy": "sell_puts",
+  "playbook": "default",
+  
+  "expiration_date": "MM/DD/YYYY",
+  "trade_type": "PUT",
+  "action": "STO",
+  "strike_price": 0.0,
+  "option_contract_symbol": "string",
+  "contracts": 1,
+  "play_expiration_date": "MM/DD/YYYY",
+  
+  "entry_point": {
+    "stock_price": 0.0,
+    "order_type": "limit_mid",
+    "entry_premium": 0.0,
+    "entry_stock_price": 0.0,
+    "target_delta": 0.30,
+    "target_dte": 45
+  },
+  
+  "take_profit": {
+    "TP_type": "Single",
+    "premium_pct": 50.0,
+    "order_type": "limit_mid",
+    "TP_option_prem": 0.0,
+    "trailing_config": {
+      "enabled": false
+    },
+    "trail_state": {
+      "current_trail_level": null,
+      "highest_favorable_price": null,
+      "last_update_timestamp": null,
+      "trail_activated": false
+    },
+    "trail_history": []
+  },
+  
+  "stop_loss": {
+    "SL_type": "LIMIT",
+    "premium_pct": 200.0,
+    "max_loss_multiple": 2.0,
+    "order_type": "market",
+    "SL_option_prem": 0.0,
+    "trailing_config": {
+      "enabled": false
+    },
+    "trail_state": {
+      "current_trail_level": null,
+      "highest_favorable_price": null,
+      "last_update_timestamp": null,
+      "breakeven_activated": false
+    },
+    "trail_history": []
+  },
+  
+  "management": {
+    "close_at_dte": 21,
+    "roll_if_itm": true,
+    "accept_assignment": false
+  },
+  
+  "collateral": {
+    "required": true,
+    "type": "cash",
+    "amount": 0.0,
+    "calculated": false
+  },
+  
+  "play_class": "SIMPLE",
+  "creation_date": "MM/DD/YYYY",
+  
+  "conditional_plays": {
+    "OCO_triggers": [],
+    "OTO_triggers": []
+  },
+  
+  "status": {
+    "play_status": "NEW",
+    "order_id": null,
+    "position_uuid": null,
+    "order_status": null,
+    "position_exists": false,
+    "closing_order_id": null,
+    "closing_order_status": null,
+    "contingency_order_id": null,
+    "contingency_order_status": null,
+    "conditionals_handled": false
+  },
+  
+  "logging": {
+    "delta_atOpen": 0.0,
+    "theta_atOpen": 0.0,
+    "datetime_atOpen": null,
+    "price_atOpen": 0.0,
+    "premium_atOpen": 0.0,
+    "credit_received": 0.0,
+    "datetime_atClose": null,
+    "price_atClose": 0.0,
+    "premium_atClose": 0.0,
+    "close_type": null,
+    "close_condition": null,
+    "profit_pct_of_max": null,
+    "was_assigned": false
+  }
+}

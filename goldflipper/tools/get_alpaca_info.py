@@ -5,10 +5,70 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from goldflipper.alpaca_client import get_alpaca_client
 from goldflipper.utils.display import TerminalDisplay as display
 import logging
-from datetime import datetime
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, Protocol, List, cast
 import json
+from alpaca.trading.client import TradingClient
 from goldflipper.config.config import config
+
+
+class OrderData(Protocol):
+    id: Any
+    status: str
+    filled_qty: Any
+    filled_avg_price: Any
+    created_at: Any
+    updated_at: Any
+    submitted_at: Any
+    filled_at: Any
+    expired_at: Any
+    canceled_at: Any
+    failed_at: Any
+    replaced_at: Any
+    replaced_by: Any
+    replaces: Any
+    symbol: str
+
+
+class PositionData(Protocol):
+    symbol: str
+    qty: Any
+    avg_entry_price: Any
+    current_price: Any
+    lastday_price: Any
+    unrealized_pl: Any
+    unrealized_plpc: Any
+    market_value: Any
+    cost_basis: Any
+
+
+class AccountData(Protocol):
+    status: str
+    buying_power: Any
+
+
+def _get_active_account_context() -> Tuple[str, str]:
+    """
+    Return the active account key and a friendly nickname for display.
+    Raises ValueError if the configuration is missing or malformed.
+    """
+    accounts = config.get('alpaca', 'accounts')
+    if not isinstance(accounts, dict):
+        raise ValueError("Alpaca accounts are not configured in settings.yaml")
+
+    active_account = config.get('alpaca', 'active_account')
+    if not isinstance(active_account, str) or not active_account:
+        raise ValueError("Active Alpaca account is not configured")
+
+    account_config = accounts.get(active_account)
+    if not isinstance(account_config, dict):
+        raise ValueError(f"Configuration for Alpaca account '{active_account}' is missing or invalid")
+
+    nickname = account_config.get('nickname')
+    if isinstance(nickname, str) and nickname.strip():
+        return active_account, nickname
+
+    # Fall back to a prettified version of the account key
+    return active_account, active_account.replace('_', ' ').title()
 
 def get_order_info(order_id: str) -> Optional[Dict[str, Any]]:
     """
@@ -21,14 +81,10 @@ def get_order_info(order_id: str) -> Optional[Dict[str, Any]]:
         Optional[Dict]: Order information including status, filled quantity, 
                        filled price, and other relevant details
     """
-    client = get_alpaca_client()
+    client = cast(TradingClient, get_alpaca_client())
     try:
-        # Get active account nickname for display
-        active_account = config.get('alpaca', 'active_account')
-        account_nickname = config.get('alpaca', 'accounts')[active_account].get('nickname', 
-                                   active_account.replace('_', ' ').title())
-        
-        order = client.get_order_by_id(order_id)
+        _, account_nickname = _get_active_account_context()
+        order = cast(OrderData, client.get_order_by_id(order_id))
         return {
             'account': account_nickname,  # Add account nickname to response
             'id': str(order.id),
@@ -46,6 +102,10 @@ def get_order_info(order_id: str) -> Optional[Dict[str, Any]]:
             'replaced_by': order.replaced_by,
             'replaces': order.replaces
         }
+    except ValueError as config_error:
+        logging.error(str(config_error))
+        display.error(str(config_error))
+        return None
     except Exception as e:
         logging.error(f"Error getting order info: {str(e)}")
         display.error(f"Error getting order info: {str(e)}")
@@ -62,9 +122,9 @@ def get_position_info(symbol: str) -> Optional[Dict[str, Any]]:
         Optional[Dict]: Position information including quantity, 
                        current price, and other relevant details
     """
-    client = get_alpaca_client()
+    client = cast(TradingClient, get_alpaca_client())
     try:
-        position = client.get_open_position(symbol)
+        position = cast(PositionData, client.get_open_position(symbol))
         return {
             'symbol': position.symbol,
             'qty': position.qty,
@@ -91,11 +151,11 @@ def get_all_orders(status: str = 'open') -> Optional[Dict[str, Dict[str, Any]]]:
     Returns:
         Optional[Dict]: Dictionary of order IDs mapping to their information
     """
-    client = get_alpaca_client()
+    client = cast(TradingClient, get_alpaca_client())
     try:
         # The new API doesn't use status as a parameter
         # Instead, we should filter the results after getting them
-        orders = client.get_orders()
+        orders: List[OrderData] = cast(List[OrderData], list(client.get_orders()))
         
         # Filter orders based on status parameter
         if status != 'all':
@@ -123,9 +183,9 @@ def get_all_positions() -> Optional[Dict[str, Dict[str, Any]]]:
     Returns:
         Optional[Dict]: Dictionary of symbols mapping to their position information
     """
-    client = get_alpaca_client()
+    client = cast(TradingClient, get_alpaca_client())
     try:
-        positions = client.get_all_positions()
+        positions: List[PositionData] = cast(List[PositionData], list(client.get_all_positions()))
         return {
             position.symbol: {
                 'qty': position.qty,
@@ -141,20 +201,24 @@ def get_all_positions() -> Optional[Dict[str, Dict[str, Any]]]:
         display.error(f"Error getting positions: {str(e)}")
         return None
 
-def test_alpaca_connection():
-    """Test the connection to Alpaca API and return debug info."""
-    from goldflipper.alpaca_client import get_alpaca_client
-    from goldflipper.config.config import config
-    client = get_alpaca_client()
-    active_account = config.get('alpaca', 'active_account')
-    account_nickname = config.get('alpaca', 'accounts')[active_account].get(
-        'nickname', active_account.replace('_', ' ').title()
-    )
-    
-    debug_message = f"[DEBUG] test_alpaca_connection() using active_account: '{active_account}'\n"
+def test_alpaca_connection() -> Tuple[bool, str]:
+    """Test the connection to the Alpaca API and return debug info."""
+    client = cast(TradingClient, get_alpaca_client())
     try:
-        account = client.get_account()
-        debug_message += f"[DEBUG] Returned account.status: {account.status}, buying power: {account.buying_power}"
+        active_account, account_nickname = _get_active_account_context()
+    except ValueError as config_error:
+        return False, f"[DEBUG] {config_error}"
+
+    debug_message = (
+        "[DEBUG] test_alpaca_connection() "
+        f"using active_account: '{active_account}' ({account_nickname})\n"
+    )
+    try:
+        account = cast(AccountData, client.get_account())
+        debug_message += (
+            "[DEBUG] Returned account.status: "
+            f"{account.status}, buying power: {account.buying_power}"
+        )
         return True, debug_message
     except Exception as e:
         debug_message += f"[DEBUG] test_alpaca_connection() failed with error: {str(e)}"
@@ -163,8 +227,11 @@ def test_alpaca_connection():
 def main():
     """Main function to test the Alpaca info retrieval functions"""
     # Test connection
-    if not test_alpaca_connection():
+    connection_ok, debug_message = test_alpaca_connection()
+    if not connection_ok:
+        display.error(debug_message)
         return
+    display.info(debug_message)
 
     # Define a standard separator length
     SEP_LENGTH = 50

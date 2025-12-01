@@ -31,6 +31,10 @@ class TradeLoggerUI:
         self.export_csv = tk.BooleanVar(value=True)
         self.export_excel = tk.BooleanVar(value=True)
         
+        # Strategy filter for multi-strategy support
+        self.strategy_filter = tk.StringVar(value="All")
+        self.available_strategies = ["All"]  # Will be populated from data
+        
         self.setup_ui()
         
     def setup_ui(self):
@@ -90,6 +94,24 @@ class TradeLoggerUI:
         ttk.Checkbutton(scope_frame, text="Include ALL folders (except Old)", 
                        variable=self.include_all_folders).pack(side=tk.LEFT, padx=(0, 10))
         
+        # Strategy filter dropdown (multi-strategy support)
+        filter_frame = ttk.Frame(options_frame)
+        filter_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(filter_frame, text="Strategy Filter:").pack(side=tk.LEFT, padx=(0, 10))
+        self.strategy_combo = ttk.Combobox(
+            filter_frame, 
+            textvariable=self.strategy_filter,
+            values=self.available_strategies,
+            state="readonly",
+            width=20
+        )
+        self.strategy_combo.pack(side=tk.LEFT, padx=5)
+        self.strategy_combo.bind("<<ComboboxSelected>>", self.on_strategy_filter_changed)
+        
+        # Update available strategies from data
+        self._update_strategy_list()
+        
         # Summary stats
         stats_frame = ttk.LabelFrame(main_frame, text="Summary Statistics", padding="5")
         stats_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
@@ -127,6 +149,26 @@ class TradeLoggerUI:
         except Exception as e:
             messagebox.showerror("Logger Error", f"Failed to update logger settings: {str(e)}")
 
+    def _update_strategy_list(self):
+        """Update the strategy dropdown with strategies from the current data."""
+        try:
+            strategies = self.logger.get_unique_strategies()
+            self.available_strategies = ["All"] + strategies
+            self.strategy_combo['values'] = self.available_strategies
+        except Exception as e:
+            # If no data or error, just keep "All"
+            self.available_strategies = ["All"]
+            self.strategy_combo['values'] = self.available_strategies
+
+    def on_strategy_filter_changed(self, event=None):
+        """Handle strategy filter selection change."""
+        # Find the stats frame and update it
+        for child in self.root.winfo_children():
+            for subchild in child.winfo_children():
+                if isinstance(subchild, ttk.LabelFrame) and "Statistics" in str(subchild.cget("text")):
+                    self.update_summary_stats(subchild)
+                    break
+
     def refresh_all_data(self, stats_frame):
         """Refresh all data by re-importing plays and updating statistics"""
         try:
@@ -152,6 +194,9 @@ class TradeLoggerUI:
             # Remove status message
             status_label.destroy()
             
+            # Update the strategy dropdown with new data
+            self._update_strategy_list()
+            
             # Update the summary statistics
             self.update_summary_stats(stats_frame)
             
@@ -169,30 +214,37 @@ class TradeLoggerUI:
             messagebox.showerror("Refresh Error", f"Failed to refresh data: {str(e)}")
 
     def update_summary_stats(self, frame):
-        """Update the statistics display"""
+        """Update the statistics display with optional strategy filter."""
         # Clear existing stats
         for widget in frame.winfo_children():
             widget.destroy()
             
         try:
-            # Get summary stats
-            stats_df = self.logger._create_summary_stats()
+            # Get current strategy filter
+            strategy_filter = self.strategy_filter.get()
             
-            # Display stats in a grid
-            ttk.Label(frame, text="Total Trades:").grid(row=0, column=0, padx=10, pady=5, sticky=tk.W)
-            ttk.Label(frame, text=str(stats_df['total_trades'].iloc[0])).grid(row=0, column=1, padx=10, pady=5, sticky=tk.W)
+            # Get summary stats (filtered by strategy if applicable)
+            stats_df = self.logger._create_summary_stats(strategy_filter=strategy_filter)
             
-            ttk.Label(frame, text="Winning Trades:").grid(row=0, column=2, padx=10, pady=5, sticky=tk.W)
-            ttk.Label(frame, text=str(stats_df['winning_trades'].iloc[0])).grid(row=0, column=3, padx=10, pady=5, sticky=tk.W)
+            # Show filter status in row 0
+            filter_text = f"Strategy: {strategy_filter}" if strategy_filter != "All" else "All Strategies"
+            ttk.Label(frame, text=filter_text, font=('', 9, 'italic')).grid(row=0, column=0, columnspan=4, padx=10, pady=2, sticky=tk.W)
             
-            ttk.Label(frame, text="Win Rate:").grid(row=1, column=0, padx=10, pady=5, sticky=tk.W)
-            ttk.Label(frame, text=f"{stats_df['win_rate'].iloc[0]:.2f}%").grid(row=1, column=1, padx=10, pady=5, sticky=tk.W)
+            # Display stats in a grid (shifted to row 1 and 2)
+            ttk.Label(frame, text="Total Trades:").grid(row=1, column=0, padx=10, pady=5, sticky=tk.W)
+            ttk.Label(frame, text=str(stats_df['total_trades'].iloc[0])).grid(row=1, column=1, padx=10, pady=5, sticky=tk.W)
             
-            ttk.Label(frame, text="Total P/L:").grid(row=1, column=2, padx=10, pady=5, sticky=tk.W)
+            ttk.Label(frame, text="Winning Trades:").grid(row=1, column=2, padx=10, pady=5, sticky=tk.W)
+            ttk.Label(frame, text=str(stats_df['winning_trades'].iloc[0])).grid(row=1, column=3, padx=10, pady=5, sticky=tk.W)
+            
+            ttk.Label(frame, text="Win Rate:").grid(row=2, column=0, padx=10, pady=5, sticky=tk.W)
+            ttk.Label(frame, text=f"{stats_df['win_rate'].iloc[0]:.2f}%").grid(row=2, column=1, padx=10, pady=5, sticky=tk.W)
+            
+            ttk.Label(frame, text="Total P/L:").grid(row=2, column=2, padx=10, pady=5, sticky=tk.W)
             pl_value = stats_df['total_pl'].iloc[0]
             pl_color = "green" if pl_value > 0 else "red" if pl_value < 0 else "black"
             pl_label = ttk.Label(frame, text=f"${pl_value:.2f}", foreground=pl_color)
-            pl_label.grid(row=1, column=3, padx=10, pady=5, sticky=tk.W)
+            pl_label.grid(row=2, column=3, padx=10, pady=5, sticky=tk.W)
             
         except Exception as e:
             ttk.Label(frame, text=f"Error loading stats: {str(e)}").grid(row=0, column=0, padx=10, pady=5)

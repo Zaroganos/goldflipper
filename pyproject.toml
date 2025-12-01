@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "goldflipper"
-version = "0.2.2"
+version = "0.2.3-beta"
 description = "A semi-autonomous options trading system on Alpaca."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
