@@ -15,7 +15,7 @@ import subprocess
 class TradeLoggerUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Goldflipper Trade Log")
+        self.root.title("Goldflipper Trading Log")
         self.root.geometry("600x450")  # Compact size after removing export history tab
         
         # Logger options
@@ -78,7 +78,7 @@ class TradeLoggerUI:
         backfill_frame = ttk.Frame(options_frame)
         backfill_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Checkbutton(backfill_frame, text="Enable Data Backfill (fetch missing Greeks from API)", 
+        ttk.Checkbutton(backfill_frame, text="Enable Data Backfill (fetch missing data e.g. Greeks via API)", 
                        variable=self.enable_backfill,
                        command=self.on_backfill_changed).pack(side=tk.LEFT, padx=(0, 10))
 

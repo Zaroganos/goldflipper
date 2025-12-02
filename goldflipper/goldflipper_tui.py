@@ -138,8 +138,8 @@ class WelcomeScreen(Screen):
         yield Footer()
 
     async def on_mount(self) -> None:
-        # Transition the welcome text after 3 seconds
-        self.set_timer(3, self.transition_to_status)
+        # Transition the welcome text after 2 seconds
+        self.set_timer(2, self.transition_to_status)
         # Update the connection status (and update periodically every 60 seconds)
         await self.update_connection_status()
         self.set_interval(60, lambda: self.call_later(self.update_connection_status))
@@ -247,7 +247,7 @@ class WelcomeScreen(Screen):
         """Fade out the welcome text then update it with trading system status."""
         welcome_widget = self.query_one("#welcome", Static)
         welcome_widget.add_class("faded")
-        self.set_timer(0.6, lambda: self.update_welcome_with_status(welcome_widget))
+        self.set_timer(0.5, lambda: self.update_welcome_with_status(welcome_widget))
 
     def update_welcome_with_status(self, widget: Static) -> None:
         from goldflipper.utils import trading_system_status
@@ -255,7 +255,7 @@ class WelcomeScreen(Screen):
         status_text = "[green]Trading System: Running[/green]" if is_running else "[red]Trading System: Not Running[/red]"
         widget.update(f" {status_text} ")
         widget.remove_class("faded")
-        self.set_interval(5, self.refresh_status_in_welcome)
+        self.set_interval(3, self.refresh_status_in_welcome)
 
     def refresh_status_in_welcome(self) -> None:
         from goldflipper.utils import trading_system_status
