@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 import pandas as pd
 from .base import MarketDataProvider
-import asyncio
 import logging
 
 class YFinanceProvider(MarketDataProvider):
@@ -26,44 +25,34 @@ class YFinanceProvider(MarketDataProvider):
         self._cache = {}  # Simple memory cache
         self.config_path = config_path
         
-    async def get_stock_price(self, symbol: str) -> float:
+    def get_stock_price(self, symbol: str) -> float:
         """Get current stock price"""
         try:
             ticker = yf.Ticker(symbol)
             
-            # Run the potentially blocking operations in a thread pool
-            loop = asyncio.get_event_loop()
-            
             # Try multiple methods in order of reliability
             try:
                 # Method 1: Fast info (most current)
-                price = await loop.run_in_executor(
-                    None,
-                    lambda: ticker.fast_info['lastPrice']
-                )
+                price = ticker.fast_info['lastPrice']
                 logging.info(f"YFinance: Using real-time price from fast_info for {symbol}")
-                return price
+                return float(price)
                 
             except (KeyError, AttributeError):
                 try:
                     # Method 2: Regular info
-                    price = await loop.run_in_executor(
-                        None,
-                        lambda: ticker.info['currentPrice']
-                    )
-                    logging.info(f"YFinance: Using currentPrice from stock.info for {symbol}")
-                    return price
+                    price = ticker.info.get('currentPrice') or ticker.info.get('regularMarketPrice')
+                    if price:
+                        logging.info(f"YFinance: Using currentPrice from stock.info for {symbol}")
+                        return float(price)
+                    raise KeyError("No price in info")
                     
                 except (KeyError, AttributeError):
                     # Method 3: Latest minute data
-                    history = await loop.run_in_executor(
-                        None,
-                        lambda: ticker.history(period='1d', interval='1m')
-                    )
+                    history = ticker.history(period='1d', interval='1m')
                     if not history.empty:
                         price = history['Close'].iloc[-1]
                         logging.info(f"YFinance: Using most recent minute data for {symbol}")
-                        return price
+                        return float(price)
                     else:
                         raise ValueError(f"No price data available for {symbol}")
                         

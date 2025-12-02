@@ -69,6 +69,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     - Runs the onboarding wizard on the very first launch.
     - Falls back to the existing configuration afterwards.
     - Starts the Textual TUI by default.
+    
+    Special exe-mode arguments:
+    - --trading-mode: Run the trading system directly (for spawned processes)
+    - --service-install: Install the Windows service
+    - --service-remove: Remove the Windows service
     """
     parser = argparse.ArgumentParser(description="Goldflipper Desktop Launcher")
     parser.add_argument(
@@ -86,8 +91,46 @@ def main(argv: Optional[list[str]] = None) -> int:
         action="store_true",
         help="Run the configuration wizard and exit without launching the TUI.",
     )
+    # Exe-mode special arguments
+    parser.add_argument(
+        "--trading-mode",
+        action="store_true",
+        help="Run the trading system directly (used when launching from exe TUI).",
+    )
+    parser.add_argument(
+        "--service-install",
+        action="store_true",
+        help="Install the Windows service (requires admin privileges).",
+    )
+    parser.add_argument(
+        "--service-remove",
+        action="store_true",
+        help="Remove the Windows service (requires admin privileges).",
+    )
     args = parser.parse_args(argv)
 
+    # Handle special exe-mode arguments
+    if args.trading_mode:
+        LOGGER.info("Trading mode requested; launching trading system directly.")
+        from goldflipper.run import run_trading_system
+        run_trading_system(console_mode=True)
+        return 0
+    
+    if args.service_install:
+        LOGGER.info("Service installation requested.")
+        import win32serviceutil
+        from goldflipper.run import GoldflipperService
+        win32serviceutil.HandleCommandLine(GoldflipperService, argv=['', '--startup', 'auto', 'install'])
+        return 0
+    
+    if args.service_remove:
+        LOGGER.info("Service removal requested.")
+        import win32serviceutil
+        from goldflipper.run import GoldflipperService
+        win32serviceutil.HandleCommandLine(GoldflipperService, argv=['', 'remove'])
+        return 0
+
+    # Normal TUI launch flow
     settings_created = False
     if not args.skip_setup:
         settings_created = _run_first_run_setup(force=args.force_setup)

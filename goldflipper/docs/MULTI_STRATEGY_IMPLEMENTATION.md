@@ -2,9 +2,9 @@
 
 **Document Created:** 2025-11-29  
 **Last Updated:** 2025-12-01  
-**Status:** Phase 6 In Progress - Strategy Implementation  
+**Status:** Phase 8 ✅ COMPLETE  
 **Breaking Changes:** None (fully additive, backward compatible)  
-**Current Phase:** Phase 6 (Strategy Implementation) - Momentum complete, Play tools next
+**Current Phase:** Production Validation
 
 ---
 
@@ -225,7 +225,7 @@ Wire the orchestrator into the main execution flow.
 | Create `run_multi.py` as new entry point | ✅ Done |
 | Update orchestrator to execute trades | ✅ Done |
 | Update `run.py` to use orchestrator | ✅ Done |
-| Test orchestrator with single strategy | 🔲 Pending |
+| Test orchestrator with single strategy | ✅ Done (2025-12-01) |
 | Test parallel execution mode | 🔲 Pending |
 | Deprecate direct `core.py` calls | 🔲 Pending |
 
@@ -236,12 +236,23 @@ Wire the orchestrator into the main execution flow.
 - Handles expired plays, pending plays, and trade execution
 - Falls back to legacy `monitor_plays_continuously()` if orchestrator fails (when `fallback_to_legacy: true`)
 
+**Live Testing Results (2025-12-01 - Paper Account):**
+- ✅ Orchestrator initialized with option_swings strategy
+- ✅ Entry evaluation: Correctly detected price within entry range
+- ✅ Entry execution: Market order submitted and filled ($2.76)
+- ✅ State transition: NEW → PENDING-OPENING → OPEN worked correctly
+- ✅ Exit evaluation: Take Profit condition detected
+- ✅ Exit execution: Limit sell order submitted ($2.64)
+- ✅ State transition: OPEN → PENDING-CLOSING worked correctly
+- ✅ Greeks/logging populated correctly (delta, theta, timestamps)
+- ⚠️ Bug fixed: `entry_strategy.buffer` config value was string, added float() cast
+
 **Validation Criteria:**
-- [ ] Single strategy mode works identically to current system
+- [x] Single strategy mode works identically to current system
 - [ ] Multiple strategies can run sequentially
 - [ ] Parallel mode doesn't cause race conditions
-- [ ] Market data caching works across strategies
-- [ ] All play state transitions work correctly
+- [x] Market data caching works across strategies
+- [x] All play state transitions work correctly
 
 ---
 
@@ -261,9 +272,9 @@ Wire the orchestrator into the main execution flow.
 | Implement `momentum.py` with real logic (gap moves) | P1 | ✅ Done |
 | Create playbooks for each strategy | P1 | ✅ Done (sell_puts, momentum) |
 | Add `playbook` field to play templates | P1 | ✅ Done |
-| Update Auto Play Creator for multi-strategy | P2 | 🔲 Pending |
-| Update CSV Ingestor for multi-strategy | P2 | 🔲 Pending |
-| Update original play creation tool | P2 | 🔲 Pending |
+| Update Auto Play Creator for multi-strategy | P2 | ✅ Done |
+| Update CSV Ingestor for multi-strategy | P2 | ✅ Done |
+| **Revamp Play Creator with Tkinter GUI** | P2 | 🔲 Pending |
 | Unit tests for orchestrator | P3 | 🔲 Pending |
 | Implement `spreads.py` with real logic | P4 | 🔲 Pending |
 | Implement `option_swings_auto.py` with real logic | P4 | 🔲 Pending |
@@ -360,37 +371,58 @@ Key additions to play templates:
 
 ---
 
-### Phase 7: Trade Logger & Analytics
+### Phase 7: Trade Logger & Analytics (COMPLETE 2025-12-01)
 
 | Task | Status |
 |------|--------|
-| Update trade logger for multi-strategy support | 🔲 Pending |
-| Update trade logger for multi-account support | 🔲 Pending |
-| Revamp trade logger GUI with filtering | 🔲 Pending |
-| Add strategy/account filter controls | 🔲 Pending |
+| Update trade logger for multi-strategy support | ✅ Complete |
+| Update trade logger GUI with filtering | ✅ Complete |
+| Add strategy filter controls | ✅ Complete |
+| Remove dead web dashboard code | ✅ Complete |
+| Simplify export history UI | ✅ Complete |
 
-**Trade Logger Requirements:**
-- Pull plays from all strategies and all accounts
-- GUI should allow user to filter by:
-  - Strategy type(s)
-  - Account(s)
-  - Date range
-  - Play status
+**Trade Logger Updates (2025-12-01):**
+- **trade_logger.py:**
+  - Added `strategy` and `action` columns to CSV schema
+  - `log_play()` extracts strategy/action from play data (defaults: option_swings, BTO)
+  - `get_unique_strategies()` returns list of strategies in log
+  - `_create_summary_stats()` accepts `strategy_filter` parameter
+  - Excel export includes Strategy and Action columns with friendly headers
+- **trade_logger_ui.py:**
+  - Removed non-existent web dashboard button (dead code)
+  - Removed over-prominent Export History tab
+  - Added Strategy Filter dropdown in Export Options
+  - Summary stats filter by selected strategy
+  - Strategy list updates on data refresh
+  - Added "Open Export Folder" button for quick access
+  - Reduced window size (600x400) for cleaner UI
+- Plays are pulled from all folders when "Include ALL folders" is checked
 - Continue using play files as source of truth (read `logging` section from each play)
-- Future: More sophisticated analytics (P&L by strategy, win rate, etc.)
 
 ---
 
-### Phase 8: Cleanup & Documentation
+### Phase 8: Cleanup & Documentation ✅ COMPLETE
 
 | Task | Status |
 |------|--------|
-| Remove deprecated code from `core.py` | 🔲 Pending |
-| Update `DEVELOPMENT.md` | 🔲 Pending |
-| Add strategy development guide | 🔲 Pending |
-| Update `README.md` | 🔲 Pending |
-| Add unit tests for orchestrator | 🔲 Pending |
-| Add dry-run mode for market-closed testing | 🔲 Pending |
+| Update TUI "Upkeep and Status" button | ✅ Complete (2025-12-01) |
+| Update TUI "Upload Template" to use multi-strategy ingestion | ✅ Complete (2025-12-01) |
+| Verify all TUI buttons work correctly | ✅ Complete (2025-12-01) |
+| Add unit tests for orchestrator | ✅ Complete (2025-12-01) |
+| Add dry-run mode for market-closed testing | ✅ Complete (2025-12-01) |
+| Review deprecated code in `core.py` | ✅ Complete (2025-12-01) - See `DEPRECATED_CODE_CANDIDATES.md` |
+| Update `DEVELOPMENT.md` | ✅ Complete (2025-12-01) |
+| Add strategy development guide | ✅ Complete (2025-12-01) - See `STRATEGY_DEVELOPMENT_GUIDE.md` |
+| Update `README.md` | ✅ Complete (2025-12-01) |
+
+**TUI Updates (2025-12-01):**
+- **Upkeep and Status** (`tools/system_status.py`): Enhanced to show:
+  - Strategy orchestrator status (enabled, mode, dry-run, fallback)
+  - Enabled strategies list
+  - Plays directory counts per folder
+  - Trading account status
+  - Warnings for dry-run mode or disabled orchestration
+- **Upload Template**: Now uses `play_csv_ingestion_multitool.py` (multi-strategy CSV ingestion)
 
 **Note:** Deprecated code cleanup should only happen AFTER the new system is confirmed working in production.
 
@@ -474,6 +506,7 @@ strategy_orchestration:
   mode: "sequential"             # "sequential" | "parallel"
   max_parallel_workers: 3        # Max concurrent when parallel
   fallback_to_legacy: true       # Use core.py if orchestrator fails
+  dry_run: false                 # Evaluate plays, log actions, skip actual orders
 
 momentum:
   enabled: false
@@ -575,7 +608,17 @@ The fallback mechanism ensures production stability during migration.
 | 2025-11-30 | 6 | Updated BaseStrategy | Added playbook loading methods (get_playbook_for_play, get_playbook_setting) |
 | 2025-12-01 | 6 | Implemented sell_puts.py | Full TastyTrade-style implementation (~600 lines) |
 | 2025-12-01 | 6 | sell_puts features | Entry evaluation, inverted TP/SL for short premium, DTE mgmt, ITM checks |
+| 2025-12-01 | 5 | **Live Testing Complete** | Full trade lifecycle tested on paper account |
+| 2025-12-01 | 5 | Entry test | Market order filled @ $2.76 for RKLB PUT |
+| 2025-12-01 | 5 | Exit test | TP condition triggered, limit sell @ $2.64 submitted |
+| 2025-12-01 | 5 | State transitions | NEW→PENDING-OPENING→OPEN→PENDING-CLOSING all working |
+| 2025-12-01 | 5 | Bug fix | Added float() cast for entry_strategy.buffer config |
 | 2025-11-30 | 6 | **Phase 6 Partial Complete** | Playbook schema + templates done, sell_puts done, other strategies pending |
+| 2025-12-01 | 8 | Created STRATEGY_DEVELOPMENT_GUIDE.md | Full guide for adding new strategies |
+| 2025-12-01 | 8 | Created DEPRECATED_CODE_CANDIDATES.md | Identified 14 thin wrappers + 1 unused function |
+| 2025-12-01 | 8 | Updated DEVELOPMENT.md | Added multi-strategy architecture section |
+| 2025-12-01 | 8 | Updated README.md | Added multi-strategy features, config examples |
+| 2025-12-01 | 8 | **Phase 8 Complete** | All documentation updated, ready for production validation |
 
 ---
 
@@ -746,6 +789,58 @@ If `action` is not specified, the strategy's default is used.
 
 ---
 
+## Revamped Manual Play Creation Tool
+
+TKINTER GUI PLAY CREATOR REQUIREMENTS (P2 - ✅ COMPLETE 2025-12-01):
+Purpose: Replace terminal-based play creation with modern point-and-click GUI
+Target file: goldflipper/tools/play_creator_gui.py (new)
+
+Core Features:
+1. **Strategy Selection Panel**
+   - Dropdown: option_swings, sell_puts, momentum, spreads
+   - Dynamic playbook dropdown updates based on strategy selection
+   - Strategy description/help text display
+
+2. **Symbol & Market Data Panel**
+   - Symbol entry with autocomplete
+   - Real-time price display (current, bid, ask)
+   - Gap info display for momentum (gap_pct, gap_type)
+   - Previous close and current price
+
+3. **Option Chain Browser**
+   - Expiration date selector (dropdown of available dates)
+   - Strike price grid with Greeks (delta, theta, IV, bid/ask)
+   - Filter by delta range, moneyness
+   - Click-to-select strike price
+   - Visual highlighting of ATM/ITM/OTM
+
+4. **Play Configuration Panel**
+   - Auto-populated from playbook defaults
+   - Editable fields: contracts, entry_price, TP%, SL%
+   - Trade type (CALL/PUT) auto-selected or override
+   - Order type dropdown (market, limit at bid, limit at mid, etc.)
+
+5. **Validation & Preview**
+   - Real-time validation of all fields
+   - Risk calculation preview (max loss, buying power required)
+   - Play JSON preview panel
+   - Warnings for unusual configurations
+
+6. **Actions**
+   - "Create Play" button (saves to plays/new/)
+   - "Save as Template" button
+   - "Load Template" button
+   - "Clear" button
+
+Technical Requirements:
+- Use tkinter with ttk for modern styling
+- Integrate with MarketDataManager for live data
+- Use PlaybookLoader for strategy defaults
+- Follow existing play JSON schema from templates
+- Support all strategies and playbooks
+
+---
+
 ## Handoff Prompt for Next AI Instance
 
 ```
@@ -753,6 +848,48 @@ CONTEXT: Goldflipper Multi-Strategy Implementation
 
 We're adding multi-strategy support to an options trading system. Phases 1-5 are COMPLETE.
 Trade Direction Model has been implemented (Phase 6 partial).
+
+**What's Working (Verified 2025-12-01):**
+- ✅ Orchestrator runs full trade lifecycle: NEW → OPEN → PENDING-CLOSING
+- ✅ Entry evaluation, order submission, position verification
+- ✅ Exit evaluation (TP/SL), closing order submission
+- ✅ All state transitions work correctly
+- ✅ Greeks/logging populated correctly
+- ✅ **Parallel execution mode** - Multiple strategies executing concurrently (2025-12-01)
+- ✅ **Dry-run mode** - Testing when market is closed (2025-12-01)
+
+**Active Position:**
+- RKLB251205P00042500 in `plays/pending-closing/` with limit sell @ $2.64 pending
+
+**Immediate Next Task:**
+Production Validation - Run with `fallback_to_legacy: false` and monitor for issues
+
+**Key Files:**
+- `strategy/orchestrator.py` - Main orchestration logic
+- `strategy/runners/option_swings.py` - Working strategy implementation
+- `strategy/shared/evaluation.py` - Entry/exit evaluation (bug fixed: float() cast line 186)
+- `config/settings.yaml` - strategy_orchestration.enabled: true for orchestrated mode
+
+**Play Creation Tools (All Updated for Multi-Strategy):**
+- `tools/auto_play_creator.py` - Terminal-based, multi-strategy support ✅
+- `tools/play_csv_ingestion_multitool.py` - CSV batch import ✅
+- `tools/play_creator_gui.py` - ✅ Tkinter GUI Play Creator (2025-12-01)
+
+**Remaining Work:**
+1. ✅ Build Tkinter GUI Play Creator (2025-12-01)
+2. ✅ Finish the Tkinter GUI Play Creator (2025-12-01)
+   - ✅ Multiple TP contract allocation UI - Dynamic form with TP%, contracts per level, auto-distribute
+   - ✅ OCO/OTO relationship setup - Parent play browser, trigger conditions, OCO peer list
+   - ✅ Dynamic TP/SL toggle (stub) - Framework for future dynamic pricing methods
+3. ✅ Test parallel execution mode (P2) - DONE 2025-12-01
+4. ✅ Unit tests for orchestrator (P3) - DONE 2025-12-01
+5. ✅ Implement spreads.py multi-leg support (P4) - DONE 2025-12-01
+6. ✅ Dry-run mode for market-closed testing - DONE 2025-12-01
+7. ✅ Phase 8 Documentation (2025-12-01):
+   - ✅ Created `STRATEGY_DEVELOPMENT_GUIDE.md`
+   - ✅ Created `DEPRECATED_CODE_CANDIDATES.md`
+   - ✅ Updated `DEVELOPMENT.md` with architecture
+   - ✅ Updated `README.md` with features
 
 KEY FILES TO READ FIRST:
 1. goldflipper/docs/MULTI_STRATEGY_IMPLEMENTATION.md - Full implementation plan (this file)
@@ -765,11 +902,11 @@ KEY FILES TO READ FIRST:
    - order_executor.py - Order placement helpers (483 lines)
    - __init__.py - Complete exports
 6. goldflipper/core.py - Now contains thin wrappers calling shared modules (Phase 2)
-7. goldflipper/strategy/runners/ - Strategy runner implementations (Phase 4)
-   - option_swings.py - Full implementation (~450 lines, BTO/STC)
+7. goldflipper/strategy/runners/ - Strategy runner implementations (Phase 4/6)
+   - option_swings.py - Full implementation (~450 lines, BTO/STC) ✅ TESTED
    - option_swings_auto.py - Stub (BTO/STC long premium)
-   - momentum.py - Stub (BTO/STC long premium)
-   - sell_puts.py - Stub (STO/BTC short premium)
+   - momentum.py - Full implementation with playbook-driven types (BTO/STC)
+   - sell_puts.py - Full TastyTrade-style implementation (~600 lines, STO/BTC)
    - spreads.py - Stub with SpreadType/SpreadLeg multi-leg support
 
 PHASE 1 COMPLETE (2025-11-29):
@@ -790,14 +927,18 @@ PHASE 3 COMPLETE (2025-11-30):
 - All have enabled: false by default
 
 PHASE 4 COMPLETE (2025-11-30):
-- strategy/runners/option_swings.py: Full BaseStrategy implementation
+- strategy/runners/option_swings.py: Full BaseStrategy implementation ✅ LIVE TESTED
   * evaluate_new_plays() - Entry condition evaluation
   * evaluate_open_plays() - Exit condition evaluation (TP/SL)
   * Delegates to shared modules for logic
   * Delegates to core.py for order execution (backward compat)
 - strategy/runners/option_swings_auto.py: Stub (returns empty lists)
 - strategy/runners/momentum.py: Full implementation with playbook-driven momentum types
+  * Supports: gap, squeeze, ema_cross, manual momentum types
+  * Playbooks: gap_move.yaml, gap_fade.yaml, default.yaml
 - strategy/runners/sell_puts.py: Full TastyTrade-style implementation (STO/BTC)
+  * ~600 lines with inverted TP/SL for short premium
+  * DTE management, ITM checks, delta targeting
 - strategy/runners/spreads.py: Stub with multi-leg support
 - All 5 strategies register correctly via StrategyRegistry.discover()
 
@@ -812,21 +953,24 @@ TRADE DIRECTION MODEL (2025-11-30):
 - OrderExecutor: create_entry_order(action=), create_exit_order(action=)
 - Play files can override via "action": "STO" field
 
-CURRENT STATE:
+CURRENT STATE (Updated 2025-12-01):
 - All infrastructure in place (Phases 1-5 complete)
+- **Phase 5 live testing COMPLETE** - Full trade lifecycle verified on paper account
 - Trade Direction Model implemented (OrderAction, PositionSide enums)
 - All strategy runners created with explicit order actions
 - No breaking changes - existing system continues working
-- strategy_orchestration.enabled: false means legacy mode
-- Awaiting market hours for Phase 5 live testing
+- strategy_orchestration.enabled: true activates orchestrated mode
 
-PHASE 5 COMPLETE (2025-11-30) - AWAITING MARKET TESTING:
-- run_multi.py: Created as standalone orchestrated entry point
-- run.py: Updated to use orchestrator when strategy_orchestration.enabled: true
-- orchestrator._execute_strategy(): Now executes trades via strategy.open_position() / close_position()
-- Handles expired plays, pending plays, and trade execution
-- Falls back to legacy mode if orchestrator fails (when fallback_to_legacy: true)
-- Both entry points start without errors (verified)
+PHASE 5 LIVE TESTING COMPLETE (2025-12-01 - Paper Account):
+- ✅ Orchestrator initialized with option_swings strategy
+- ✅ Entry evaluation: Correctly detected price within entry range ($40.61 in $40.41-$40.91)
+- ✅ Entry execution: Market order submitted and filled @ $2.76
+- ✅ State transition: NEW → PENDING-OPENING → OPEN worked correctly
+- ✅ Exit evaluation: Take Profit condition detected
+- ✅ Exit execution: Limit sell order submitted @ $2.64
+- ✅ State transition: OPEN → PENDING-CLOSING worked correctly
+- ✅ Greeks/logging populated correctly (delta, theta, timestamps, close_type)
+- ⚠️ Bug fixed: `entry_strategy.buffer` config value was string, added float() cast in evaluation.py
 
 The orchestrator is now wired into both run.py and run_multi.py.
 When strategy_orchestration.enabled: true:
@@ -837,10 +981,39 @@ When strategy_orchestration.enabled: true:
 5. Handles expired plays and pending plays
 6. Falls back to legacy mode if errors occur (configurable)
 
-REMAINING PHASE 5 TESTING (requires market hours):
-1. Test orchestrator with single strategy (option_swings enabled)
-2. Test parallel execution mode
-3. Verify play state transitions work correctly
+REMAINING PHASE 5 TESTING:
+1. ✅ Test orchestrator with single strategy (option_swings) - DONE
+2. ✅ Test parallel execution mode (multiple strategies simultaneously) - DONE 2025-12-01
+3. ✅ Verify play state transitions work correctly - DONE
+
+PARALLEL EXECUTION TESTING COMPLETE (2025-12-01):
+- ✅ Config: strategy_orchestration.mode: "parallel", max_parallel_workers: 3
+- ✅ Enabled strategies: option_swings + momentum for testing
+- ✅ Both strategies load correctly with ThreadPoolExecutor
+- ✅ Strategies evaluate plays concurrently (verified via timing/thread analysis)
+- ✅ Shared resources: All strategies share same MarketDataManager and TradingClient
+- ✅ Test file: `tests/test_parallel_execution.py` (4/4 tests pass)
+- Test results:
+  * Initialization: Parallel mode detected, 2 strategies loaded
+  * Timing: Parallel execution verified with overlapping strategy runs
+  * With Plays: Both option_swings and momentum evaluated test plays
+  * Shared Resources: Single MarketDataManager/TradingClient instance shared
+
+UNIT TESTS COMPLETE (2025-12-01):
+- ✅ `tests/test_orchestrator_unit.py` (16 tests pass)
+  * TestOrderAction: OrderAction enum values, from_string, is_opening/closing, is_long/short, get_closing_action
+  * TestPlayStatus: PlayStatus enum values
+  * TestPositionSide: from_order_action conversion
+  * TestOrchestratorInitialization: Default state, resource injection, disabled config
+  * TestOptionSwingsStrategy: Strategy name, config section, priority, is_long, play validation
+- ✅ `tests/test_strategy_evaluation.py` (12 tests pass)
+  * TestPriceLevelCalculations: CALL/PUT TP/SL stock price target calculations
+  * TestPremiumLevelCalculations: TP/SL premium target calculations
+  * TestOpeningStrategyEvaluation: Entry condition evaluation (at target, outside buffer, none price)
+  * TestClosingStrategyEvaluation: TP/SL triggered, hold position
+- Test execution: `python goldflipper/tests/test_orchestrator_unit.py`
+- Uses mocking to avoid live market/brokerage dependencies
+- All tests runnable without market hours or credentials
 
 PHASE 6 PROGRESS (2025-12-01):
 - ✅ Playbook schema and loader implemented
@@ -860,24 +1033,65 @@ PHASE 6 PROGRESS (2025-12-01):
     - Gap detection via calculate_gap_info() using market data manager
     - Trade type auto-selection based on gap direction and playbook
     - Strategy-specific play creation methods
-  * Multi-Strategy CSV Ingestion (tools/play_csv_ingestion_multi.py) created:
+  * Multi-Strategy CSV Ingestion (tools/play_csv_ingestion_multitool.py) created:
     - Auto-detects strategy from CSV content
     - Parses sell_puts and momentum CSV formats
     - Falls back to original ingestion for option_swings
     - Validates plays before saving
-- 🔲 spreads.py: Still a stub (multi-leg infrastructure in place)
+- ✅ spreads.py: Full multi-leg implementation (2025-12-01)
+  * SpreadType enum with all spread types (vertical, iron condor, butterfly, etc.)
+  * SpreadLeg class for individual leg management
+  * validate_play() - Validates legs array and spread_type
+  * _get_current_spread_value() - Calculates net value of multi-leg spread
+  * evaluate_new_plays() - Entry evaluation with stock price and net premium conditions
+  * evaluate_open_plays() - Exit evaluation with TP/SL by percentage and absolute targets
+  * Supports credit/debit spread P&L calculations
+  * Max profit percentage closing for credit spreads
 - 🔲 option_swings_auto.py: Still a stub (lower priority)
 
 NEXT PRIORITIES:
-1. **Market testing** - Test orchestrator with live market data:
-   - Single strategy mode (option_swings)
-   - Multiple strategies in parallel
-   - Verify play state transitions
-   - Test new play creation tools with real data
-2. **Update Trade Logger** - Pull from all strategies/accounts, add GUI filtering
-3. **Unit tests** - Test orchestrator and strategy logic without live market
-4. **Implement spreads.py** - Multi-leg spread support (P4)
-5. **Dry-run mode** (optional) - For testing when market is closed
+1. ✅ **Tkinter GUI Play Creator** - COMPLETE (2025-12-01):
+   - Modern point-and-click interface replacing terminal-based workflow
+   - Strategy selection dropdown (option_swings, sell_puts, momentum, spreads)
+   - Playbook selection based on chosen strategy
+   - Real-time market data integration (current price, gap %, option chain)
+   - Auto-populated fields based on strategy defaults
+   - Visual option chain browser with Greeks display
+   - Validation and preview before play creation
+   - Template save/load functionality
+   - Risk summary panel (max loss, max profit, buying power)
+   - ✅ Multiple TP contract allocation UI - Dynamic form for specifying contracts per TP level
+   - ✅ OCO/OTO relationship setup - Parent play browser, trigger conditions, OCO peers
+   - ✅ Dynamic TP/SL toggle (stub) - Framework for future dynamic pricing methods (STATIC vs DYNAMIC)
+   - File: `tools/play_creator_gui.py` (~2000 lines)
+   - Backend: `strategy/shared/evaluation.py` - `apply_dynamic_targets()` stub for future implementations
+   - ✅ **TUI Integration** - Wired into `goldflipper_tui.py` (2025-12-01)
+     * New "Play Creator GUI" button (green, top of left column)
+     * Launches Tkinter GUI as subprocess
+     * Coexists with legacy terminal tools
+2. ✅ **Test parallel execution mode** - COMPLETE (2025-12-01)
+   - Config: `strategy_orchestration.mode: "parallel"`
+   - Test: `tests/test_parallel_execution.py` - All 4 tests pass
+   - Strategies run concurrently via ThreadPoolExecutor
+3. ✅ **Unit tests** - COMPLETE (2025-12-01)
+   - `tests/test_orchestrator_unit.py` - 16 tests for enums, orchestrator, strategy
+   - `tests/test_strategy_evaluation.py` - 12 tests for evaluation functions
+   - Uses mocking to avoid live market/brokerage dependencies
+4. ✅ **Implement spreads.py** - COMPLETE (2025-12-01)
+   - Full multi-leg spread support with entry/exit evaluation
+   - SpreadType, SpreadLeg classes for multi-leg management
+   - Credit/debit spread P&L calculations
+   - Max profit percentage closing
+5. ✅ **Update Trade Logger** - COMPLETE (2025-12-01)
+   - Removed non-existent web dashboard button
+   - Removed over-prominent Export History tab
+   - Strategy filtering implemented and working
+   - "Include ALL folders" checkbox pulls from all play directories
+6. ✅ **Dry-run mode** - COMPLETE (2025-12-01)
+   - Config: `strategy_orchestration.dry_run: true`
+   - Evaluates plays normally, logs actions, but skips actual order execution
+   - Useful for testing when market is closed or validating configurations
+   - Test file: `tests/test_dry_run_mode.py`
 
 PLAY CREATION TOOL REQUIREMENTS (for momentum/gap plays) - ✅ IMPLEMENTED:
 - ✅ Detect pre-market gap using previous close vs current open/pre-market price
@@ -893,12 +1107,58 @@ PLAY CREATION TOOL REQUIREMENTS (for momentum/gap plays) - ✅ IMPLEMENTED:
   * fade_gap + gap down → CALL
 - ✅ Populate entry_point, take_profit, stop_loss from strategy defaults
 
+DYNAMIC TP/SL FRAMEWORK (2025-12-01):
+- **GUI:** Toggle checkbox in Advanced Options labeled "Dynamic TP/SL"
+- **Play JSON:** `TP_type: "DYNAMIC"` and `SL_type: "DYNAMIC"` with `dynamic_config`
+- **Backend:** `strategy/shared/evaluation.py` - `apply_dynamic_targets()` stub
+- **Current Status:** Stub only - no dynamic methods implemented yet
+- **Future Methods:** time_decay, iv_adjusted, model_v1, etc. can be added later
+- **Distinction:** STATIC = fixed targets at creation; DYNAMIC = recalculated based on configured method
+
+
+DRY-RUN MODE (2025-12-01):
+- **Config:** `strategy_orchestration.dry_run: true`
+- **Behavior:** 
+  - Evaluates plays normally (entry/exit conditions)
+  - Logs what actions WOULD be taken with `[DRY-RUN]` tag
+  - Skips actual order placement (no brokerage API calls)
+  - Skips play file state transitions
+- **Use Cases:**
+  - Testing when market is closed
+  - Validating play configurations before live trading
+  - Debugging strategy logic without risk
+  - Training/demo mode
+- **Logging Output Examples:**
+  - `[option_swings] [DRY-RUN] WOULD OPEN: SPY | Option: SPY251220C00500000 | Contracts: 1 | Entry: $2.50`
+  - `[option_swings] [DRY-RUN] WOULD CLOSE (TP): SPY | Option: SPY251220C00500000 | Contracts: 1 | Reason: TP hit`
+- **Test File:** `tests/test_dry_run_mode.py`
+- **Properties:**
+  - `orchestrator.is_dry_run` - Check if dry-run mode is active
+  - `orchestrator.get_status()['dry_run']` - Included in status output
+
 NEW FILES CREATED:
 - goldflipper/reference/API_Template_2025_ShortPuts.csv
 - goldflipper/reference/API_Template_2025_MomentumGap.csv
-- goldflipper/tools/play_csv_ingestion_multi.py
+- goldflipper/tools/play_csv_ingestion_multitool.py
+- goldflipper/tools/play_creator_gui.py (2025-12-01)
+- goldflipper/tests/test_orchestrator_unit.py (2025-12-01) - 16 unit tests
+- goldflipper/tests/test_strategy_evaluation.py (2025-12-01) - 12 unit tests
+- goldflipper/tests/test_dry_run_mode.py (2025-12-01) - Dry-run mode tests
+
+UPDATED FILES (2025-12-01):
+- goldflipper/strategy/runners/spreads.py:
+  * Converted from stub to full implementation (~690 lines)
+  * Added validate_play(), _get_current_spread_value()
+  * Added evaluate_new_plays() with stock price and net premium conditions
+  * Added evaluate_open_plays() with multi-leg TP/SL evaluation
+  * Credit/debit spread P&L calculations
+  * Max profit percentage closing for credit spreads
 
 UPDATED FILES:
+- goldflipper/goldflipper_tui.py (2025-12-01):
+  * Added "Play Creator GUI" button with `variant="success"`
+  * Added `run_gui_play_creator()` handler method
+  * Launches `tools/play_creator_gui.py` as subprocess
 - goldflipper/tools/auto_play_creator.py (added multi-strategy support)
 - goldflipper/trade_logging/trade_logger.py (multi-strategy support):
   * Added 'strategy' and 'action' columns to CSV schema
@@ -914,9 +1174,10 @@ UPDATED FILES:
 BUG FIXES:
   * Config values (entry_buffer, take_profit_pct, stop_loss_pct) were read as strings from YAML
   * Added explicit float()/int() casts in __init__ (lines 58-73) for all numeric config values
+  * (2025-12-01) entry_strategy.buffer config value was string - added float() cast in evaluation.py line 186
 
 KNOWN ISSUES:
-- Linter error due to incomplete type annotations in alpaca-py library.
+- Linter errors due to incomplete type annotations in alpaca-py library (runtime works fine)
 
 CRITICAL REQUIREMENTS:
 - Make all changes NON-BREAKING until validated
@@ -924,4 +1185,7 @@ CRITICAL REQUIREMENTS:
 - Test backward compatibility after each change
 - Use fallback_to_legacy: true for safety during transition
 - Only once the new system is confirmed working should the deprecated code be cleaned up.
+
+REMINDER:
+- Continue this work in the order the tasks are indicated
 ```

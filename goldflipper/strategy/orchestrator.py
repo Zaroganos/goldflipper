@@ -110,6 +110,7 @@ class StrategyOrchestrator:
         self._max_workers = 3
         self._fallback_enabled = True
         self._enabled = False
+        self._dry_run = False
         
         # Cycle tracking
         self._cycle_count = 0
@@ -142,6 +143,11 @@ class StrategyOrchestrator:
     def is_enabled(self) -> bool:
         """Check if orchestrator is enabled in config."""
         return self._enabled
+    
+    @property
+    def is_dry_run(self) -> bool:
+        """Check if orchestrator is in dry-run mode."""
+        return self._dry_run
     
     @property
     def cycle_count(self) -> int:
@@ -189,9 +195,10 @@ class StrategyOrchestrator:
             self.strategies.sort(key=lambda s: s.get_priority())
             
             self.state = OrchestratorState.INITIALIZED
+            dry_run_msg = " [DRY-RUN MODE]" if self._dry_run else ""
             self.logger.info(
                 f"Orchestrator initialized: {len(self.strategies)} strategies "
-                f"({self._execution_mode.value} mode)"
+                f"({self._execution_mode.value} mode){dry_run_msg}"
             )
             
             return True
@@ -215,10 +222,12 @@ class StrategyOrchestrator:
         
         self._max_workers = orch_config.get('max_parallel_workers', 3)
         self._fallback_enabled = orch_config.get('fallback_to_legacy', True)
+        self._dry_run = orch_config.get('dry_run', False)
         
         self.logger.debug(
             f"Orchestrator settings: enabled={self._enabled}, "
-            f"mode={self._execution_mode.value}, workers={self._max_workers}"
+            f"mode={self._execution_mode.value}, workers={self._max_workers}, "
+            f"dry_run={self._dry_run}"
         )
     
     def _initialize_resources(self) -> None:
@@ -301,7 +310,8 @@ class StrategyOrchestrator:
         self._last_cycle_time = datetime.now()
         cycle_errors = []
         
-        self.logger.info(f"Starting orchestrator cycle {self._cycle_count}")
+        dry_run_tag = " [DRY-RUN]" if self._dry_run else ""
+        self.logger.info(f"Starting orchestrator cycle {self._cycle_count}{dry_run_tag}")
         
         try:
             # Start new cache cycle for market data
@@ -466,6 +476,19 @@ class StrategyOrchestrator:
                 for play in plays_to_open:
                     play_file = play.get('_play_file', '')
                     symbol = play.get('symbol', 'unknown')
+                    option_symbol = play.get('option_symbol', '')
+                    contracts = play.get('contracts', 1)
+                    entry_price = play.get('entry_point', {}).get('target_price', 'N/A')
+                    
+                    # Dry-run mode: log but don't execute
+                    if self._dry_run:
+                        self.logger.info(
+                            f"[{name}] [DRY-RUN] WOULD OPEN: {symbol} | "
+                            f"Option: {option_symbol} | Contracts: {contracts} | "
+                            f"Entry: ${entry_price}"
+                        )
+                        continue
+                    
                     try:
                         self.logger.info(f"[{name}] Opening position for {symbol}")
                         if hasattr(strategy, 'open_position'):
@@ -491,8 +514,21 @@ class StrategyOrchestrator:
                 for play, close_conditions in plays_to_close:
                     play_file = play.get('_play_file', '')
                     symbol = play.get('symbol', 'unknown')
+                    option_symbol = play.get('option_symbol', '')
+                    contracts = play.get('contracts', 1)
+                    close_type = 'TP' if close_conditions.get('is_profit') else 'SL'
+                    close_reason = close_conditions.get('reason', 'unknown')
+                    
+                    # Dry-run mode: log but don't execute
+                    if self._dry_run:
+                        self.logger.info(
+                            f"[{name}] [DRY-RUN] WOULD CLOSE ({close_type}): {symbol} | "
+                            f"Option: {option_symbol} | Contracts: {contracts} | "
+                            f"Reason: {close_reason}"
+                        )
+                        continue
+                    
                     try:
-                        close_type = 'TP' if close_conditions.get('is_profit') else 'SL'
                         self.logger.info(f"[{name}] Closing position for {symbol} ({close_type})")
                         if hasattr(strategy, 'close_position'):
                             success = strategy.close_position(play, close_conditions, play_file)
@@ -746,6 +782,7 @@ class StrategyOrchestrator:
         return {
             'state': self.state.value,
             'enabled': self._enabled,
+            'dry_run': self._dry_run,
             'execution_mode': self._execution_mode.value,
             'strategy_count': len(self.strategies),
             'strategies': [

@@ -6,6 +6,11 @@ import sys
 import subprocess
 from pathlib import Path
 
+# Exe detection utility
+def is_frozen() -> bool:
+    """Check if running from compiled executable."""
+    return getattr(sys, 'frozen', False)
+
 class FirstRunSetup:
     def __init__(self):
         # Import TkinterDnD2 for drag and drop support
@@ -14,7 +19,7 @@ class FirstRunSetup:
             self.DND_FILES = DND_FILES  # Store for later use
             self.root = TkinterDnD.Tk()  # Use TkinterDnD.Tk() instead of tk.Tk()
         except ImportError:
-            print("TkinterDnD2 not found. Please install it using: pip install tkinterdnd2")
+            print("TkinterDnD2 not found. Please install it using: uv pip install tkinterdnd2")
             sys.exit(1)
         
         # Check if settings file already exists
@@ -38,7 +43,7 @@ class FirstRunSetup:
         self.main_frame.pack(expand=True, fill='both')
         
         # Welcome message
-        welcome_label = tk.Label(self.main_frame, text="Goldflipper Initial Setup Wizard", font=('Arial', 14, 'bold'))
+        welcome_label = tk.Label(self.main_frame, text="Goldflipper Setup Wizard", font=('Arial', 14, 'bold'))
         welcome_label.pack(pady=(0, 20))
         
         # If settings exist, show choice dialog first
@@ -272,18 +277,31 @@ class FirstRunSetup:
             if not os.path.exists(desktop):
                 os.makedirs(desktop, exist_ok=True)
             
-            # Get the package root directory (where goldflipper.ico and launch_goldflipper.bat are)
-            package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            icon_path = os.path.join(package_root, "goldflipper.ico")
+            # Determine target based on exe vs source mode
+            if is_frozen():
+                # Running from compiled exe - shortcut points to the exe
+                target_path = sys.executable
+                working_dir = os.path.dirname(sys.executable)
+                icon_path = os.path.join(working_dir, "goldflipper.ico")
+                # Fallback icon to exe itself if .ico not found
+                if not os.path.exists(icon_path):
+                    icon_path = sys.executable
+                description = "Launch Goldflipper"
+            else:
+                # Running from source - shortcut points to batch file
+                package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                target_path = os.path.join(package_root, "launch_goldflipper.bat")
+                working_dir = package_root
+                icon_path = os.path.join(package_root, "goldflipper.ico")
+                description = "Launch Goldflipper (Dev Mode)"
             
             shortcut_path = os.path.join(desktop, "Goldflipper.lnk")
-            target_path = os.path.join(package_root, "launch_goldflipper.bat")
             
             # Escape backslashes for PowerShell (double them)
             desktop_escaped = desktop.replace("\\", "\\\\")
             shortcut_path_escaped = shortcut_path.replace("\\", "\\\\")
             target_path_escaped = target_path.replace("\\", "\\\\")
-            package_root_escaped = package_root.replace("\\", "\\\\")
+            working_dir_escaped = working_dir.replace("\\", "\\\\")
             icon_path_escaped = icon_path.replace("\\", "\\\\")
             
             # Create shortcut using PowerShell with proper escaping
@@ -291,7 +309,7 @@ class FirstRunSetup:
 $desktop = "{desktop_escaped}"
 $shortcutPath = "{shortcut_path_escaped}"
 $targetPath = "{target_path_escaped}"
-$workingDir = "{package_root_escaped}"
+$workingDir = "{working_dir_escaped}"
 $iconPath = "{icon_path_escaped}"
 
 if (-not (Test-Path $desktop)) {{
@@ -302,16 +320,27 @@ $WshShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut($shortcutPath)
 $Shortcut.TargetPath = $targetPath
 $Shortcut.WorkingDirectory = $workingDir
-$Shortcut.Description = "Launch Goldflipper Classic"
+$Shortcut.Description = "{description}"
 if (Test-Path $iconPath) {{
     $Shortcut.IconLocation = $iconPath
 }}
 $Shortcut.Save()
 '''
             
-            # Use subprocess instead of os.system for better error handling
-            result = subprocess.run(['powershell', '-Command', ps_command], 
-                                 capture_output=True, text=True)
+            # Use subprocess with explicit pipes (capture_output can fail in GUI contexts)
+            # Also hide the PowerShell window with CREATE_NO_WINDOW flag
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps_command],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                startupinfo=startupinfo,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
             
             if result.returncode != 0:
                 error_msg = result.stderr.strip() if result.stderr else result.stdout.strip()
@@ -324,15 +353,31 @@ $Shortcut.Save()
             if not os.path.exists(desktop):
                 os.makedirs(desktop, exist_ok=True)
             
-            package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if is_frozen():
+                target_path = sys.executable
+                working_dir = os.path.dirname(sys.executable)
+            else:
+                package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                target_path = os.path.join(package_root, "launch_goldflipper.bat")
+                working_dir = package_root
+            
             shortcut_path = os.path.join(desktop, "Goldflipper.lnk")
-            target_path = os.path.join(package_root, "launch_goldflipper.bat")
             
             # Use simpler PowerShell command with raw strings
-            ps_command = f'$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut("{shortcut_path}"); $Shortcut.TargetPath = "{target_path}"; $Shortcut.WorkingDirectory = "{package_root}"; $Shortcut.Description = "Launch Goldflipper Classic"; $Shortcut.Save()'
+            ps_command = f'$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut("{shortcut_path}"); $Shortcut.TargetPath = "{target_path}"; $Shortcut.WorkingDirectory = "{working_dir}"; $Shortcut.Description = "Launch Goldflipper"; $Shortcut.Save()'
             
-            result = subprocess.run(['powershell', '-Command', ps_command], 
-                                 capture_output=True, text=True)
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps_command],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                startupinfo=startupinfo,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
             
             if result.returncode != 0:
                 error_msg = result.stderr.strip() if result.stderr else result.stdout.strip()

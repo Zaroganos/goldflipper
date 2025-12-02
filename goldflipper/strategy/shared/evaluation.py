@@ -5,6 +5,7 @@ This module provides centralized evaluation logic for trading strategies:
 - Opening condition evaluation (entry triggers)
 - Closing condition evaluation (TP/SL triggers)
 - Price level calculations for percentage-based targets
+- Dynamic TP/SL support (stub for future implementations)
 
 The module extracts and consolidates evaluation functions from core.py,
 maintaining backward compatibility while enabling strategy-specific handling.
@@ -14,7 +15,8 @@ Usage:
         evaluate_opening_strategy,
         evaluate_closing_strategy,
         calculate_and_store_price_levels,
-        calculate_and_store_premium_levels
+        calculate_and_store_premium_levels,
+        apply_dynamic_targets  # Stub for future dynamic TP/SL methods
     )
     
     # Check if entry conditions are met
@@ -28,10 +30,74 @@ Usage:
 """
 
 import logging
-from typing import Dict, Any, Optional
+from datetime import datetime
+from typing import Dict, Any, Optional, Tuple
 
 from goldflipper.config.config import config
 from goldflipper.utils.display import TerminalDisplay as display
+
+
+# ==================================================
+# Dynamic TP/SL Calculations (Stub for Future Methods)
+# ==================================================
+
+def apply_dynamic_targets(play: Dict[str, Any]) -> bool:
+    """
+    Apply dynamic TP/SL target adjustments to a play.
+    
+    This is a STUB for future dynamic pricing methods. Dynamic TP/SL allows
+    targets to be recalculated based on various factors such as:
+    - Time decay (theta)
+    - Implied volatility changes
+    - Market regime shifts
+    - Entry timing relative to play creation
+    - Custom model outputs
+    
+    The framework distinguishes between:
+    - STATIC: Fixed TP/SL levels calculated once at play creation
+    - DYNAMIC: TP/SL levels that can be recalculated based on configured methods
+    
+    Args:
+        play: Play data dictionary (modified in place)
+    
+    Returns:
+        True if adjustments were applied, False otherwise
+    
+    Note:
+        Currently returns False as no dynamic methods are implemented.
+        Future implementations will check play['take_profit']['TP_type'] == 'DYNAMIC'
+        and play['stop_loss']['SL_type'] == 'DYNAMIC', then apply the configured
+        dynamic_method (e.g., 'time_decay', 'iv_adjusted', 'model_v1', etc.).
+    """
+    take_profit = play.get('take_profit', {})
+    stop_loss = play.get('stop_loss', {})
+    
+    # Check if dynamic TP/SL is enabled
+    tp_is_dynamic = take_profit.get('TP_type') == 'DYNAMIC'
+    sl_is_dynamic = stop_loss.get('SL_type') == 'DYNAMIC'
+    
+    if not tp_is_dynamic and not sl_is_dynamic:
+        return False
+    
+    # Get dynamic method (stub - no methods implemented yet)
+    dynamic_method = take_profit.get('dynamic_method') or stop_loss.get('dynamic_method')
+    
+    if dynamic_method:
+        logging.info(f"Dynamic TP/SL requested with method '{dynamic_method}' - not yet implemented")
+    else:
+        logging.info("Dynamic TP/SL enabled but no method specified - using static targets")
+    
+    # Future: Implement dynamic methods here
+    # Example structure:
+    # if dynamic_method == 'time_decay':
+    #     return _apply_time_decay_adjustment(play)
+    # elif dynamic_method == 'iv_adjusted':
+    #     return _apply_iv_adjustment(play)
+    # elif dynamic_method == 'model_v1':
+    #     return _apply_model_v1(play)
+    
+    # Currently no methods implemented - return False
+    return False
 
 
 # ==================================================
@@ -182,8 +248,8 @@ def evaluate_opening_strategy(
     
     trade_type = play.get("trade_type", "").upper()
     
-    # Get buffer from config instead of hardcoding
-    buffer = config.get('entry_strategy', 'buffer', default=0.05)
+    # Get buffer from config instead of hardcoding (ensure float conversion)
+    buffer = float(config.get('entry_strategy', 'buffer', default=0.05))
     lower_bound = entry_point - buffer
     upper_bound = entry_point + buffer
     

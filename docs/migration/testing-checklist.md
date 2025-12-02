@@ -43,8 +43,11 @@
 - [ ] `dist/goldflipper.exe --help` runs on the build machine.
 - [ ] Executable on a clean Windows VM launches the first-run wizard when settings are absent.
 - [ ] After setup, the executable opens the TUI and accesses template/config files (no missing-file errors).
-- [ ] Included resources confirmed: `goldflipper/config`, `goldflipper/reference`, `goldflipper/tools/play-template.json`, `goldflipper.ico`.  
-  - **Deferred:** Per plan, Nuitka verification will be revisited after remaining checklist items are done.
+- [x] Included resources configured: `goldflipper/config`, `goldflipper/reference`, `goldflipper/tools/play-template.json`, `goldflipper.ico`.  
+  - 2025-12-01: Build scripts updated with multi-strategy resources:
+    * `goldflipper/tools/templates/` - Strategy-specific play templates (JSON)
+    * `goldflipper/strategy/playbooks/` - Strategy playbooks (YAML configs)
+  - **Deferred:** Actual build test pending (requires sufficient CPU/memory).
 
 ## Documentation & Scripts
 

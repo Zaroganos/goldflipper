@@ -16,12 +16,23 @@ ENTRY_POINT_CANDIDATES = [
     PROJECT_ROOT / "goldflipper" / "run.py",
 ]
 DATA_MAPPINGS = [
+    # Core config and reference data
     (PROJECT_ROOT / "goldflipper" / "config", "goldflipper/config"),
     (PROJECT_ROOT / "goldflipper" / "reference", "goldflipper/reference"),
-    (
-        PROJECT_ROOT / "goldflipper" / "tools" / "play-template.json",
-        "goldflipper/tools/play-template.json",
-    ),
+    
+    # Tools directory - all tool scripts and templates
+    (PROJECT_ROOT / "goldflipper" / "tools", "goldflipper/tools"),
+    
+    # Chart viewer module
+    (PROJECT_ROOT / "goldflipper" / "chart", "goldflipper/chart"),
+    
+    # Trade logging module  
+    (PROJECT_ROOT / "goldflipper" / "trade_logging", "goldflipper/trade_logging"),
+    
+    # Strategy playbooks (YAML configs for momentum, sell_puts, etc.)
+    (PROJECT_ROOT / "goldflipper" / "strategy" / "playbooks", "goldflipper/strategy/playbooks"),
+    
+    # Application icon
     (PROJECT_ROOT / "goldflipper.ico", "goldflipper.ico"),
 ]
 OUTPUT_DIR = PROJECT_ROOT / "dist"
@@ -64,9 +75,7 @@ def build() -> None:
         f"--output-dir={OUTPUT_DIR}",
         f"--output-filename={APP_NAME}",
         "--windows-console-mode=attach",
-        "--enable-console",
         "--lto=yes",
-        "--enable-plugin=anti-bloat",
         "--enable-plugin=tk-inter",
         # Modern Nuitka handles pywin32 automatically; no extra plugin flag
         "--follow-imports",

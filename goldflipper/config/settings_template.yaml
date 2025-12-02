@@ -105,6 +105,23 @@ paths:
 ####################################################################################################
 # Strategy Settings
 ####################################################################################################
+# ==========================================================================
+# Multi-Strategy Orchestration
+# ==========================================================================
+# The orchestrator coordinates execution of multiple trading strategies.
+# Set enabled: false to use legacy single-strategy mode (core.py directly).
+strategy_orchestration:
+  enabled: false                    # Master switch - set true to use multi-strategy mode
+  mode: "sequential"                # "sequential" | "parallel"
+  max_parallel_workers: 3           # Max concurrent strategies when mode=parallel
+  fallback_to_legacy: true          # Use core.py if orchestrator fails
+  dry_run: false                    # Dry-run mode: evaluate plays, log actions, but skip actual orders
+                                    # Useful for testing when market is closed or validating configurations
+
+# ==========================================================================
+# Individual Strategy Configurations
+# ==========================================================================
+
 options_swings:
   enabled: true
   entry_order_types:                      # Types of orders to use

@@ -171,10 +171,23 @@ python goldflipper\goldflipper_tui.py
 
 ### 🎯 **Trading System**
 - **Semi-autonomous options trading** with rules-based execution
+- **Multi-strategy support** (NEW): Run multiple trading strategies concurrently
 - **Advanced play management** with state-based workflow
 - **Multiple order types**: Market, limit at bid/ask/mid/last, contingency orders
 - **Risk management**: Take profit, stop loss, and contingency stop loss orders
 - **Real-time monitoring** with continuous play evaluation
+- **Dry-run mode**: Test strategies without executing orders
+
+### 🔄 **Multi-Strategy System** (NEW - 2025-12-01)
+- **Strategy Orchestrator**: Coordinate multiple strategies (sequential or parallel)
+- **Built-in strategies**:
+  - `option_swings` - Manual option swings (BTO/STC)
+  - `momentum` - Gap/momentum plays with playbook support
+  - `sell_puts` - Cash-secured puts (STO/BTC, TastyTrade-style)
+  - `spreads` - Multi-leg spread support
+- **Trade direction model**: Long (BTO→STC) and Short (STO→BTC) strategies
+- **Playbook system**: YAML-based strategy configuration
+- **Extensible**: Add new strategies via BaseStrategy interface
 
 ### 📊 **Market Data & Analysis**
 - **Multiple data providers** behind unified manager with automatic failover
@@ -184,14 +197,17 @@ python goldflipper\goldflipper_tui.py
 
 ### 🖥️ **User Experience**
 - **Text User Interface** built with Textual framework
+- **Play Creator GUI** (NEW): Tkinter-based visual play creation
 - **Console mode** for direct system interaction
-- **Trade logger** for analytics
+- **Trade logger** with multi-strategy filtering
 - **Windows service integration** for background operation
 
 ### 🔧 **Management Tools**
+- **Play Creator GUI** (NEW): Visual option chain browser with Greeks display
 - **Play creation tool** with guided setup and validation
 - **Play editing system** with safety protections for active trades
 - **Auto play creator** for automated bulk play generation
+- **Multi-strategy CSV ingestion** for batch imports
 - **System status monitoring** with health checks
 - **Configuration management** with YAML-based settings
 - **Data export capabilities** (CSV, Excel) for records and analysis
@@ -202,6 +218,7 @@ python goldflipper\goldflipper_tui.py
 - **State persistence** with automatic backup and recovery
 - **Error handling** with graceful degradation and retry logic
 - **Market hours validation** and holiday awareness
+- **Fallback to legacy mode** if orchestrator encounters issues
 
 
 ## Market Data Providers
@@ -237,6 +254,32 @@ market_data_providers:
     marketdataapp:
       enabled: true
       api_key: 'YOUR_MARKETDATAAPP_KEY'
+```
+
+### **Multi-Strategy Configuration** (NEW)
+```yaml
+# Strategy Orchestration (multi-strategy mode)
+strategy_orchestration:
+  enabled: true              # Enable multi-strategy orchestrator
+  mode: "sequential"         # or "parallel"
+  max_parallel_workers: 3    # For parallel mode
+  fallback_to_legacy: true   # Fall back to core.py if errors occur
+  dry_run: false             # Evaluate plays without executing orders
+
+# Individual strategy configurations
+options_swings:
+  enabled: true
+  entry_strategy:
+    buffer: 0.50             # Price tolerance for entry
+  exit_strategy:
+    take_profit_pct: 25
+    stop_loss_pct: 15
+
+momentum:
+  enabled: false             # Enable for gap momentum trades
+
+sell_puts:
+  enabled: false             # Enable for cash-secured puts
 ```
 
 ### **More Settings**
@@ -280,20 +323,30 @@ goldflipper/
 │   ├── old/                  # Archived plays
 │   └── temp/                 # Temporary/OSO plays
 ├── tools/                     # User-accessible toolkit
-│   ├── auto_play_creator.py  # Automated play generation (for testing purposes)
-│   ├── play_creation_tool.py # Interactive play creation
+│   ├── play_creator_gui.py   # Tkinter GUI play creator (NEW)
+│   ├── auto_play_creator.py  # Multi-strategy play generation
+│   ├── play_csv_ingestion_multitool.py # Multi-strategy CSV import (NEW)
+│   ├── play_creation_tool.py # Interactive play creation (legacy)
 │   ├── play-edit-tool.py     # Advanced play editing with safety features
 │   ├── view_plays.py         # Play viewing and management
 │   ├── option_data_fetcher.py # Options data retrieval
-│   ├── get_alpaca_info.py    # Alpaca account information
-│   ├── system_status.py      # System health monitoring
-│   ├── configuration.py      # Configuration management
-│   └── [multiple other tools] # JSON processing, CSV ingestion, etc.
+│   ├── system_status.py      # System health monitoring (enhanced)
+│   └── [multiple other tools] # JSON processing, etc.
 ├── utils/                     # General utility functions
 ├── watchdog/                  # System monitoring and health checks
 ├── state/                     # System state management and persistence
-├── strategy/                  # Trading strategy definitions
+├── strategy/                  # Multi-strategy system (NEW)
+│   ├── base.py               # BaseStrategy abstract class
+│   ├── orchestrator.py       # StrategyOrchestrator
+│   ├── registry.py           # Strategy discovery
+│   ├── shared/               # Shared utilities (evaluation, orders, plays)
+│   ├── runners/              # Strategy implementations
+│   └── playbooks/            # Strategy configuration files
 ├── reference/                 # Reference materials and templates
+├── docs/                      # Package documentation
+│   ├── MULTI_STRATEGY_IMPLEMENTATION.md # Full implementation guide
+│   ├── STRATEGY_DEVELOPMENT_GUIDE.md    # How to add strategies (NEW)
+│   └── DEPRECATED_CODE_CANDIDATES.md    # Migration notes (NEW)
 ├── src/                       # Windows Service code
 │   ├── service/              # Windows service integration
 │   └── state/                # State management components

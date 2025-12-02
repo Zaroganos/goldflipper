@@ -1,7 +1,5 @@
 import os
 import sys
-import json
-from datetime import datetime
 import pandas as pd
 
 # Add the project root to the Python path
@@ -12,14 +10,13 @@ from goldflipper.trade_logging.trade_logger import PlayLogger
 from goldflipper.utils.display import TerminalDisplay as display
 import tkinter as tk
 from tkinter import ttk, messagebox
-import webbrowser
 import subprocess
 
 class TradeLoggerUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Goldflipper Trade Logger")
-        self.root.geometry("800x600")  # Increased size to accommodate new features
+        self.root.title("Goldflipper Trade Log")
+        self.root.geometry("600x450")  # Compact size after removing export history tab
         
         # Logger options
         self.enable_backfill = tk.BooleanVar(value=True)
@@ -46,17 +43,15 @@ class TradeLoggerUI:
         main_frame.columnconfigure(0, weight=1)
         main_frame.rowconfigure(2, weight=1)
         
-        # Buttons frame
+        # Buttons frame - simplified (removed web dashboard which doesn't exist)
         button_frame = ttk.Frame(main_frame)
         button_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
-        button_frame.columnconfigure(2, weight=1)  # Make the last column expandable
+        button_frame.columnconfigure(1, weight=1)  # Make the last column expandable
         
-        ttk.Button(button_frame, text="View Web Dashboard", 
-                  command=self.launch_web_dashboard).grid(row=0, column=0, pady=5, padx=2)
         ttk.Button(button_frame, text="Export", 
-                  command=self.export_data).grid(row=0, column=1, pady=5, padx=2)
-        ttk.Button(button_frame, text="View Export History", 
-                  command=self.show_export_history).grid(row=0, column=2, pady=5, padx=2)
+                  command=self.export_data).grid(row=0, column=0, pady=5, padx=2)
+        ttk.Button(button_frame, text="Open Export Folder", 
+                  command=self.open_export_folder).grid(row=0, column=1, pady=5, padx=2, sticky=tk.W)
         
         # Export options frame
         options_frame = ttk.LabelFrame(main_frame, text="Export Options", padding="5")
@@ -117,17 +112,9 @@ class TradeLoggerUI:
         stats_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
         self.update_summary_stats(stats_frame)
         
-        # Create a notebook for tabs
-        self.notebook = ttk.Notebook(main_frame)
-        self.notebook.grid(row=3, column=0, sticky=(tk.N, tk.S, tk.E, tk.W), pady=5)
-        
-        # Tab for history
-        self.history_frame = ttk.Frame(self.notebook, padding="5")
-        self.notebook.add(self.history_frame, text="Export History")
-        
         # Refresh button
         ttk.Button(main_frame, text="Refresh Data", 
-                  command=lambda: self.refresh_all_data(stats_frame)).grid(row=4, column=0, pady=5)
+                  command=lambda: self.refresh_all_data(stats_frame)).grid(row=3, column=0, pady=5)
 
     def on_backfill_changed(self):
         """Handle backfill option change - recreate logger with new setting"""
@@ -249,99 +236,28 @@ class TradeLoggerUI:
         except Exception as e:
             ttk.Label(frame, text=f"Error loading stats: {str(e)}").grid(row=0, column=0, padx=10, pady=5)
 
-    def show_export_history(self):
-        """Show the export history in the history tab"""
-        # Clear existing content
-        for widget in self.history_frame.winfo_children():
-            widget.destroy()
-            
-        # Create a frame for the treeview
-        tree_frame = ttk.Frame(self.history_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Create scrollbar
-        scrollbar = ttk.Scrollbar(tree_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Create treeview
-        columns = ("Date", "Time", "CSV", "Excel", "Directory")
-        tree = ttk.Treeview(tree_frame, columns=columns, show="headings", yscrollcommand=scrollbar.set)
-        
-        # Configure scrollbar
-        scrollbar.config(command=tree.yview)
-        
-        # Set column headings
-        tree.heading("Date", text="Date")
-        tree.heading("Time", text="Time")
-        tree.heading("CSV", text="CSV")
-        tree.heading("Excel", text="Excel")
-        tree.heading("Directory", text="Directory")
-        
-        # Set column widths
-        tree.column("Date", width=100)
-        tree.column("Time", width=100)
-        tree.column("CSV", width=50)
-        tree.column("Excel", width=50)
-        tree.column("Directory", width=300)
-        
-        # Get export history
-        exports = self.logger.get_export_history()
-        
-        # Add data to treeview
-        for export in exports:
-            date_str = export["timestamp"].strftime("%Y-%m-%d")
-            time_str = export["timestamp"].strftime("%H:%M:%S")
-            csv_str = "✓" if export["csv_exists"] else "✗"
-            excel_str = "✓" if export["excel_exists"] else "✗"
-            dir_str = export["directory"]
-            
-            tree.insert("", tk.END, values=(date_str, time_str, csv_str, excel_str, dir_str))
-            
-        tree.pack(fill=tk.BOTH, expand=True)
-        
-        # Add context menu
-        self.create_context_menu(tree, exports)
-        
-        # Select the history tab
-        self.notebook.select(self.history_frame)
-        
-    def create_context_menu(self, tree, exports):
-        """Create right-click context menu for the export history"""
-        context_menu = tk.Menu(tree, tearoff=0)
-        
-        def open_csv():
-            selected = tree.selection()
-            if selected:
-                index = tree.index(selected[0])
-                if index < len(exports) and exports[index]["csv_exists"]:
-                    self.open_file(exports[index]["csv_path"])
-                    
-        def open_excel():
-            selected = tree.selection()
-            if selected:
-                index = tree.index(selected[0])
-                if index < len(exports) and exports[index]["excel_exists"]:
-                    self.open_file(exports[index]["excel_path"])
-                    
-        def open_directory():
-            selected = tree.selection()
-            if selected:
-                index = tree.index(selected[0])
-                if index < len(exports):
-                    self.open_directory(exports[index]["directory"])
-        
-        context_menu.add_command(label="Open CSV", command=open_csv)
-        context_menu.add_command(label="Open Excel", command=open_excel)
-        context_menu.add_command(label="Open Directory", command=open_directory)
-        
-        def show_context_menu(event):
-            # Select row under mouse
-            item = tree.identify_row(event.y)
-            if item:
-                tree.selection_set(item)
-                context_menu.post(event.x_root, event.y_root)
-                
-        tree.bind("<Button-3>", show_context_menu)  # Right-click
+    def open_export_folder(self):
+        """Open the export logs folder in file explorer"""
+        try:
+            log_dir = self.logger.log_directory
+            if os.path.exists(log_dir):
+                self._open_path(log_dir)
+            else:
+                messagebox.showinfo("Info", f"Export folder does not exist yet:\n{log_dir}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open export folder: {str(e)}")
+
+    def _open_path(self, path):
+        """Open a file or directory with the default application"""
+        try:
+            if sys.platform == 'win32':
+                os.startfile(path)
+            elif sys.platform == 'darwin':  # macOS
+                subprocess.call(['open', path])
+            else:  # Linux
+                subprocess.call(['xdg-open', path])
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open: {str(e)}")
         
     def open_file(self, file_path):
         """Open a file with the default application"""
@@ -357,22 +273,7 @@ class TradeLoggerUI:
             
     def open_directory(self, dir_path):
         """Open a directory in the file explorer"""
-        try:
-            if sys.platform == 'win32':
-                os.startfile(dir_path)
-            elif sys.platform == 'darwin':  # macOS
-                subprocess.call(['open', dir_path])
-            else:  # Linux
-                subprocess.call(['xdg-open', dir_path])
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to open directory: {str(e)}")
-
-    def launch_web_dashboard(self):
-        try:
-            self.logger.launch_web_interface()
-            webbrowser.open('http://localhost:8050')
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to launch dashboard: {str(e)}")
+        self._open_path(dir_path)
 
     def export_data(self):
         """Export data based on selected format options"""
@@ -420,10 +321,6 @@ class TradeLoggerUI:
                 
             messagebox.showinfo("Export Successful", message)
             
-            # Refresh the export history if it's visible
-            if hasattr(self, 'history_frame') and self.notebook.index(self.notebook.select()) == 0:
-                self.show_export_history()
-                
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export files: {str(e)}")
 
