@@ -29,6 +29,8 @@ from typing import Dict, List, Optional, Any, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import Enum
 
+from goldflipper.utils.exe_utils import get_plays_dir
+
 from goldflipper.strategy.base import BaseStrategy, PlayStatus
 from goldflipper.strategy.registry import StrategyRegistry
 
@@ -428,16 +430,130 @@ class StrategyOrchestrator:
         
         return errors
     
+    def _display_play_cards(self, strategy: BaseStrategy) -> None:
+        """
+        Display play cards with market data for all play types.
+        
+        Shows formatted cards for new, open, pending-opening, and pending-closing plays
+        with current stock price and option premium data.
+        
+        Args:
+            strategy: Strategy instance
+        """
+        from goldflipper.utils.display import TerminalDisplay as display
+        from goldflipper.json_parser import load_play
+        
+        self.logger.debug(f"_display_play_cards called for strategy: {strategy.get_name()}")
+        display.info(f"Loading play cards for {strategy.get_name()}...")
+        
+        # Map folder names to PlayStatus enum values
+        play_type_map = {
+            'new': PlayStatus.NEW,
+            'open': PlayStatus.OPEN,
+            'pending-opening': PlayStatus.PENDING_OPENING,
+            'pending-closing': PlayStatus.PENDING_CLOSING,
+        }
+        
+        for play_type, status_enum in play_type_map.items():
+            try:
+                play_dir = strategy.get_plays_dir(status_enum)
+            except Exception as e:
+                self.logger.debug(f"Could not get plays dir for {play_type}: {e}")
+                continue
+            
+            if not os.path.exists(play_dir):
+                self.logger.debug(f"Play dir does not exist: {play_dir}")
+                continue
+            
+            try:
+                play_files = [f for f in os.listdir(play_dir) if f.endswith('.json')]
+                if play_files:
+                    display.info(f"  Found {len(play_files)} {play_type} play(s)")
+                
+                for filename in play_files:
+                    filepath = os.path.join(play_dir, filename)
+                    play = load_play(filepath)
+                    
+                    if not play:
+                        continue
+                    
+                    try:
+                        # Get current stock price
+                        current_price = self._market_data.get_stock_price(play['symbol'])
+                        if current_price is None or current_price <= 0:
+                            self.logger.error(f"Could not get valid share price for {play['symbol']}")
+                            continue
+                        
+                        # Get current option data
+                        option_symbol = play.get('option_contract_symbol')
+                        if not option_symbol:
+                            continue
+                        
+                        option_data = self._market_data.get_option_quote(option_symbol)
+                        if option_data is None:
+                            self.logger.error(f"Could not get option data for {option_symbol}")
+                            continue
+                        
+                        # Log detailed data
+                        self.logger.info(
+                            f"Play data for {play['symbol']}: Type={play_type}, "
+                            f"Strike=${play.get('strike_price')}, Exp={play.get('expiration_date')}, "
+                            f"Stock=${current_price:.2f}, Bid=${option_data['bid']:.2f}, "
+                            f"Ask=${option_data['ask']:.2f}"
+                        )
+                        
+                        # Display formatted play card
+                        play_name = play.get('play_name', 'N/A')
+                        border = "+" + "-" * 60 + "+"
+                        display.status(border, show_timestamp=False)
+                        display.status(f"|{play_name:^60}|", show_timestamp=False)
+                        display.status(border, show_timestamp=False)
+                        display.status(
+                            f"Play: {play['symbol']} {play.get('trade_type', 'N/A')} "
+                            f"{play.get('strike_price', 'N/A')} Strike {play.get('expiration_date', 'N/A')} Expiration"
+                        )
+                        
+                        # Map play types to display methods
+                        status_display = {
+                            'new': display.info,
+                            'pending-opening': display.info,
+                            'open': display.success,
+                            'pending-closing': display.warning,
+                        }
+                        display_method = status_display.get(play_type.lower(), display.status)
+                        
+                        play_status = play.get('status', {}).get('play_status')
+                        play_expiration_date = play.get('play_expiration_date')
+                        
+                        status_msg = f"Status: [{play_type}]"
+                        if play_expiration_date and play_status in ('TEMP', 'NEW'):
+                            status_msg = f"Status: [{play_type}], Play expires: {play_expiration_date}"
+                        
+                        display_method(status_msg, show_timestamp=False)
+                        display.price(f"Stock price: ${current_price:.2f}")
+                        display.price(
+                            f"Option premium: Bid ${option_data['bid']:.2f} "
+                            f"Ask ${option_data['ask']:.2f} Last ${option_data.get('premium', option_data.get('last', 0)):.2f}"
+                        )
+                        display.status(border, show_timestamp=False)
+                        
+                    except Exception as e:
+                        self.logger.error(f"Error displaying play card for {filepath}: {e}")
+                        
+            except Exception as e:
+                self.logger.error(f"Error listing plays in {play_dir}: {e}")
+    
     def _execute_strategy(self, strategy: BaseStrategy) -> None:
         """
         Execute a single strategy's full evaluation cycle.
         
         This method:
-        1. Loads plays for this strategy
-        2. Handles expired plays
-        3. Manages pending plays (pending-opening, pending-closing)
-        4. Evaluates new plays for entry conditions and opens positions
-        5. Evaluates open plays for exit conditions and closes positions
+        1. Displays play cards for all play types
+        2. Loads plays for this strategy
+        3. Handles expired plays
+        4. Manages pending plays (pending-opening, pending-closing)
+        5. Evaluates new plays for entry conditions and opens positions
+        6. Evaluates open plays for exit conditions and closes positions
         
         Args:
             strategy: Strategy instance to execute
@@ -446,6 +562,10 @@ class StrategyOrchestrator:
         self.logger.debug(f"Executing strategy: {name}")
         
         try:
+            # Display play cards with market data for all play types
+            if self._market_data is not None:
+                self._display_play_cards(strategy)
+            
             # Get play directories
             new_dir = strategy.get_plays_dir(PlayStatus.NEW)
             open_dir = strategy.get_plays_dir(PlayStatus.OPEN)
@@ -604,9 +724,8 @@ class StrategyOrchestrator:
         try:
             from goldflipper.core import manage_pending_plays
             
-            plays_dir = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), '..', 'plays')
-            )
+            # Use exe-aware path for plays directory
+            plays_dir = str(get_plays_dir())
             manage_pending_plays(plays_dir)
             
         except Exception as e:

@@ -13,11 +13,21 @@ import asyncio  # Added for asyncio.to_thread
 import threading
 import importlib
 
+# Import Nuitka-aware utilities from exe_utils
+from goldflipper.utils.exe_utils import is_frozen, get_settings_path
 
-def is_frozen() -> bool:
-    """Check if running from compiled executable."""
-    return getattr(sys, 'frozen', False)
-
+def get_exe_path() -> str:
+    """
+    Get the path to the actual executable.
+    
+    CRITICAL: In Nuitka onefile mode, sys.executable points to python.exe
+    inside the temp extraction directory, NOT to the original exe!
+    Use sys.argv[0] which contains the actual exe path.
+    """
+    exe_path = sys.argv[0]
+    if not os.path.isabs(exe_path):
+        exe_path = os.path.abspath(exe_path)
+    return exe_path
 
 def run_tool_in_thread(module_name: str, entry_func: str = "main") -> None:
     """
@@ -43,7 +53,6 @@ def run_tool_in_thread(module_name: str, entry_func: str = "main") -> None:
     
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
-
 
 class ConfirmationScreen(Screen):
     BINDINGS = [("q", "quit", "Cancel")]
@@ -71,18 +80,18 @@ class WelcomeScreen(Screen):
         yield Header()
         
         # Use the global flag from config module to determine if settings file was just created
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        settings_path = os.path.join(current_dir, 'config', 'settings.yaml')
+        # Use exe-aware path for settings
+        settings_path = str(get_settings_path())
         
         # Set button variants based on whether settings were just created
         launch_variant = "primary" if settings_just_created else "success"
         config_variant = "success" if settings_just_created else "primary"
         
         # Debug print to confirm path and existence
-        print(f"\n\nDEBUG: Settings path: {settings_path}")
+        print(f"\n\nDEBUG: Settings path (exe-aware): {settings_path}")
         print(f"DEBUG: Settings exists: {os.path.exists(settings_path)}")
         print(f"DEBUG: Settings just created: {settings_just_created}")
-        print(f"DEBUG: Current directory: {current_dir}\n\n")
+        print(f"DEBUG: is_frozen: {is_frozen()}\n\n")
         
         # Determine active account to show its nickname as the prompt if available.
         active_prompt = "Select Trading Account"
@@ -184,8 +193,8 @@ class WelcomeScreen(Screen):
 
         active_account_config = config.get('alpaca', 'active_account')
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        settings_path = os.path.join(current_dir, 'config', 'settings.yaml')
+        # Use exe-aware settings path
+        settings_path = str(get_settings_path())
         try:
             with open(settings_path, 'r') as file:
                 file_config = yaml.safe_load(file)
@@ -266,16 +275,14 @@ class WelcomeScreen(Screen):
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle account selection changes"""
-        import os
         import asyncio
 
         selected_account = event.value
         accounts = config.get('alpaca', 'accounts')
         nickname = accounts[selected_account].get('nickname', selected_account.replace('_', ' ').title())
 
-        # Get the path to settings.yaml
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        settings_path = os.path.join(current_dir, 'config', 'settings.yaml')
+        # Use exe-aware settings path
+        settings_path = str(get_settings_path())
 
         # Read the file content as lines and update the active_account.
         with open(settings_path, 'r') as file:
@@ -380,19 +387,21 @@ class WelcomeScreen(Screen):
 
         def perform_action():
             if is_frozen():
-                # Running from exe - use exe path for service commands
-                exe_path = sys.executable.replace("\\", "\\\\")
+                # Running from exe - use sys.argv[0] (not sys.executable!) for service commands
+                # In Nuitka onefile, sys.executable points to python.exe in temp dir
+                exe_path = get_exe_path().replace("\\", "\\\\")
                 if mode == "install":
                     final_command = f'& "{exe_path}" --service-install; Start-Sleep -Seconds 2; net start GoldflipperService'
                 else:
                     final_command = f'net stop GoldflipperService; & "{exe_path}" --service-remove'
             else:
                 if mode == "install":
-                    final_command = (
-                        "python -m goldflipper.run --mode install; Start-Sleep -Seconds 2; net start GoldflipperService"
-                    )
+                    # Source mode - use sys.executable path
+                    python_path = sys.executable.replace('\\', '\\\\')
+                    final_command = f'& "{python_path}" -m goldflipper.run --mode install; Start-Sleep -Seconds 2; net start GoldflipperService'
                 else:
-                    final_command = "net stop GoldflipperService; python -m goldflipper.run --mode remove"
+                    python_path = sys.executable.replace('\\', '\\\\')
+                    final_command = f'net stop GoldflipperService; & "{python_path}" -m goldflipper.run --mode remove'
             ps_command = f"Start-Process powershell -ArgumentList '-NoProfile -Command \"{final_command}\"' -Verb RunAs"
             subprocess.Popen(["powershell", "-Command", ps_command])
             self.notify(f"{'Uninstallation' if service_installed else 'Installation'} initiated. Changes will require a reboot to apply.")
@@ -408,10 +417,9 @@ class WelcomeScreen(Screen):
                 current_dir = os.path.dirname(os.path.abspath(__file__))
                 tools_dir = os.path.join(current_dir, "tools")
                 if os.name == 'nt':  # Windows
-                    cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'option_data_fetcher.py']
-                    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen([sys.executable, os.path.join(tools_dir, 'option_data_fetcher.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:  # Unix-like systems
-                    subprocess.Popen(['gnome-terminal', '--', 'python', 'option_data_fetcher.py'], cwd=tools_dir)
+                    subprocess.Popen(['gnome-terminal', '--', sys.executable, 'option_data_fetcher.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -424,10 +432,9 @@ class WelcomeScreen(Screen):
                 current_dir = os.path.dirname(os.path.abspath(__file__))
                 tools_dir = os.path.join(current_dir, "tools")
                 if os.name == 'nt':
-                    cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'play_creation_tool.py']
-                    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen([sys.executable, os.path.join(tools_dir, 'play_creation_tool.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
-                    subprocess.Popen(['gnome-terminal', '--', 'python', 'play_creation_tool.py'], cwd=tools_dir)
+                    subprocess.Popen(['gnome-terminal', '--', sys.executable, 'play_creation_tool.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -436,48 +443,48 @@ class WelcomeScreen(Screen):
             if is_frozen():
                 # Running from exe - launch the trading system in a new process
                 # using the same exe with a special argument
+                # CRITICAL: Use get_exe_path() not sys.executable (wrong in Nuitka onefile)
                 if os.name == 'nt':
                     # Launch new instance of exe for trading system
-                    subprocess.Popen([sys.executable, '--trading-mode'], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen([get_exe_path(), '--trading-mode'], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 self.notify("Trading System launched", severity="information")
             else:
                 if os.name == 'nt':
-                    cmd = ['cmd', '/k', 'python', '-m', 'goldflipper.run']
-                    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen([sys.executable, '-m', 'goldflipper.run'], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
-                    subprocess.Popen(['gnome-terminal', '--', 'python', '-m', 'goldflipper.run'])
+                    subprocess.Popen(['gnome-terminal', '--', sys.executable, '-m', 'goldflipper.run'])
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
     def run_view_plays(self):
         try:
             if is_frozen():
-                run_tool_in_thread("goldflipper.tools.view_plays")
+                # view_plays is a Textual app - MUST run as subprocess, not in-thread
+                # Two Textual apps cannot run in the same process
+                subprocess.Popen([get_exe_path(), '--tool', 'view_plays'], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 self.notify("View Plays launched", severity="information")
             else:
                 current_dir = os.path.dirname(os.path.abspath(__file__))
                 tools_dir = os.path.join(current_dir, "tools")
                 if os.name == 'nt':
-                    cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'view_plays.py']
-                    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen([sys.executable, os.path.join(tools_dir, 'view_plays.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
-                    subprocess.Popen(['gnome-terminal', '--', 'python', 'view_plays.py'], cwd=tools_dir)
+                    subprocess.Popen(['gnome-terminal', '--', sys.executable, 'view_plays.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
     def run_system_status(self):
         try:
             if is_frozen():
-                run_tool_in_thread("goldflipper.tools.system_status")
+                subprocess.Popen([get_exe_path(), '--tool', 'system_status'], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 self.notify("System Status launched", severity="information")
             else:
                 current_dir = os.path.dirname(os.path.abspath(__file__))
                 tools_dir = os.path.join(current_dir, "tools")
                 if os.name == 'nt':
-                    cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'system_status.py']
-                    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen([sys.executable, os.path.join(tools_dir, 'system_status.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
-                    subprocess.Popen(['gnome-terminal', '--', 'python', 'system_status.py'], cwd=tools_dir)
+                    subprocess.Popen(['gnome-terminal', '--', sys.executable, 'system_status.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -529,16 +536,15 @@ class WelcomeScreen(Screen):
     def run_auto_play_creator(self):
         try:
             if is_frozen():
-                run_tool_in_thread("goldflipper.tools.auto_play_creator")
+                subprocess.Popen([get_exe_path(), '--tool', 'auto_play_creator'], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 self.notify("Auto Play Creator launched", severity="information")
             else:
                 current_dir = os.path.dirname(os.path.abspath(__file__))
                 tools_dir = os.path.join(current_dir, "tools")
                 if os.name == 'nt':
-                    cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'auto_play_creator.py']
-                    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen([sys.executable, os.path.join(tools_dir, 'auto_play_creator.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
-                    subprocess.Popen(['gnome-terminal', '--', 'python', 'auto_play_creator.py'], cwd=tools_dir)
+                    subprocess.Popen(['gnome-terminal', '--', sys.executable, 'auto_play_creator.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -547,7 +553,7 @@ class WelcomeScreen(Screen):
         try:
             if is_frozen():
                 # Running from exe - import and run in thread
-                run_tool_in_thread("goldflipper.tools.play_creator_gui")
+                subprocess.Popen([get_exe_path(), '--tool', 'play_creator_gui'], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 self.notify("Play Creator GUI launched", severity="information")
             else:
                 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -562,48 +568,47 @@ class WelcomeScreen(Screen):
     def run_chart_viewer(self):
         try:
             if is_frozen():
-                run_tool_in_thread("goldflipper.chart.chart_viewer")
+                subprocess.Popen([get_exe_path(), '--tool', 'chart_viewer'], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 self.notify("Chart Viewer launched", severity="information")
             else:
                 current_dir = os.path.dirname(os.path.abspath(__file__))
                 chart_dir = os.path.join(current_dir, "chart")
                 if os.name == 'nt':
-                    cmd = ['cmd', '/k', 'cd', '/d', chart_dir, '&', 'python', 'chart_viewer.py']
-                    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen([sys.executable, os.path.join(chart_dir, 'chart_viewer.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
-                    subprocess.Popen(['gnome-terminal', '--', 'python', 'chart_viewer.py'], cwd=chart_dir)
+                    subprocess.Popen(['gnome-terminal', '--', sys.executable, 'chart_viewer.py'], cwd=chart_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
     def run_get_alpaca_info(self):
         try:
             if is_frozen():
-                run_tool_in_thread("goldflipper.tools.get_alpaca_info")
+                # Console app that uses terminal output - run as subprocess
+                subprocess.Popen([get_exe_path(), '--tool', 'get_alpaca_info'], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 self.notify("Alpaca Info launched", severity="information")
             else:
                 current_dir = os.path.dirname(os.path.abspath(__file__))
                 tools_dir = os.path.join(current_dir, "tools")
                 if os.name == 'nt':
-                    cmd = ['cmd', '/k', 'cd', '/d', tools_dir, '&', 'python', 'get_alpaca_info.py']
-                    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen([sys.executable, os.path.join(tools_dir, 'get_alpaca_info.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
-                    subprocess.Popen(['gnome-terminal', '--', 'python', 'get_alpaca_info.py'], cwd=tools_dir)
+                    subprocess.Popen(['gnome-terminal', '--', sys.executable, 'get_alpaca_info.py'], cwd=tools_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
     def run_trade_logger(self):
         try:
             if is_frozen():
-                run_tool_in_thread("goldflipper.trade_logging.trade_logger_ui")
+                # Tkinter app - run as subprocess for cleaner separation
+                subprocess.Popen([get_exe_path(), '--tool', 'trade_logger'], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 self.notify("Trade Logger launched", severity="information")
             else:
                 current_dir = os.path.dirname(os.path.abspath(__file__))
                 logging_dir = os.path.join(current_dir, "trade_logging")
                 if os.name == 'nt':
-                    cmd = ['cmd', '/k', 'cd', '/d', logging_dir, '&', 'python', 'trade_logger_ui.py']
-                    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen([sys.executable, os.path.join(logging_dir, 'trade_logger_ui.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
-                    subprocess.Popen(['gnome-terminal', '--', 'python', 'trade_logger_ui.py'], cwd=logging_dir)
+                    subprocess.Popen(['gnome-terminal', '--', sys.executable, 'trade_logger_ui.py'], cwd=logging_dir)
         except Exception as e:
             self.notify(f"Error: {str(e)}", severity="error")
 
@@ -662,19 +667,15 @@ class WelcomeScreen(Screen):
             tools_dir = os.path.join(current_dir, "tools")
 
             if os.name == "nt":  # Windows
-                cmd = [
-                    "cmd", "/k", "python",
-                    os.path.join(tools_dir, "play_csv_ingestion_multitool.py"),
-                    file_path
-                ]
-                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                subprocess.Popen(
+                    [sys.executable, os.path.join(tools_dir, "play_csv_ingestion_multitool.py"), file_path],
+                    creationflags=subprocess.CREATE_NEW_CONSOLE
+                )
             else:  # Unix-like systems
-                cmd = [
-                    "gnome-terminal", "--", "python3",
-                    os.path.join(tools_dir, "play_csv_ingestion_multitool.py"),
-                    file_path
-                ]
-                subprocess.Popen(cmd, cwd=tools_dir)
+                subprocess.Popen(
+                    ["gnome-terminal", "--", sys.executable, os.path.join(tools_dir, "play_csv_ingestion_multitool.py"), file_path],
+                    cwd=tools_dir
+                )
 
 
 class GoldflipperTUI(App):

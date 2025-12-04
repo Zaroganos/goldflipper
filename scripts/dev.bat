@@ -13,6 +13,8 @@ if /I "%COMMAND%"=="test" goto test
 if /I "%COMMAND%"=="lint" goto lint
 if /I "%COMMAND%"=="format" goto format
 if /I "%COMMAND%"=="check" goto check
+if /I "%COMMAND%"=="build" goto build
+if /I "%COMMAND%"=="build-prod" goto build_prod
 goto usage
 
 :run
@@ -48,14 +50,26 @@ goto end
 echo One or more checks failed.
 exit /b 1
 
+:build
+echo Building dev exe (fast mode - no LTO, no compression)...
+uv run python scripts/build_nuitka_dev.py %*
+goto end
+
+:build_prod
+echo Building production exe (full optimization)...
+uv run python scripts/build_nuitka.py %*
+goto end
+
 :usage
 echo Usage: dev.bat [command] [args]
 echo Commands:
-echo   run     - Run goldflipper
-echo   test    - Run tests
-echo   lint    - Lint code
-echo   format  - Format code
-echo   check   - Run all checks \(format, lint, type, test\)
+echo   run        - Run goldflipper
+echo   test       - Run tests
+echo   lint       - Lint code
+echo   format     - Format code
+echo   check      - Run all checks (format, lint, type, test)
+echo   build      - Fast dev exe (no LTO, no compression)
+echo   build-prod - Full production exe (optimized, smaller)
 exit /b 1
 
 :end

@@ -1,9 +1,10 @@
 import os
 import sys
 
-# Add the project root directory to Python path
+# Add the project root directory to Python path (for source mode only)
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-sys.path.append(project_root)
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
 import psutil
 import json
@@ -12,26 +13,26 @@ import subprocess
 import alpaca
 from goldflipper.alpaca_client import get_alpaca_client
 from goldflipper.config.config import config
-
+from goldflipper.utils.exe_utils import get_plays_dir
 
 def get_plays_count():
     """
     Get play counts from each folder.
+    Uses exe-aware path utilities for frozen mode compatibility.
     """
-    plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays')
+    plays_dir = get_plays_dir()  # Uses exe_utils for proper path resolution
     folders = ['new', 'temp', 'pending-opening', 'open', 'pending-closing', 'closed', 'expired']
     counts = {}
     
     for folder in folders:
-        folder_path = os.path.join(plays_dir, folder)
-        if os.path.exists(folder_path):
+        folder_path = plays_dir / folder
+        if folder_path.exists():
             json_files = [f for f in os.listdir(folder_path) if f.endswith('.json')]
             counts[folder] = len(json_files)
         else:
             counts[folder] = 0
     
     return counts
-
 
 def get_orchestrator_status():
     """

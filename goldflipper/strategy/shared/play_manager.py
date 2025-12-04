@@ -29,6 +29,8 @@ from uuid import UUID
 from enum import Enum
 from datetime import datetime
 
+from goldflipper.utils.exe_utils import get_plays_dir
+
 from goldflipper.utils.atomic_io import atomic_write_json
 from goldflipper.utils.display import TerminalDisplay as display
 
@@ -125,9 +127,8 @@ class PlayManager:
         if plays_base_dir:
             self._plays_base_dir = plays_base_dir
         else:
-            # Default: plays/ directory relative to goldflipper package
-            package_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            self._plays_base_dir = os.path.join(package_dir, 'plays')
+            # Use exe-aware path for plays directory (persists next to exe in frozen mode)
+            self._plays_base_dir = str(get_plays_dir())
     
     @property
     def plays_base_dir(self) -> str:

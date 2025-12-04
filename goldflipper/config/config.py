@@ -10,12 +10,24 @@ The Config class handles:
 - Setting up directory structures
 - Providing access to configuration values
 - Maintaining backward compatibility with existing code
+
+NOTE: This module uses exe-aware path utilities for frozen (exe) mode compatibility.
+In frozen mode, settings.yaml persists NEXT TO the exe, while templates are bundled.
 """
 
 import os
 import yaml
 import logging
 import shutil
+
+# Import exe-aware path utilities
+from goldflipper.utils.exe_utils import (
+    is_frozen,
+    get_settings_path,
+    get_settings_template_path,
+    get_config_dir,
+    get_executable_dir,
+)
 
 # Flag to track if settings file was just created
 settings_just_created = False
@@ -27,14 +39,19 @@ def reset_settings_created_flag():
 
 def load_config():
     global settings_just_created
-    config_path = os.path.join(os.path.dirname(__file__), 'settings.yaml')
+    
+    # Use exe-aware path utilities
+    config_path = str(get_settings_path())
+    template_path = str(get_settings_template_path())
     
     # Check if settings.yaml exists, if not, create it from template
     if not os.path.exists(config_path):
-        template_path = os.path.join(os.path.dirname(__file__), 'settings_template.yaml')
-        
         if not os.path.exists(template_path):
             raise FileNotFoundError(f"Neither settings.yaml nor template file found at {template_path}")
+        
+        # Ensure config directory exists (important for frozen mode)
+        config_dir = get_config_dir()
+        os.makedirs(config_dir, exist_ok=True)
             
         try:
             # Copy the template to settings.yaml
@@ -94,8 +111,10 @@ class Config:
         
         Attempts to load settings.yaml from the config directory.
         Falls back to empty dict if file is not found or invalid.
+        
+        Uses exe-aware path utilities for frozen mode compatibility.
         """
-        config_path = os.path.join(os.path.dirname(__file__), 'settings.yaml')
+        config_path = str(get_settings_path())
         try:
             with open(config_path, 'r') as f:
                 self._config = yaml.safe_load(f)
@@ -114,8 +133,12 @@ class Config:
         
         Converts relative paths from config to absolute paths and creates
         necessary directories if they don't exist.
+        
+        Uses exe-aware path utilities for frozen mode compatibility.
         """
-        base_dir = os.path.dirname(os.path.dirname(__file__))
+        # In frozen mode: base_dir is next to exe (persistent)
+        # In source mode: base_dir is the goldflipper package directory
+        base_dir = str(get_executable_dir()) if is_frozen() else os.path.dirname(os.path.dirname(__file__))
         
         # Setup data paths
         self.DATA_DIR = os.path.join(base_dir, self._config['paths']['data_dir'])

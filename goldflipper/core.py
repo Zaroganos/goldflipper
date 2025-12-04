@@ -22,6 +22,7 @@ from goldflipper.strategy.trailing import has_trailing_enabled, update_trailing_
 from uuid import UUID
 from typing import Optional, Dict, Any
 from goldflipper.data.market.manager import MarketDataManager
+from goldflipper.utils.exe_utils import get_plays_dir
 
 # Import shared strategy modules (Phase 2 extraction)
 # These imports allow core.py functions to delegate to shared modules
@@ -1482,7 +1483,8 @@ def is_market_holiday(date):
 ########################################################    
 def monitor_plays_continuously():
     """Main monitoring loop for all plays"""
-    plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'plays'))
+    # Use exe-aware path for plays directory (persists next to exe in frozen mode)
+    plays_dir = str(get_plays_dir())
     market_data = get_market_data_manager()
     
     from goldflipper.utils.json_fixer import PlayFileFixer
@@ -2038,6 +2040,7 @@ def manage_pending_plays(plays_dir, single_play=None):
 
                     try:
                         order = client.get_order_by_id(order_id)
+                        display.info(f"Pending-opening {contract_symbol}: order status = {order.status}")
                         if order.status == 'filled':
                             # Verify position exists
                             try:
@@ -2072,7 +2075,7 @@ def manage_pending_plays(plays_dir, single_play=None):
                         elif order.status in ['canceled', 'expired', 'rejected']:
                             move_play_to_new(play_file)
                             logging.info(f"Order {order.status}, moved back to new: {play_file}")
-                            # display.info(f"Order {order.status}, moved back to new: {play_file}")
+                            display.info(f"Order {order.status}, moved back to new: {play_file}")
                             if single_play:
                                 return False
                     except Exception as e:
@@ -2090,6 +2093,7 @@ def manage_pending_plays(plays_dir, single_play=None):
 
                     try:
                         order = client.get_order_by_id(order_id)
+                        display.info(f"Pending-closing {contract_symbol}: order status = {order.status}")
                         if order.status == 'filled':
                             # Verify position is closed
                             try:
@@ -2133,7 +2137,7 @@ def manage_pending_plays(plays_dir, single_play=None):
                         elif order.status in ['canceled', 'expired', 'rejected']:
                             move_play_to_open(play_file)
                             logging.info(f"Closing order {order.status}, moved back to open: {play_file}")
-                            # display.info(f"Closing order {order.status}, moved back to open: {play_file}")
+                            display.info(f"Closing order {order.status}, moved back to open: {play_file}")
                             if single_play:
                                 return False
                                 

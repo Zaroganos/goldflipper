@@ -1,7 +1,7 @@
 # Multi-Strategy Implementation Plan
 
 **Document Created:** 2025-11-29  
-**Last Updated:** 2025-12-01  
+**Last Updated:** 2025-12-03  
 **Status:** Phase 8 ✅ COMPLETE  
 **Breaking Changes:** None (fully additive, backward compatible)  
 **Current Phase:** Production Validation
@@ -290,6 +290,18 @@ Files created:
 - `strategy/playbooks/momentum/default.yaml` - Generic manual-entry momentum
 - `strategy/playbooks/momentum/gap_move.yaml` - Gap continuation (trade WITH gap)
 - `strategy/playbooks/momentum/gap_fade.yaml` - Gap fade/mean reversion (trade AGAINST gap)
+- `strategy/playbooks/option_swings/pb_v3.yaml` - Options Swing Playbook v3.1 (short swing)
+- `strategy/playbooks/option_swings/pb_v3_long.yaml` - Options Swing Playbook v3.1 (long swing)
+- `strategy/playbooks/option_swings/default.yaml` - Default option swings (v3.1 based)
+
+**Options Swing Playbook v3.1 Changes (2025-12-03):**
+- Stop loss tightened: 35% → 29% of premium
+- Short swing DTE expanded: 14 → 14-21 range
+- Open interest: soft guideline ("more the better") instead of hard 200 minimum
+- Added RSI indicator (30-70 range) to HPS evidence
+- Enhanced EMA descriptions (200 as S/R, 9/21 crossovers for divergences)
+- Added `OptionSwingsConfig` fields: `rsi_enabled`, `rsi_period`, `rsi_oversold`, `rsi_overbought`,
+  `ema_200_as_sr`, `ema_9_21_crossover`, `volume_profile_enabled`
 
 BaseStrategy updated with:
 - `get_playbook_for_play(play)` - Load playbook for a play
@@ -619,6 +631,7 @@ The fallback mechanism ensures production stability during migration.
 | 2025-12-01 | 8 | Updated DEVELOPMENT.md | Added multi-strategy architecture section |
 | 2025-12-01 | 8 | Updated README.md | Added multi-strategy features, config examples |
 | 2025-12-01 | 8 | **Phase 8 Complete** | All documentation updated, ready for production validation |
+| 2025-12-03 | 6 | Updated option_swings playbooks | v3 → v3.1: SL 35%→29%, DTE 14→14-21, RSI indicator, soft OI |
 
 ---
 

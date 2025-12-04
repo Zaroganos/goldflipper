@@ -550,10 +550,16 @@ class SettingsEditor:
 
 
 def open_settings() -> bool:
-    """Launch the interactive settings editor."""
-    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    settings_path = os.path.join(current_dir, "config", "settings.yaml")
-    template_path = os.path.join(current_dir, "config", "settings_template.yaml")
+    """Launch the interactive settings editor.
+    
+    Uses exe-aware path utilities to properly resolve settings.yaml location
+    in both frozen (exe) and source modes.
+    """
+    # Use exe-aware path utilities for frozen mode compatibility
+    from goldflipper.utils.exe_utils import get_settings_path, get_settings_template_path
+    
+    settings_path = str(get_settings_path())
+    template_path = str(get_settings_template_path())
 
     try:
         ensure_settings_file(settings_path, template_path)

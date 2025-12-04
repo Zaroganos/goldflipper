@@ -327,8 +327,14 @@ class TradeLoggerUI:
     def run(self):
         self.root.mainloop()
 
-if __name__ == "__main__":
+
+def main():
+    """Entry point for launcher."""
     app = TradeLoggerUI()
     # On startup, default to closed/expired only (checkbox is off by default)
     app.logger.import_closed_plays()
     app.run()
+
+
+if __name__ == "__main__":
+    main()

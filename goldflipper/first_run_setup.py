@@ -6,10 +6,18 @@ import sys
 import subprocess
 from pathlib import Path
 
-# Exe detection utility
-def is_frozen() -> bool:
-    """Check if running from compiled executable."""
-    return getattr(sys, 'frozen', False)
+# Import exe-aware path utilities
+from goldflipper.utils.exe_utils import (
+    is_frozen,
+    get_settings_path,
+    get_settings_template_path,
+    get_config_dir,
+    get_executable_dir,
+    get_package_root,
+    get_data_location_config_path,
+    set_custom_data_directory,
+)
+
 
 class FirstRunSetup:
     def __init__(self):
@@ -22,13 +30,14 @@ class FirstRunSetup:
             print("TkinterDnD2 not found. Please install it using: uv pip install tkinterdnd2")
             sys.exit(1)
         
-        # Check if settings file already exists
-        self.config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
-        self.settings_path = os.path.join(self.config_dir, "settings.yaml")
+        # Check if settings file already exists (using exe-aware paths)
+        self.config_dir = str(get_config_dir())
+        self.settings_path = str(get_settings_path())
+        self.template_path = str(get_settings_template_path())
         self.settings_exist = os.path.exists(self.settings_path)
         
         self.root.title("Goldflipper First-run Setup")
-        self.root.geometry("400x400")  # Made taller to accommodate new options
+        self.root.geometry("450x500")  # Taller to accommodate data directory option
         
         # Center the window
         self.root.update_idletasks()
@@ -77,6 +86,78 @@ class FirstRunSetup:
         """User chose to use existing settings - just handle shortcut and finish"""
         self.show_shortcut_option()
     
+    def _create_data_directory_ui(self):
+        """Create UI for choosing custom data directory (exe mode only)."""
+        from goldflipper.utils.exe_utils import get_default_data_directory
+        
+        data_frame = tk.LabelFrame(self.main_frame, text="Data Directory", padx=10, pady=10)
+        data_frame.pack(fill='x', pady=10)
+        
+        # Get default location
+        default_dir = str(get_default_data_directory())
+        
+        # Explanation
+        info_label = tk.Label(
+            data_frame,
+            text="Where should Goldflipper store data?\n(settings, plays, logs)",
+            justify='left'
+        )
+        info_label.pack(pady=5)
+        
+        # Use default checkbox
+        self.use_default_data_dir = tk.BooleanVar(value=True)
+        default_check = tk.Checkbutton(
+            data_frame, 
+            text=f"Use default location (next to exe)",
+            variable=self.use_default_data_dir,
+            command=self._toggle_data_dir_entry
+        )
+        default_check.pack(anchor='w', pady=2)
+        
+        # Show default path
+        default_path_label = tk.Label(
+            data_frame, 
+            text=f"Default: {default_dir}",
+            font=('Arial', 8), 
+            fg='gray'
+        )
+        default_path_label.pack(anchor='w', padx=20)
+        
+        # Custom directory selection frame
+        self.data_dir_frame = tk.Frame(data_frame)
+        self.data_dir_frame.pack(fill='x', pady=5)
+        
+        self.custom_data_dir = tk.StringVar()
+        self.data_dir_entry = tk.Entry(self.data_dir_frame, textvariable=self.custom_data_dir, width=30)
+        self.data_dir_entry.pack(side='left', padx=5)
+        self.data_dir_entry.config(state='disabled')  # Disabled by default
+        
+        self.data_dir_browse_btn = tk.Button(
+            self.data_dir_frame, 
+            text="Browse...", 
+            command=self._browse_data_directory,
+            state='disabled'
+        )
+        self.data_dir_browse_btn.pack(side='left', padx=5)
+    
+    def _toggle_data_dir_entry(self):
+        """Enable/disable custom data directory entry based on checkbox."""
+        if self.use_default_data_dir.get():
+            self.data_dir_entry.config(state='disabled')
+            self.data_dir_browse_btn.config(state='disabled')
+        else:
+            self.data_dir_entry.config(state='normal')
+            self.data_dir_browse_btn.config(state='normal')
+    
+    def _browse_data_directory(self):
+        """Open folder browser for custom data directory."""
+        dir_path = filedialog.askdirectory(
+            title="Select Data Directory",
+            mustexist=False
+        )
+        if dir_path:
+            self.custom_data_dir.set(dir_path)
+    
     def show_new_setup_ui(self):
         """Show UI for new settings setup"""
         # Clear existing widgets except welcome message
@@ -89,6 +170,10 @@ class FirstRunSetup:
         shortcut_check = tk.Checkbutton(self.main_frame, text="Create desktop shortcut", 
                                       variable=self.create_shortcut_var)
         shortcut_check.pack(pady=5)
+        
+        # Data directory frame (only show in frozen/exe mode)
+        if is_frozen():
+            self._create_data_directory_ui()
         
         # Settings file frame
         settings_frame = tk.LabelFrame(self.main_frame, text="Settings Configuration", padx=10, pady=10)
@@ -188,6 +273,25 @@ class FirstRunSetup:
     
     def process_setup(self):
         try:
+            # Handle custom data directory choice (exe mode only)
+            if hasattr(self, 'use_default_data_dir'):
+                if not self.use_default_data_dir.get():
+                    # User chose a custom directory
+                    custom_dir = self.custom_data_dir.get().strip()
+                    if custom_dir:
+                        set_custom_data_directory(Path(custom_dir))
+                        self.status_label.config(text=f"Data directory: {custom_dir}", fg="blue")
+                    else:
+                        # No custom dir specified, use default
+                        set_custom_data_directory(None)
+                else:
+                    # Using default - clear any previous custom setting
+                    set_custom_data_directory(None)
+                
+                # Re-read paths after setting data directory
+                self.config_dir = str(get_config_dir())
+                self.settings_path = str(get_settings_path())
+            
             # Create shortcut if requested
             if hasattr(self, 'create_shortcut_var') and self.create_shortcut_var.get():
                 self.create_shortcut()
@@ -223,6 +327,10 @@ class FirstRunSetup:
         backup_dir = self.config_dir
         max_backup_num = 0
         
+        # Ensure backup dir exists
+        if not os.path.exists(backup_dir):
+            return
+        
         # Look for existing backup files
         for filename in os.listdir(backup_dir):
             if filename.startswith("settings.yaml.old"):
@@ -242,20 +350,22 @@ class FirstRunSetup:
         shutil.move(self.settings_path, backup_path)
     
     def create_settings_from_template(self):
-        """Create settings.yaml from template"""
-        template_path = os.path.join(self.config_dir, "settings_template.yaml")
-        if not os.path.exists(template_path):
-            raise FileNotFoundError(f"Template file not found at {template_path}")
+        """Create settings.yaml from template.
+        
+        Uses exe-aware paths: template is bundled, settings persist next to exe.
+        """
+        if not os.path.exists(self.template_path):
+            raise FileNotFoundError(f"Template file not found at {self.template_path}")
         
         # Backup existing settings if it exists
         if os.path.exists(self.settings_path):
             self.backup_existing_settings()
         
-        # Create config directory if it doesn't exist
+        # Create config directory if it doesn't exist (important for frozen mode)
         os.makedirs(self.config_dir, exist_ok=True)
         
         # Copy template to settings.yaml
-        shutil.copy2(template_path, self.settings_path)
+        shutil.copy2(self.template_path, self.settings_path)
     
     def create_shortcut(self):
         try:
@@ -289,7 +399,7 @@ class FirstRunSetup:
                 description = "Launch Goldflipper"
             else:
                 # Running from source - shortcut points to batch file
-                package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                package_root = str(get_package_root())
                 target_path = os.path.join(package_root, "launch_goldflipper.bat")
                 working_dir = package_root
                 icon_path = os.path.join(package_root, "goldflipper.ico")
@@ -357,7 +467,7 @@ $Shortcut.Save()
                 target_path = sys.executable
                 working_dir = os.path.dirname(sys.executable)
             else:
-                package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                package_root = str(get_package_root())
                 target_path = os.path.join(package_root, "launch_goldflipper.bat")
                 working_dir = package_root
             
@@ -387,22 +497,24 @@ $Shortcut.Save()
             raise Exception(f"Error creating shortcut: {str(e)}")
     
     def copy_settings_file(self, source_path):
-        config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
-        target_path = os.path.join(config_dir, "settings.yaml")
+        """Copy a user-provided settings file to the config directory.
         
+        Uses exe-aware paths for destination.
+        """
         # Backup existing settings if it exists
-        if os.path.exists(target_path):
+        if os.path.exists(self.settings_path):
             self.backup_existing_settings()
         
         # Create config directory if it doesn't exist
-        os.makedirs(config_dir, exist_ok=True)
+        os.makedirs(self.config_dir, exist_ok=True)
         
         # Copy the file
-        shutil.copy2(source_path, target_path)
+        shutil.copy2(source_path, self.settings_path)
     
     def run(self):
         self.root.mainloop()
 
+
 if __name__ == "__main__":
     app = FirstRunSetup()
-    app.run() 
+    app.run()

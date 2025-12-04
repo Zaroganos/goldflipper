@@ -52,6 +52,8 @@ class PlaybookType(Enum):
     """Available playbooks by strategy."""
     # Option Swings
     OPTION_SWINGS_DEFAULT = "default"
+    OPTION_SWINGS_PB_V3 = "pb_v3"
+    OPTION_SWINGS_PB_V3_LONG = "pb_v3_long"
     
     # Momentum
     MOMENTUM_GAP_MOVE = "gap_move"
@@ -64,7 +66,11 @@ class PlaybookType(Enum):
 
 
 STRATEGY_PLAYBOOKS = {
-    StrategyType.OPTION_SWINGS: [("Default", "default")],
+    StrategyType.OPTION_SWINGS: [
+        ("Default", "default"),
+        ("Playbook v3 (Short Swing)", "pb_v3"),
+        ("Playbook v3 (Long Swing)", "pb_v3_long"),
+    ],
     StrategyType.MOMENTUM: [
         ("Gap Move (with gap)", "gap_move"),
         ("Gap Fade (against gap)", "gap_fade"),
@@ -89,6 +95,7 @@ ORDER_TYPES = [
     ("Limit at Bid", "limit at bid"),
     ("Limit at Ask", "limit at ask"),
     ("Limit at Mid", "limit at mid"),
+    ("Limit at Last", "limit at last"),
 ]
 
 
@@ -102,9 +109,9 @@ class PlayCreatorGUI:
     def __init__(self):
         """Initialize the Play Creator GUI."""
         self.root = tk.Tk()
-        self.root.title("Goldflipper Play Creator")
-        self.root.geometry("1200x900")
-        self.root.minsize(1000, 700)
+        self.root.title("Play Creator")
+        self.root.geometry("1500x900")  # Wider for 3-column layout
+        self.root.minsize(1300, 700)
         
         # Initialize market data
         try:
@@ -166,8 +173,10 @@ class PlayCreatorGUI:
         self.use_stock_price_sl = tk.BooleanVar(value=False)
         self.tp_stock_price = tk.DoubleVar(value=0.0)
         self.sl_stock_price = tk.DoubleVar(value=0.0)
-        self.trailing_enabled = tk.BooleanVar(value=False)
-        self.trailing_activation_pct = tk.DoubleVar(value=20.0)
+        self.trailing_tp_enabled = tk.BooleanVar(value=False)
+        self.trailing_tp_activation_pct = tk.DoubleVar(value=20.0)
+        self.trailing_sl_enabled = tk.BooleanVar(value=False)
+        self.trailing_sl_activation_pct = tk.DoubleVar(value=10.0)
         self.multiple_tps_enabled = tk.BooleanVar(value=False)
         self.num_tp_levels = tk.IntVar(value=2)
         self.tp_levels_data = []  # List of dicts: [{pct, contracts}, ...]
@@ -179,6 +188,7 @@ class PlayCreatorGUI:
         self.oco_plays = tk.StringVar(value="")  # Comma-separated play names
         self.oto_parent = tk.StringVar(value="")  # Parent play for OTO
         self.oto_trigger_condition = tk.StringVar(value="on_fill")  # on_fill, on_tp, on_sl
+        self.oco_peer_set_numbers = tk.StringVar(value="")  # Comma-separated OCO peer set numbers (e.g., "1,2,3")
         
         # Market data state
         self.current_price = tk.StringVar(value="--")
@@ -199,7 +209,7 @@ class PlayCreatorGUI:
         self._bind_events()
         
     def _setup_ui(self):
-        """Setup the main UI layout."""
+        """Setup the main UI layout with 3 columns."""
         # Configure grid weights
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
@@ -220,14 +230,15 @@ class PlayCreatorGUI:
         main_canvas.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
         
-        # Configure main frame grid
-        self.main_frame.columnconfigure(0, weight=1)
-        self.main_frame.columnconfigure(1, weight=1)
+        # Configure main frame grid - 3 columns
+        self.main_frame.columnconfigure(0, weight=1)  # Left - config
+        self.main_frame.columnconfigure(1, weight=1)  # Middle - option chain, risk, conditionals
+        self.main_frame.columnconfigure(2, weight=1)  # Right - preview
         
         # Header
         self._create_header()
         
-        # Left column
+        # Left column - Strategy, Gap Info, Play Configuration
         left_frame = ttk.Frame(self.main_frame)
         left_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         left_frame.columnconfigure(0, weight=1)
@@ -235,50 +246,76 @@ class PlayCreatorGUI:
         # Strategy Selection Panel
         self._create_strategy_panel(left_frame)
         
-        # Symbol & Market Data Panel
+        # Symbol & Market Data Panel (gap info for momentum only)
         self._create_market_data_panel(left_frame)
         
-        # Play Configuration Panel
+        # Play Configuration Panel (Basic, Entry, TP, SL - no conditionals)
         self._create_config_panel(left_frame)
         
-        # Advanced Options Panel
-        self._create_advanced_panel(left_frame)
+        # Middle column - Option Chain, Risk Summary, Action Buttons, Conditional Orders, Other Options
+        middle_frame = ttk.Frame(self.main_frame)
+        middle_frame.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
+        middle_frame.columnconfigure(0, weight=1)
+        middle_frame.rowconfigure(0, weight=0)  # Option chain
+        middle_frame.rowconfigure(1, weight=0)  # Risk summary
+        middle_frame.rowconfigure(2, weight=0)  # Action buttons
+        middle_frame.rowconfigure(3, weight=0)  # Conditional orders
+        middle_frame.rowconfigure(4, weight=1)  # Other options + spacer
         
-        # Right column - Actions at top, Option Chain in middle, Preview at bottom
+        # Option Chain Browser
+        self._create_option_chain_panel(middle_frame)
+        
+        # Risk Summary Panel
+        self._create_risk_summary_panel(middle_frame)
+        
+        # Action Buttons Panel (between risk summary and conditional orders)
+        self._create_action_buttons_panel(middle_frame)
+        
+        # Conditional Orders Panel
+        self._create_conditional_orders_panel(middle_frame)
+        
+        # Other Options Panel
+        self._create_other_options_panel(middle_frame)
+        
+        # Right column - Play Preview (full height)
         right_frame = ttk.Frame(self.main_frame)
-        right_frame.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
+        right_frame.grid(row=1, column=2, sticky="nsew", padx=5, pady=5)
         right_frame.columnconfigure(0, weight=1)
-        right_frame.rowconfigure(1, weight=0)  # Option chain - no weight, fits content
-        right_frame.rowconfigure(2, weight=1)  # Preview expands
+        right_frame.rowconfigure(0, weight=1)  # Preview takes full height
         
-        # Actions Panel (top right)
-        self._create_actions_panel(right_frame)
-        
-        # Option Chain Browser (middle right - dynamic height)
-        self._create_option_chain_panel(right_frame)
-        
-        # Validation & Preview Panel (bottom right)
+        # Validation & Preview Panel
         self._create_preview_panel(right_frame)
         
     def _create_header(self):
-        """Create the header with title."""
+        """Create the header with title and option contract preview."""
         header_frame = ttk.Frame(self.main_frame)
-        header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        header_frame.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        header_frame.columnconfigure(1, weight=1)
         
+        # Left side - Title
         title_label = ttk.Label(
             header_frame, 
-            text="Goldflipper Play Creator",
+            text="Play Creator:",
             font=('Helvetica', 16, 'bold')
         )
-        title_label.pack(side=tk.LEFT)
+        title_label.grid(row=0, column=0, sticky="w")
         
-        # Status indicator
+        # Center - Option Contract Preview (dynamically updated)
+        self.contract_preview_label = ttk.Label(
+            header_frame,
+            text="[ No contract selected ]",
+            font=('Helvetica', 14, 'bold'),
+            foreground="#0066cc"
+        )
+        self.contract_preview_label.grid(row=0, column=1, sticky="w", padx=10)
+        
+        # Right side - Status indicator
         self.status_label = ttk.Label(
             header_frame,
             text="Ready",
             foreground="green"
         )
-        self.status_label.pack(side=tk.RIGHT, padx=10)
+        self.status_label.grid(row=0, column=2, sticky="e", padx=10)
         
     def _create_strategy_panel(self, parent):
         """Create the strategy selection panel."""
@@ -322,53 +359,23 @@ class PlayCreatorGUI:
         self._update_playbook_options()
         
     def _create_market_data_panel(self, parent):
-        """Create the symbol and market data panel."""
-        frame = ttk.LabelFrame(parent, text="Symbol & Market Data", padding="10")
-        frame.grid(row=1, column=0, sticky="ew", pady=5)
-        frame.columnconfigure(1, weight=1)
+        """Create the gap info panel (only visible for momentum strategy)."""
+        # Gap info frame (for momentum strategy only)
+        self.gap_frame = ttk.LabelFrame(parent, text="Gap Info (Momentum)", padding="5")
+        self.gap_frame.grid(row=1, column=0, sticky="ew", pady=5)
         
-        # Symbol entry
-        ttk.Label(frame, text="Symbol:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        symbol_frame = ttk.Frame(frame)
-        symbol_frame.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
-        symbol_frame.columnconfigure(0, weight=1)
+        gap_inner = ttk.Frame(self.gap_frame)
+        gap_inner.pack(fill=tk.X)
         
-        symbol_entry = ttk.Entry(symbol_frame, textvariable=self.symbol, width=15)
-        symbol_entry.grid(row=0, column=0, sticky="w")
-        symbol_entry.bind("<Return>", lambda e: self._fetch_market_data())
-        
-        ttk.Button(
-            symbol_frame,
-            text="Fetch Data",
-            command=self._fetch_market_data
-        ).grid(row=0, column=1, padx=5)
-        
-        # Price info
-        price_frame = ttk.Frame(frame)
-        price_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=5)
-        
-        ttk.Label(price_frame, text="Current:").pack(side=tk.LEFT, padx=5)
-        ttk.Label(price_frame, textvariable=self.current_price, font=('Helvetica', 10, 'bold')).pack(side=tk.LEFT)
-        
-        ttk.Label(price_frame, text="Bid:").pack(side=tk.LEFT, padx=(20, 5))
-        ttk.Label(price_frame, textvariable=self.bid_price).pack(side=tk.LEFT)
-        
-        ttk.Label(price_frame, text="Ask:").pack(side=tk.LEFT, padx=(20, 5))
-        ttk.Label(price_frame, textvariable=self.ask_price).pack(side=tk.LEFT)
-        
-        # Gap info (for momentum strategy)
-        self.gap_frame = ttk.Frame(frame)
-        self.gap_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=5)
-        
-        ttk.Label(self.gap_frame, text="Gap:").pack(side=tk.LEFT, padx=5)
-        self.gap_pct_label = ttk.Label(self.gap_frame, textvariable=self.gap_pct, font=('Helvetica', 10, 'bold'))
+        ttk.Label(gap_inner, text="Gap:").pack(side=tk.LEFT, padx=5)
+        self.gap_pct_label = ttk.Label(gap_inner, textvariable=self.gap_pct, font=('Helvetica', 10, 'bold'))
         self.gap_pct_label.pack(side=tk.LEFT)
         
-        ttk.Label(self.gap_frame, text="Type:").pack(side=tk.LEFT, padx=(20, 5))
-        ttk.Label(self.gap_frame, textvariable=self.gap_type).pack(side=tk.LEFT)
+        ttk.Label(gap_inner, text="Type:").pack(side=tk.LEFT, padx=(20, 5))
+        ttk.Label(gap_inner, textvariable=self.gap_type).pack(side=tk.LEFT)
         
-        ttk.Label(self.gap_frame, text="Prev Close:").pack(side=tk.LEFT, padx=(20, 5))
-        ttk.Label(self.gap_frame, textvariable=self.previous_close).pack(side=tk.LEFT)
+        ttk.Label(gap_inner, text="Prev Close:").pack(side=tk.LEFT, padx=(20, 5))
+        ttk.Label(gap_inner, textvariable=self.previous_close).pack(side=tk.LEFT)
         
         # Initially hide gap frame (only show for momentum)
         self._update_gap_visibility()
@@ -381,8 +388,8 @@ class PlayCreatorGUI:
         
         row = 0
         
-        # Expiration
-        ttk.Label(frame, text="Expiration:").grid(row=row, column=0, sticky="w", padx=5, pady=3)
+        # Contract Expiration (renamed from Expiration)
+        ttk.Label(frame, text="Contract Expiration:").grid(row=row, column=0, sticky="w", padx=5, pady=3)
         exp_frame = ttk.Frame(frame)
         exp_frame.grid(row=row, column=1, sticky="ew", padx=5, pady=3)
         self.expiration_combo = ttk.Combobox(
@@ -410,16 +417,13 @@ class PlayCreatorGUI:
         
         # Strike price
         ttk.Label(frame, text="Strike Price:").grid(row=row, column=0, sticky="w", padx=5, pady=3)
-        strike_frame = ttk.Frame(frame)
-        strike_frame.grid(row=row, column=1, sticky="ew", padx=5, pady=3)
         self.strike_combo = ttk.Combobox(
-            strike_frame,
+            frame,
             textvariable=self.strike_price,
             width=10
         )
-        self.strike_combo.pack(side=tk.LEFT)
+        self.strike_combo.grid(row=row, column=1, sticky="w", padx=5, pady=3)
         self.strike_combo.bind("<<ComboboxSelected>>", self._on_strike_changed)
-        ttk.Label(strike_frame, text="(Double-click chain →)", foreground="gray", font=('Helvetica', 8)).pack(side=tk.LEFT, padx=5)
         row += 1
         
         # Contracts
@@ -433,6 +437,16 @@ class PlayCreatorGUI:
             command=self._on_contracts_changed
         )
         contracts_spin.grid(row=row, column=1, sticky="w", padx=5, pady=3)
+        row += 1
+        
+        # Play Expiration (moved from advanced options)
+        ttk.Label(frame, text="Play Expiration:").grid(row=row, column=0, sticky="w", padx=5, pady=3)
+        play_exp_frame = ttk.Frame(frame)
+        play_exp_frame.grid(row=row, column=1, sticky="w", padx=5, pady=3)
+        
+        self.play_exp_entry = ttk.Entry(play_exp_frame, textvariable=self.play_expiration, width=12)
+        self.play_exp_entry.pack(side=tk.LEFT)
+        ttk.Label(play_exp_frame, text="MM/DD/YYYY (blank=contract exp)", foreground="gray", font=('Helvetica', 8)).pack(side=tk.LEFT, padx=5)
         row += 1
         
         # Separator before Entry section
@@ -575,6 +589,71 @@ class PlayCreatorGUI:
         tp_order_combo.pack(side=tk.LEFT, padx=5)
         row += 1
         
+        # Trailing TP (collapsible)
+        trailing_tp_frame = ttk.Frame(frame)
+        trailing_tp_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=2)
+        
+        ttk.Checkbutton(trailing_tp_frame, text="Trailing TP", variable=self.trailing_tp_enabled,
+                       command=self._on_trailing_tp_toggle).pack(side=tk.LEFT)
+        ttk.Label(trailing_tp_frame, text="Activation %:").pack(side=tk.LEFT, padx=(10, 2))
+        self.trailing_tp_spin = ttk.Spinbox(
+            trailing_tp_frame,
+            textvariable=self.trailing_tp_activation_pct,
+            from_=5,
+            to=100,
+            increment=5,
+            width=6,
+            state="disabled"
+        )
+        self.trailing_tp_spin.pack(side=tk.LEFT, padx=2)
+        ttk.Label(trailing_tp_frame, text="% gain activates trail", foreground="gray", font=('Helvetica', 8)).pack(side=tk.LEFT, padx=5)
+        row += 1
+        
+        # Multiple TPs (collapsible)
+        multi_tp_header = ttk.Frame(frame)
+        multi_tp_header.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=2)
+        
+        ttk.Checkbutton(multi_tp_header, text="Multiple TP Levels", variable=self.multiple_tps_enabled,
+                       command=self._on_multi_tp_toggle).pack(side=tk.LEFT)
+        ttk.Label(multi_tp_header, text="# of TPs:").pack(side=tk.LEFT, padx=(10, 2))
+        self.num_tps_spin = ttk.Spinbox(
+            multi_tp_header,
+            textvariable=self.num_tp_levels,
+            from_=2,
+            to=5,
+            width=4,
+            state="disabled",
+            command=self._rebuild_tp_levels_ui
+        )
+        self.num_tps_spin.pack(side=tk.LEFT, padx=2)
+        self.num_tps_spin.bind("<Return>", lambda e: self._rebuild_tp_levels_ui())
+        row += 1
+        
+        # Dynamic TP levels container (shown when multiple TPs enabled)
+        self.tp_levels_container = ttk.Frame(frame)
+        self.tp_levels_container.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=2)
+        self.tp_level_widgets = []  # Store widgets for cleanup
+        self.tp_levels_container.grid_remove()  # Initially hidden
+        row += 1
+        
+        # Dynamic TP toggle (stub)
+        dynamic_tp_frame = ttk.Frame(frame)
+        dynamic_tp_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=2)
+        
+        ttk.Checkbutton(
+            dynamic_tp_frame, 
+            text="Dynamic TP", 
+            variable=self.dynamic_tp_sl_enabled,  # Shares state with SL for now
+            command=self._on_dynamic_toggle
+        ).pack(side=tk.LEFT)
+        ttk.Label(
+            dynamic_tp_frame, 
+            text="(future: time decay, IV-adjusted)",
+            foreground="gray",
+            font=('Helvetica', 8)
+        ).pack(side=tk.LEFT, padx=5)
+        row += 1
+        
         # Separator
         ttk.Separator(frame, orient="horizontal").grid(row=row, column=0, columnspan=2, sticky="ew", pady=8)
         row += 1
@@ -637,6 +716,36 @@ class PlayCreatorGUI:
         self.sl_stock_pct_target_label.pack(side=tk.LEFT, padx=5)
         row += 1
         
+        # SL Type (moved from advanced options)
+        sl_type_frame = ttk.Frame(frame)
+        sl_type_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=2)
+        
+        ttk.Label(sl_type_frame, text="SL Type:").pack(side=tk.LEFT)
+        ttk.Radiobutton(sl_type_frame, text="STOP", variable=self.sl_type, value="STOP",
+                       command=self._on_sl_type_changed).pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(sl_type_frame, text="LIMIT", variable=self.sl_type, value="LIMIT",
+                       command=self._on_sl_type_changed).pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(sl_type_frame, text="CONTINGENCY", variable=self.sl_type, value="CONTINGENCY",
+                       command=self._on_sl_type_changed).pack(side=tk.LEFT, padx=5)
+        row += 1
+        
+        # Contingency backup SL (shown only when CONTINGENCY selected)
+        self.contingency_frame = ttk.Frame(frame)
+        self.contingency_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=2)
+        
+        ttk.Label(self.contingency_frame, text="Backup SL %:").pack(side=tk.LEFT, padx=5)
+        ttk.Spinbox(
+            self.contingency_frame,
+            textvariable=self.contingency_sl_pct,
+            from_=1,
+            to=200,
+            increment=5,
+            width=6
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(self.contingency_frame, text="(must be > main SL%)", foreground="gray", font=('Helvetica', 8)).pack(side=tk.LEFT, padx=5)
+        self.contingency_frame.grid_remove()  # Initially hidden
+        row += 1
+        
         # SL Order Type
         sl_order_frame = ttk.Frame(frame)
         sl_order_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=2)
@@ -650,196 +759,52 @@ class PlayCreatorGUI:
             width=15
         )
         self.sl_order_combo.pack(side=tk.LEFT, padx=5)
-    
-    def _create_advanced_panel(self, parent):
-        """Create the advanced options panel with collapsible sections."""
-        # Main collapsible frame
-        self.advanced_frame = ttk.LabelFrame(parent, text="Advanced Options ▼", padding="10")
-        self.advanced_frame.grid(row=3, column=0, sticky="ew", pady=5)
-        self.advanced_frame.columnconfigure(1, weight=1)
-        self.advanced_visible = tk.BooleanVar(value=False)
+        row += 1
         
-        # Toggle button
-        toggle_btn = ttk.Button(
-            self.advanced_frame,
-            text="Show Advanced Options",
-            command=self._toggle_advanced_options
-        )
-        toggle_btn.grid(row=0, column=0, columnspan=2, sticky="w", pady=5)
+        # Trailing SL (collapsible)
+        trailing_sl_frame = ttk.Frame(frame)
+        trailing_sl_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=2)
         
-        # Container for advanced options (initially hidden)
-        self.advanced_container = ttk.Frame(self.advanced_frame)
-        self.advanced_container.grid(row=1, column=0, columnspan=2, sticky="ew")
-        self.advanced_container.columnconfigure(1, weight=1)
-        
-        # ============ Play Expiration ============
-        ttk.Label(self.advanced_container, text="Play Expiration:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
-        exp_frame = ttk.Frame(self.advanced_container)
-        exp_frame.grid(row=0, column=1, sticky="w", padx=5, pady=3)
-        
-        self.play_exp_entry = ttk.Entry(exp_frame, textvariable=self.play_expiration, width=12)
-        self.play_exp_entry.pack(side=tk.LEFT)
-        ttk.Label(exp_frame, text="(MM/DD/YYYY, blank=option exp)", foreground="gray").pack(side=tk.LEFT, padx=5)
-        
-        # ============ Play Class ============
-        ttk.Label(self.advanced_container, text="Play Class:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
-        class_frame = ttk.Frame(self.advanced_container)
-        class_frame.grid(row=1, column=1, sticky="w", padx=5, pady=3)
-        
-        ttk.Radiobutton(class_frame, text="SIMPLE (standalone)", variable=self.play_class, value="SIMPLE",
-                       command=self._on_play_class_changed).pack(side=tk.LEFT, padx=5)
-        ttk.Radiobutton(class_frame, text="OTO (conditional)", variable=self.play_class, value="OTO",
-                       command=self._on_play_class_changed).pack(side=tk.LEFT, padx=5)
-        
-        # ============ Stop Loss Type ============
-        ttk.Separator(self.advanced_container, orient="horizontal").grid(row=2, column=0, columnspan=2, sticky="ew", pady=10)
-        
-        ttk.Label(self.advanced_container, text="Stop Loss Type:").grid(row=3, column=0, sticky="w", padx=5, pady=3)
-        sl_type_frame = ttk.Frame(self.advanced_container)
-        sl_type_frame.grid(row=3, column=1, sticky="w", padx=5, pady=3)
-        
-        ttk.Radiobutton(sl_type_frame, text="STOP (market)", variable=self.sl_type, value="STOP",
-                       command=self._on_sl_type_changed).pack(side=tk.LEFT, padx=5)
-        ttk.Radiobutton(sl_type_frame, text="LIMIT", variable=self.sl_type, value="LIMIT",
-                       command=self._on_sl_type_changed).pack(side=tk.LEFT, padx=5)
-        ttk.Radiobutton(sl_type_frame, text="CONTINGENCY", variable=self.sl_type, value="CONTINGENCY",
-                       command=self._on_sl_type_changed).pack(side=tk.LEFT, padx=5)
-        
-        # Contingency backup SL (shown only when CONTINGENCY selected)
-        self.contingency_frame = ttk.Frame(self.advanced_container)
-        self.contingency_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=5, pady=3)
-        
-        ttk.Label(self.contingency_frame, text="Backup SL % (worse):").pack(side=tk.LEFT, padx=5)
-        ttk.Spinbox(
-            self.contingency_frame,
-            textvariable=self.contingency_sl_pct,
-            from_=1,
-            to=200,
-            increment=5,
-            width=8
-        ).pack(side=tk.LEFT, padx=5)
-        ttk.Label(self.contingency_frame, text="(must be > main SL%)", foreground="gray").pack(side=tk.LEFT, padx=5)
-        
-        # NOTE: TP/SL Order Types are now in the main config panel under each section
-        # NOTE: Stock Price Targets are now in the main config panel (both absolute and percentage)
-        
-        # ============ Trailing Stop ============
-        ttk.Separator(self.advanced_container, orient="horizontal").grid(row=5, column=0, columnspan=2, sticky="ew", pady=10)
-        
-        trailing_frame = ttk.Frame(self.advanced_container)
-        trailing_frame.grid(row=6, column=0, columnspan=2, sticky="ew", padx=5, pady=3)
-        
-        ttk.Checkbutton(trailing_frame, text="Enable Trailing Stop", variable=self.trailing_enabled,
-                       command=self._on_trailing_toggle).pack(side=tk.LEFT)
-        ttk.Label(trailing_frame, text="Activation %:").pack(side=tk.LEFT, padx=(20, 5))
-        self.trailing_spin = ttk.Spinbox(
-            trailing_frame,
-            textvariable=self.trailing_activation_pct,
+        ttk.Checkbutton(trailing_sl_frame, text="Trailing SL", variable=self.trailing_sl_enabled,
+                       command=self._on_trailing_sl_toggle).pack(side=tk.LEFT)
+        ttk.Label(trailing_sl_frame, text="Activation %:").pack(side=tk.LEFT, padx=(10, 2))
+        self.trailing_sl_spin = ttk.Spinbox(
+            trailing_sl_frame,
+            textvariable=self.trailing_sl_activation_pct,
             from_=5,
             to=50,
             increment=5,
-            width=8,
+            width=6,
             state="disabled"
         )
-        self.trailing_spin.pack(side=tk.LEFT, padx=5)
-        ttk.Label(trailing_frame, text="% gain before trailing", foreground="gray").pack(side=tk.LEFT, padx=5)
+        self.trailing_sl_spin.pack(side=tk.LEFT, padx=2)
+        ttk.Label(trailing_sl_frame, text="% loss activates trail", foreground="gray", font=('Helvetica', 8)).pack(side=tk.LEFT, padx=5)
+        row += 1
         
-        # ============ Dynamic TP/SL (Stub) ============
-        ttk.Separator(self.advanced_container, orient="horizontal").grid(row=7, column=0, columnspan=2, sticky="ew", pady=10)
-        
-        dynamic_frame = ttk.Frame(self.advanced_container)
-        dynamic_frame.grid(row=8, column=0, columnspan=2, sticky="ew", padx=5, pady=3)
+        # Dynamic SL toggle (stub)
+        dynamic_sl_frame = ttk.Frame(frame)
+        dynamic_sl_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=2)
         
         ttk.Checkbutton(
-            dynamic_frame, 
-            text="Dynamic TP/SL", 
-            variable=self.dynamic_tp_sl_enabled
+            dynamic_sl_frame, 
+            text="Dynamic SL", 
+            variable=self.dynamic_tp_sl_enabled,  # Shares state with TP for now
+            command=self._on_dynamic_toggle
         ).pack(side=tk.LEFT)
-        
         ttk.Label(
-            dynamic_frame, 
-            text="(vs Static - future methods: time decay, IV-adjusted, etc.)",
-            foreground="gray"
-        ).pack(side=tk.LEFT, padx=10)
-        
-        # ============ Multiple Take Profits ============
-        ttk.Separator(self.advanced_container, orient="horizontal").grid(row=9, column=0, columnspan=2, sticky="ew", pady=10)
-        
-        multi_tp_frame = ttk.Frame(self.advanced_container)
-        multi_tp_frame.grid(row=10, column=0, columnspan=2, sticky="ew", padx=5, pady=3)
-        
-        ttk.Checkbutton(multi_tp_frame, text="Multiple TP Levels", variable=self.multiple_tps_enabled,
-                       command=self._on_multi_tp_toggle).pack(side=tk.LEFT)
-        ttk.Label(multi_tp_frame, text="# of TPs:").pack(side=tk.LEFT, padx=(20, 5))
-        self.num_tps_spin = ttk.Spinbox(
-            multi_tp_frame,
-            textvariable=self.num_tp_levels,
-            from_=2,
-            to=5,
-            width=5,
-            state="disabled",
-            command=self._rebuild_tp_levels_ui
-        )
-        self.num_tps_spin.pack(side=tk.LEFT, padx=5)
-        self.num_tps_spin.bind("<Return>", lambda e: self._rebuild_tp_levels_ui())
-        self.num_tps_spin.bind("<<Increment>>", lambda e: self.root.after(50, self._rebuild_tp_levels_ui))
-        self.num_tps_spin.bind("<<Decrement>>", lambda e: self.root.after(50, self._rebuild_tp_levels_ui))
-        
-        # Dynamic TP levels container
-        self.tp_levels_container = ttk.Frame(self.advanced_container)
-        self.tp_levels_container.grid(row=11, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
-        self.tp_level_widgets = []  # Store widgets for cleanup
-        
-        # ============ OCO/OTO Relationships ============
-        ttk.Separator(self.advanced_container, orient="horizontal").grid(row=12, column=0, columnspan=2, sticky="ew", pady=10)
-        
-        ttk.Label(self.advanced_container, text="Conditional Relationships:", font=('Helvetica', 9, 'bold')).grid(
-            row=13, column=0, columnspan=2, sticky="w", padx=5, pady=3
-        )
-        
-        # OTO Parent (for OTO class plays)
-        self.oto_frame = ttk.Frame(self.advanced_container)
-        self.oto_frame.grid(row=14, column=0, columnspan=2, sticky="ew", padx=5, pady=3)
-        
-        ttk.Label(self.oto_frame, text="OTO Parent Play:").pack(side=tk.LEFT)
-        self.oto_parent_entry = ttk.Entry(self.oto_frame, textvariable=self.oto_parent, width=30)
-        self.oto_parent_entry.pack(side=tk.LEFT, padx=5)
-        ttk.Button(self.oto_frame, text="Browse...", command=self._browse_parent_play).pack(side=tk.LEFT, padx=2)
-        
-        ttk.Label(self.oto_frame, text="Trigger:").pack(side=tk.LEFT, padx=(15, 5))
-        trigger_combo = ttk.Combobox(
-            self.oto_frame,
-            textvariable=self.oto_trigger_condition,
-            values=["on_fill", "on_tp", "on_sl"],
-            state="readonly",
-            width=10
-        )
-        trigger_combo.pack(side=tk.LEFT)
-        
-        # OCO Peers (plays that cancel each other)
-        oco_frame = ttk.Frame(self.advanced_container)
-        oco_frame.grid(row=15, column=0, columnspan=2, sticky="ew", padx=5, pady=3)
-        
-        ttk.Label(oco_frame, text="OCO Peers:").pack(side=tk.LEFT)
-        self.oco_entry = ttk.Entry(oco_frame, textvariable=self.oco_plays, width=40)
-        self.oco_entry.pack(side=tk.LEFT, padx=5)
-        ttk.Label(oco_frame, text="(comma-separated play names)", foreground="gray").pack(side=tk.LEFT, padx=5)
-        
-        # Initially hide advanced options
-        self.advanced_container.grid_remove()
-        self.contingency_frame.grid_remove()
-        self.tp_levels_container.grid_remove()
-        self.oto_frame.grid_remove()
-        
-    def _toggle_advanced_options(self):
-        """Toggle visibility of advanced options."""
-        if self.advanced_visible.get():
-            self.advanced_container.grid_remove()
-            self.advanced_visible.set(False)
-        else:
-            self.advanced_container.grid()
-            self.advanced_visible.set(True)
-            
+            dynamic_sl_frame, 
+            text="(future: time decay, IV-adjusted)",
+            foreground="gray",
+            font=('Helvetica', 8)
+        ).pack(side=tk.LEFT, padx=5)
+    
+    def _format_iv(self, row) -> str:
+        """Format IV from row data, checking multiple possible key names."""
+        iv = row.get('iv') or row.get('implied_volatility') or row.get('impliedVolatility') or 0
+        if iv:
+            return f"{iv * 100:.1f}%"
+        return "--"
+    
     def _on_sl_type_changed(self):
         """Handle stop loss type change."""
         sl_type = self.sl_type.get()
@@ -865,12 +830,19 @@ class PlayCreatorGUI:
         else:
             self.sl_stock_entry.config(state="disabled")
             
-    def _on_trailing_toggle(self):
-        """Toggle trailing stop settings."""
-        if self.trailing_enabled.get():
-            self.trailing_spin.config(state="normal")
+    def _on_trailing_tp_toggle(self):
+        """Toggle trailing TP settings."""
+        if self.trailing_tp_enabled.get():
+            self.trailing_tp_spin.config(state="normal")
         else:
-            self.trailing_spin.config(state="disabled")
+            self.trailing_tp_spin.config(state="disabled")
+    
+    def _on_trailing_sl_toggle(self):
+        """Toggle trailing SL settings."""
+        if self.trailing_sl_enabled.get():
+            self.trailing_sl_spin.config(state="normal")
+        else:
+            self.trailing_sl_spin.config(state="disabled")
             
     def _on_multi_tp_toggle(self):
         """Toggle multiple TP settings."""
@@ -882,6 +854,11 @@ class PlayCreatorGUI:
             self.num_tps_spin.config(state="disabled")
             self.tp_levels_container.grid_remove()
             self._clear_tp_levels_ui()
+    
+    def _on_dynamic_toggle(self):
+        """Toggle dynamic TP/SL (stub - no implementation yet)."""
+        # For now, this just updates the preview to show dynamic config in play data
+        self._update_preview()
     
     def _rebuild_tp_levels_ui(self):
         """Rebuild the dynamic TP levels input UI."""
@@ -1039,49 +1016,292 @@ class PlayCreatorGUI:
             play_name = os.path.splitext(os.path.basename(filename))[0]
             self.oto_parent.set(play_name)
     
+    def _browse_oco_play(self):
+        """Browse for OCO peer plays from NEW folder."""
+        initial_dir = os.path.join(project_root, 'goldflipper', 'plays', 'new')
+        
+        filename = filedialog.askopenfilename(
+            title="Select OCO Peer Play (from NEW plays)",
+            filetypes=[("JSON files", "*.json")],
+            initialdir=initial_dir
+        )
+        
+        if filename:
+            play_name = os.path.splitext(os.path.basename(filename))[0]
+            # Add to listbox if not already present
+            current_items = list(self.oco_listbox.get(0, tk.END))
+            if play_name not in current_items:
+                self.oco_listbox.insert(tk.END, play_name)
+                self._update_oco_plays_var()
+    
+    def _remove_oco_play(self):
+        """Remove selected OCO peer play."""
+        selection = self.oco_listbox.curselection()
+        if selection:
+            self.oco_listbox.delete(selection[0])
+            self._update_oco_plays_var()
+    
+    def _update_oco_plays_var(self):
+        """Update the oco_plays StringVar from listbox contents."""
+        items = list(self.oco_listbox.get(0, tk.END))
+        self.oco_plays.set(",".join(items))
+    
+    def _auto_populate_oco_peers(self):
+        """Auto-populate OCO peers listbox based on OCO peer set numbers.
+        
+        Scans plays in new/ and temp/ folders for plays with matching
+        oco_peer_set_numbers and adds them to the OCO peers list.
+        This mirrors the CSV ingestion behavior where plays with the same
+        OCO set number are automatically linked.
+        """
+        peer_set_str = self.oco_peer_set_numbers.get().strip()
+        if not peer_set_str:
+            messagebox.showinfo(
+                "No Peer Set", 
+                "Please enter OCO peer set number(s) first.\n\n"
+                "Example: \"1\" or \"1,2\" for multiple sets."
+            )
+            return
+        
+        # Parse the peer set numbers
+        try:
+            peer_set_nums = []
+            for part in peer_set_str.replace(';', ',').split(','):
+                part = part.strip()
+                if part:
+                    peer_set_nums.append(int(part))
+        except ValueError:
+            messagebox.showerror(
+                "Invalid Input", 
+                "Please enter valid numbers separated by commas.\n\n"
+                "Example: \"1\" or \"1,2,3\""
+            )
+            return
+        
+        if not peer_set_nums:
+            return
+        
+        # Scan for matching plays
+        matching_plays = self._scan_plays_for_oco_peer_sets(peer_set_nums)
+        
+        if not matching_plays:
+            messagebox.showinfo(
+                "No Matches", 
+                f"No plays found with OCO peer set number(s): {peer_set_nums}\n\n"
+                "Plays must have 'oco_peer_set_numbers' field to be matched."
+            )
+            return
+        
+        # Get current items in listbox
+        current_items = set(self.oco_listbox.get(0, tk.END))
+        
+        # Add matching plays that aren't already in the list
+        added_count = 0
+        for play_name in matching_plays:
+            if play_name not in current_items:
+                self.oco_listbox.insert(tk.END, play_name)
+                added_count += 1
+        
+        self._update_oco_plays_var()
+        
+        if added_count > 0:
+            messagebox.showinfo(
+                "Peers Added", 
+                f"Added {added_count} matching play(s) to OCO peers.\n\n"
+                f"Total peers: {self.oco_listbox.size()}"
+            )
+        else:
+            messagebox.showinfo(
+                "No New Peers", 
+                "All matching plays are already in the OCO peers list."
+            )
+    
+    def _scan_plays_for_oco_peer_sets(self, target_set_numbers: List[int]) -> List[str]:
+        """Scan plays folders for plays with matching OCO peer set numbers.
+        
+        Args:
+            target_set_numbers: List of OCO peer set numbers to match.
+            
+        Returns:
+            List of play names (without .json extension) that match any of the
+            target set numbers.
+        """
+        matching_plays = []
+        base_dir = os.path.join(project_root, 'goldflipper', 'plays')
+        
+        # Scan both new/ and temp/ folders
+        folders_to_scan = ['new', 'temp']
+        
+        for folder in folders_to_scan:
+            folder_path = os.path.join(base_dir, folder)
+            if not os.path.exists(folder_path):
+                continue
+            
+            for filename in os.listdir(folder_path):
+                if not filename.endswith('.json'):
+                    continue
+                
+                filepath = os.path.join(folder_path, filename)
+                try:
+                    with open(filepath, 'r') as f:
+                        play_data = json.load(f)
+                    
+                    # Check for oco_peer_set_numbers field
+                    play_peer_sets = play_data.get('oco_peer_set_numbers', [])
+                    
+                    # Handle both list and comma-separated string formats
+                    if isinstance(play_peer_sets, str):
+                        play_peer_sets = [
+                            int(x.strip()) for x in play_peer_sets.split(',') 
+                            if x.strip().isdigit()
+                        ]
+                    elif not isinstance(play_peer_sets, list):
+                        play_peer_sets = []
+                    
+                    # Check for any matching set numbers
+                    if any(num in play_peer_sets for num in target_set_numbers):
+                        play_name = os.path.splitext(filename)[0]
+                        if play_name not in matching_plays:
+                            matching_plays.append(play_name)
+                            
+                except (json.JSONDecodeError, IOError, KeyError) as e:
+                    # Skip invalid files
+                    logging.debug(f"Skipping {filename}: {e}")
+                    continue
+        
+        return matching_plays
+    
+    def _get_oco_peer_set_numbers_list(self) -> List[int]:
+        """Parse OCO peer set numbers from the entry field into a list of integers.
+        
+        Returns:
+            List of OCO peer set numbers, or empty list if none specified.
+        """
+        peer_set_str = self.oco_peer_set_numbers.get().strip()
+        if not peer_set_str:
+            return []
+        
+        try:
+            result = []
+            for part in peer_set_str.replace(';', ',').split(','):
+                part = part.strip()
+                if part:
+                    result.append(int(part))
+            return result
+        except ValueError:
+            return []
+    
+    def _browse_oso_play(self):
+        """Browse for OSO (OTO) plays from TEMP folder."""
+        initial_dir = os.path.join(project_root, 'goldflipper', 'plays', 'temp')
+        os.makedirs(initial_dir, exist_ok=True)  # Ensure temp folder exists
+        
+        filename = filedialog.askopenfilename(
+            title="Select OSO/OTO Play (from TEMP plays)",
+            filetypes=[("JSON files", "*.json")],
+            initialdir=initial_dir
+        )
+        
+        if filename:
+            play_name = os.path.splitext(os.path.basename(filename))[0]
+            # Add to listbox if not already present
+            current_items = list(self.oso_listbox.get(0, tk.END))
+            if play_name not in current_items:
+                self.oso_listbox.insert(tk.END, play_name)
+    
+    def _remove_oso_play(self):
+        """Remove selected OSO (OTO) play."""
+        selection = self.oso_listbox.curselection()
+        if selection:
+            self.oso_listbox.delete(selection[0])
+    
     def _on_play_class_changed(self):
         """Handle play class change (SIMPLE vs OTO)."""
-        if self.play_class.get() == "OTO":
-            self.oto_frame.grid()
-        else:
-            self.oto_frame.grid_remove()
+        # OTO plays use the OSO listbox to specify child plays
+        # No special UI change needed - the OSO section is always visible
+        pass
     
     def _build_conditional_plays(self) -> Dict[str, Any]:
         """Build the conditional_plays section for OCO/OTO relationships."""
         conditional = {}
         
-        # OTO (One-Triggers-Other) relationship
+        # OCO (One-Cancels-Other) relationship from listbox
+        oco_list = list(self.oco_listbox.get(0, tk.END))
+        if oco_list:
+            conditional["oco"] = {
+                "peer_plays": oco_list,
+                "cancel_on": "any_fill"  # Cancel peers when this play fills
+            }
+        
+        # OSO/OTO (One-Sends-Other / One-Triggers-Other) relationship from listbox
+        oso_list = list(self.oso_listbox.get(0, tk.END))
+        if oso_list:
+            conditional["oso"] = {
+                "child_plays": oso_list,
+                "trigger_on": "fill"  # Trigger children when this play fills
+            }
+        
+        # Legacy OTO parent support (for backward compatibility)
         oto_parent = self.oto_parent.get().strip()
-        if oto_parent and self.play_class.get() == "OTO":
+        if oto_parent:
             conditional["oto"] = {
                 "parent_play": oto_parent,
                 "trigger_condition": self.oto_trigger_condition.get(),
                 "triggered": False
             }
         
-        # OCO (One-Cancels-Other) relationship
-        oco_plays_str = self.oco_plays.get().strip()
-        if oco_plays_str:
-            oco_list = [p.strip() for p in oco_plays_str.split(",") if p.strip()]
-            if oco_list:
-                conditional["oco"] = {
-                    "peer_plays": oco_list,
-                    "cancel_on": "any_fill"  # Cancel peers when this play fills
-                }
-        
         return conditional
+    
+    def _infer_play_class(self) -> str:
+        """Infer play class from conditional orders.
+        
+        OTO = This play IS a child, waiting to be triggered by a parent (goes to TEMP).
+        SIMPLE = This play executes on its own, possibly triggering children (goes to NEW).
+        
+        Note: Having OSO children doesn't make this play OTO - it's still SIMPLE but
+        will trigger children when it fills. OTO is when THIS play has a parent.
+        """
+        # Check if this play has a parent (i.e., is a child waiting to be triggered)
+        oto_parent = self.oto_parent.get().strip()
+        if oto_parent:
+            return "OTO"
+        return "SIMPLE"
         
     def _create_option_chain_panel(self, parent):
         """Create the option chain browser panel."""
         frame = ttk.LabelFrame(parent, text="Option Chain Browser", padding="10")
-        frame.grid(row=1, column=0, sticky="ew", pady=5)
+        frame.grid(row=0, column=0, sticky="ew", pady=5)
         frame.columnconfigure(0, weight=1)
         
-        # Filter frame
+        # Filter frame - includes symbol, price, delta range, and refresh
         filter_frame = ttk.Frame(frame)
         filter_frame.grid(row=0, column=0, sticky="ew", pady=5)
         
-        ttk.Label(filter_frame, text="Delta Range:").pack(side=tk.LEFT, padx=5)
+        # Symbol entry (left side)
+        ttk.Label(filter_frame, text="Symbol:").pack(side=tk.LEFT, padx=(0, 2))
+        symbol_entry = ttk.Entry(filter_frame, textvariable=self.symbol, width=8)
+        symbol_entry.pack(side=tk.LEFT, padx=(0, 5))
+        symbol_entry.bind("<Return>", lambda e: self._fetch_market_data())
+        
+        ttk.Button(
+            filter_frame,
+            text="Fetch",
+            command=self._fetch_market_data,
+            width=5
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Price display
+        ttk.Label(filter_frame, text="Price:", foreground="gray").pack(side=tk.LEFT, padx=(0, 2))
+        ttk.Label(filter_frame, textvariable=self.current_price, font=('Helvetica', 9, 'bold')).pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Label(filter_frame, text="Bid:", foreground="gray").pack(side=tk.LEFT, padx=(0, 2))
+        ttk.Label(filter_frame, textvariable=self.bid_price, font=('Helvetica', 9)).pack(side=tk.LEFT, padx=(0, 5))
+        
+        ttk.Label(filter_frame, text="Ask:", foreground="gray").pack(side=tk.LEFT, padx=(0, 2))
+        ttk.Label(filter_frame, textvariable=self.ask_price, font=('Helvetica', 9)).pack(side=tk.LEFT, padx=(0, 15))
+        
+        # Delta range (moved to right side)
+        ttk.Label(filter_frame, text="Delta:").pack(side=tk.LEFT, padx=(0, 2))
         self.delta_min = tk.DoubleVar(value=0.20)
         self.delta_max = tk.DoubleVar(value=0.80)
         
@@ -1091,7 +1311,7 @@ class PlayCreatorGUI:
             from_=0.0,
             to=1.0,
             increment=0.05,
-            width=6
+            width=5
         ).pack(side=tk.LEFT, padx=2)
         
         ttk.Label(filter_frame, text="-").pack(side=tk.LEFT)
@@ -1102,7 +1322,7 @@ class PlayCreatorGUI:
             from_=0.0,
             to=1.0,
             increment=0.05,
-            width=6
+            width=5
         ).pack(side=tk.LEFT, padx=2)
         
         ttk.Button(
@@ -1140,30 +1360,31 @@ class PlayCreatorGUI:
         self.chain_tree.bind("<<TreeviewSelect>>", self._on_chain_select)
         self.chain_tree.bind("<Double-1>", self._on_chain_double_click)
         
-        # Legend
+        # Selected option info (legend removed - double-click hint was redundant)
         legend_frame = ttk.Frame(frame)
         legend_frame.grid(row=2, column=0, sticky="ew", pady=5)
         
-        ttk.Label(legend_frame, text="Double-click to select strike", 
-                  foreground="gray", font=('Helvetica', 9, 'italic')).pack(side=tk.LEFT)
+        ttk.Label(legend_frame, text="ATM=green | ITM=orange | OTM=white", 
+                  foreground="gray", font=('Helvetica', 8)).pack(side=tk.LEFT)
         
         # Selected option info
         self.selected_option_label = ttk.Label(
             legend_frame, 
-            text="No option selected",
-            font=('Helvetica', 9)
+            text="Double-click row to select",
+            font=('Helvetica', 9),
+            foreground="gray"
         )
         self.selected_option_label.pack(side=tk.RIGHT, padx=10)
         
     def _create_preview_panel(self, parent):
-        """Create the validation and preview panel."""
+        """Create the validation and preview panel (full right column)."""
         frame = ttk.LabelFrame(parent, text="Play Preview", padding="10")
-        frame.grid(row=2, column=0, sticky="nsew", pady=5)
+        frame.grid(row=0, column=0, sticky="nsew", pady=5)  # row=0 since it's alone in right column
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
         
-        # JSON preview text
-        self.preview_text = tk.Text(frame, height=15, width=50, wrap=tk.WORD)
+        # JSON preview text - taller since it takes full column height
+        self.preview_text = tk.Text(frame, height=40, width=45, wrap=tk.WORD)
         self.preview_text.grid(row=0, column=0, sticky="nsew")
         
         preview_scroll = ttk.Scrollbar(frame, orient="vertical", command=self.preview_text.yview)
@@ -1187,46 +1408,15 @@ class PlayCreatorGUI:
             command=self._update_preview
         ).pack(side=tk.RIGHT, padx=5)
         
-    def _create_actions_panel(self, parent):
-        """Create the actions panel with horizontal layout."""
-        frame = ttk.LabelFrame(parent, text="Actions & Risk Summary", padding="10")
-        frame.grid(row=0, column=0, sticky="ew", pady=5)
+    def _create_risk_summary_panel(self, parent):
+        """Create the risk summary panel (below option chain)."""
+        frame = ttk.LabelFrame(parent, text="Risk Summary", padding="10")
+        frame.grid(row=1, column=0, sticky="ew", pady=5)
         frame.columnconfigure(0, weight=1)
-        frame.columnconfigure(1, weight=1)
         
-        # Left side - action buttons (horizontal)
-        btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        
-        self.create_btn = ttk.Button(
-            btn_frame,
-            text="Create Play",
-            command=self._create_play,
-            style="Accent.TButton"
-        )
-        self.create_btn.pack(side=tk.LEFT, padx=3)
-        
-        ttk.Button(
-            btn_frame,
-            text="Save Template",
-            command=self._save_template
-        ).pack(side=tk.LEFT, padx=3)
-        
-        ttk.Button(
-            btn_frame,
-            text="Load Template",
-            command=self._load_template
-        ).pack(side=tk.LEFT, padx=3)
-        
-        ttk.Button(
-            btn_frame,
-            text="Clear All",
-            command=self._clear_all
-        ).pack(side=tk.LEFT, padx=3)
-        
-        # Right side - Risk calculation (horizontal)
+        # Risk calculation (horizontal)
         risk_frame = ttk.Frame(frame)
-        risk_frame.grid(row=0, column=1, sticky="e", padx=5, pady=5)
+        risk_frame.pack(fill=tk.X)
         
         self.risk_labels = {}
         risk_items = [
@@ -1237,9 +1427,149 @@ class PlayCreatorGUI:
         ]
         
         for label, key in risk_items:
-            ttk.Label(risk_frame, text=label, font=('Helvetica', 8)).pack(side=tk.LEFT, padx=(5, 0))
-            self.risk_labels[key] = ttk.Label(risk_frame, text="--", font=('Helvetica', 8, 'bold'))
-            self.risk_labels[key].pack(side=tk.LEFT, padx=(0, 10))
+            ttk.Label(risk_frame, text=label, font=('Helvetica', 9)).pack(side=tk.LEFT, padx=(5, 0))
+            self.risk_labels[key] = ttk.Label(risk_frame, text="--", font=('Helvetica', 9, 'bold'))
+            self.risk_labels[key].pack(side=tk.LEFT, padx=(0, 15))
+    
+    def _create_action_buttons_panel(self, parent):
+        """Create the action buttons panel (between risk summary and conditional orders)."""
+        frame = ttk.LabelFrame(parent, text="Actions", padding="10")
+        frame.grid(row=2, column=0, sticky="ew", pady=5)
+        frame.columnconfigure(0, weight=1)
+        
+        # Center the buttons
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(anchor="center", pady=5)
+        
+        self.create_btn = ttk.Button(
+            btn_frame,
+            text="Create Play",
+            command=self._create_play,
+            width=14
+        )
+        self.create_btn.pack(side=tk.LEFT, padx=5, pady=3)
+        
+        ttk.Button(
+            btn_frame,
+            text="Save Template",
+            command=self._save_template,
+            width=14
+        ).pack(side=tk.LEFT, padx=5, pady=3)
+        
+        ttk.Button(
+            btn_frame,
+            text="Load Template",
+            command=self._load_template,
+            width=14
+        ).pack(side=tk.LEFT, padx=5, pady=3)
+        
+        ttk.Button(
+            btn_frame,
+            text="Clear All",
+            command=self._clear_all,
+            width=14
+        ).pack(side=tk.LEFT, padx=5, pady=3)
+    
+    def _create_conditional_orders_panel(self, parent):
+        """Create the conditional orders panel (OCO/OSO)."""
+        frame = ttk.LabelFrame(parent, text="Conditional Orders", padding="10")
+        frame.grid(row=3, column=0, sticky="ew", pady=5)
+        frame.columnconfigure(0, weight=1)
+        
+        # OCO Peer Set Number input (for automatic grouping like CSV ingestion)
+        peer_set_frame = ttk.Frame(frame)
+        peer_set_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        ttk.Label(peer_set_frame, text="OCO Peer Set #:").pack(side=tk.LEFT)
+        self.oco_peer_set_entry = ttk.Entry(
+            peer_set_frame, 
+            textvariable=self.oco_peer_set_numbers, 
+            width=12
+        )
+        self.oco_peer_set_entry.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            peer_set_frame, 
+            text="Auto-Populate", 
+            command=self._auto_populate_oco_peers,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(
+            peer_set_frame, 
+            text="(Enter set numbers e.g. \"1\" or \"1,2\" to find matching plays)",
+            foreground="gray",
+            font=('Helvetica', 8)
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # OCO (One-Cancels-Other)
+        oco_frame = ttk.Frame(frame)
+        oco_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Label(oco_frame, text="OCO Peers:").pack(side=tk.LEFT)
+        self.oco_listbox = tk.Listbox(oco_frame, height=2, width=25)
+        self.oco_listbox.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        
+        oco_btn_frame = ttk.Frame(oco_frame)
+        oco_btn_frame.pack(side=tk.LEFT, padx=5)
+        ttk.Button(oco_btn_frame, text="Add", command=self._browse_oco_play, width=8).pack(pady=1)
+        ttk.Button(oco_btn_frame, text="Remove", command=self._remove_oco_play, width=8).pack(pady=1)
+        
+        # OSO/OTO (One-Sends-Other / One-Triggers-Other)
+        oso_frame = ttk.Frame(frame)
+        oso_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Label(oso_frame, text="OSO (OTO):").pack(side=tk.LEFT)
+        self.oso_listbox = tk.Listbox(oso_frame, height=2, width=25)
+        self.oso_listbox.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        
+        oso_btn_frame = ttk.Frame(oso_frame)
+        oso_btn_frame.pack(side=tk.LEFT, padx=5)
+        ttk.Button(oso_btn_frame, text="Add", command=self._browse_oso_play, width=8).pack(pady=1)
+        ttk.Button(oso_btn_frame, text="Remove", command=self._remove_oso_play, width=8).pack(pady=1)
+        
+        # OCO Peer Sets Config display from settings
+        oco_config = self._get_oco_peer_set_config()
+        config_text = f"[ SETTINGS ] OCO Peer Sets automatic reloading configured: TP {oco_config.get('take_profit_pct', 50)}% | SL {oco_config.get('stop_loss_pct', 30)}% | Entry Buffer {oco_config.get('entry_buffer', 0.05)*100:.0f}%"
+        self.oco_config_label = ttk.Label(
+            frame,
+            text=config_text,
+            foreground="blue",
+            font=('Helvetica', 8)
+        )
+        self.oco_config_label.pack(fill=tk.X, pady=(5, 0))
+    
+    def _get_oco_peer_set_config(self) -> Dict[str, Any]:
+        """Get OCO peer set configuration from settings."""
+        try:
+            oco_config = config.get('auto_play_creator.oco_peer_set', default={})
+            if oco_config is None:
+                oco_config = {}
+            return {
+                'take_profit_pct': oco_config.get('take_profit_pct', 50.0) if isinstance(oco_config, dict) else 50.0,
+                'stop_loss_pct': oco_config.get('stop_loss_pct', 30.0) if isinstance(oco_config, dict) else 30.0,
+                'entry_buffer': oco_config.get('entry_buffer', 0.05) if isinstance(oco_config, dict) else 0.05
+            }
+        except Exception:
+            return {'take_profit_pct': 50.0, 'stop_loss_pct': 30.0, 'entry_buffer': 0.05}
+    
+    def _create_other_options_panel(self, parent):
+        """Create the other options panel."""
+        frame = ttk.LabelFrame(parent, text="Other Options", padding="10")
+        frame.grid(row=4, column=0, sticky="ew", pady=5)  # row 4 now since action buttons is row 2, conditionals is row 3
+        frame.columnconfigure(0, weight=1)
+        
+        # Note: Play Class is now inferred from conditional orders, not selectable
+        # SIMPLE = no parent, OTO = has parent (waiting to be triggered)
+        
+        # Future placeholder for additional options
+        placeholder = ttk.Label(
+            frame,
+            text="Additional options may be added here in future updates.",
+            foreground="gray",
+            font=('Helvetica', 8)
+        )
+        placeholder.pack(anchor="w")
         
     # =========================================================================
     # Event Handlers
@@ -1302,11 +1632,13 @@ class PlayCreatorGUI:
         
         self._refresh_option_chain()
         self._update_preview()
+        self._update_contract_preview()
         
     def _on_trade_type_changed(self):
         """Handle trade type change."""
         self._refresh_option_chain()
         self._update_preview()
+        self._update_contract_preview()
         
     def _on_strike_changed(self, event=None):
         """Handle strike price change."""
@@ -1314,6 +1646,7 @@ class PlayCreatorGUI:
         self._populate_option_from_chain()
         self._update_preview()
         self._update_risk_summary()
+        self._update_contract_preview()
     
     def _on_contracts_changed(self):
         """Handle contracts change."""
@@ -1328,14 +1661,17 @@ class PlayCreatorGUI:
         bid = self.option_bid.get()
         ask = self.option_ask.get()
         mid = self.option_mid.get()
+        last = self.option_last.get()
         
-        if mid > 0:  # Only update if we have option data
+        if mid > 0 or last > 0:  # Only update if we have option data
             if entry_type == "Market":
-                self.entry_price.set(round(mid, 2))
+                self.entry_price.set(round(mid if mid > 0 else last, 2))
             elif entry_type == "Limit at Bid":
                 self.entry_price.set(round(bid, 2))
             elif entry_type == "Limit at Ask":
                 self.entry_price.set(round(ask, 2))
+            elif entry_type == "Limit at Last":
+                self.entry_price.set(round(last, 2))
             else:  # Limit at Mid
                 self.entry_price.set(round(mid, 2))
             
@@ -1392,7 +1728,8 @@ class PlayCreatorGUI:
                 last = row.get('last', 0)
                 delta = abs(row.get('delta', 0))
                 theta = row.get('theta', 0)
-                iv = row.get('iv', 0)
+                # Check multiple possible key names for IV
+                iv = row.get('iv') or row.get('implied_volatility') or row.get('impliedVolatility') or 0
                 
                 self.option_bid.set(bid)
                 self.option_ask.set(ask)
@@ -1483,11 +1820,13 @@ class PlayCreatorGUI:
                 # Set entry price based on order type
                 entry_type = self.entry_order_type.get()
                 if entry_type == "Market":
-                    self.entry_price.set(round(mid, 2))
+                    self.entry_price.set(round(mid if mid > 0 else last, 2))
                 elif entry_type == "Limit at Bid":
                     self.entry_price.set(round(bid, 2))
                 elif entry_type == "Limit at Ask":
                     self.entry_price.set(round(ask, 2))
+                elif entry_type == "Limit at Last":
+                    self.entry_price.set(round(last, 2))
                 else:  # Limit at Mid
                     self.entry_price.set(round(mid, 2))
                 
@@ -1549,6 +1888,9 @@ class PlayCreatorGUI:
             
             # Refresh option chain
             self._refresh_option_chain()
+            
+            # Update contract preview in header
+            self._update_contract_preview()
             
             self._set_status("Data loaded successfully", "green")
             
@@ -1651,7 +1993,7 @@ class PlayCreatorGUI:
                         f"{row.get('last', 0):.2f}",
                         f"{delta:.3f}",
                         f"{row.get('theta', 0):.3f}",
-                        f"{row.get('iv', 0) * 100:.1f}%" if row.get('iv') else "--",
+                        self._format_iv(row),
                         f"{int(row.get('volume', 0))}",
                         f"{int(row.get('open_interest', 0))}"
                     )
@@ -1728,6 +2070,31 @@ class PlayCreatorGUI:
             self.gap_frame.grid()
         else:
             self.gap_frame.grid_remove()
+    
+    def _update_contract_preview(self):
+        """Update the option contract preview in the header."""
+        symbol = self.symbol.get().strip().upper()
+        strike = self.strike_price.get()
+        expiration = self.expiration.get()
+        trade_type = self.trade_type.get()
+        
+        if not symbol or not strike or not expiration:
+            self.contract_preview_label.config(text="[ No contract selected ]", foreground="#999999")
+            return
+        
+        try:
+            # Build option symbol
+            strike_float = float(strike)
+            exp_dt = datetime.strptime(expiration, '%Y-%m-%d')
+            strike_tenths = int(round(strike_float * 1000))
+            option_type = "C" if trade_type == "CALL" else "P"
+            option_symbol = f"{symbol}{exp_dt.strftime('%y%m%d')}{option_type}{strike_tenths:08d}"
+            
+            # Display in a user-friendly format
+            display_text = f"( {option_symbol} )"
+            self.contract_preview_label.config(text=display_text, foreground="#0066cc")
+        except Exception:
+            self.contract_preview_label.config(text="[ Invalid contract ]", foreground="#cc0000")
             
     def _calculate_tp_sl_prices(self):
         """Calculate absolute TP/SL prices based on entry price and percentages."""
@@ -1972,16 +2339,16 @@ class PlayCreatorGUI:
             take_profit["stock_price_pct"] = tp_stock_pct
             take_profit["stock_price_target"] = round(current_price * (1 + tp_stock_pct / 100), 2)
         
-        # Add trailing config if enabled
-        if self.trailing_enabled.get():
+        # Add trailing TP config if enabled
+        if self.trailing_tp_enabled.get():
             take_profit["trailing_config"] = {
                 "enabled": True,
                 "trail_type": "percentage",
-                "activation_threshold_pct": self.trailing_activation_pct.get(),
+                "activation_threshold_pct": self.trailing_tp_activation_pct.get(),
                 "trail_distance_pct": 10.0,
                 "update_frequency_seconds": 30
             }
-            take_profit["trailing_activation_pct"] = self.trailing_activation_pct.get()
+            take_profit["trailing_activation_pct"] = self.trailing_tp_activation_pct.get()
         
         # Get stop loss type from advanced options
         sl_type = self.sl_type.get()
@@ -2045,11 +2412,12 @@ class PlayCreatorGUI:
             "entry_point": entry_point,
             "take_profit": take_profit,
             "stop_loss": stop_loss,
-            "play_class": self.play_class.get(),
+            "play_class": self._infer_play_class(),
             "conditional_plays": self._build_conditional_plays(),
+            "oco_peer_set_numbers": self._get_oco_peer_set_numbers_list(),
             "creation_date": datetime.now().strftime('%Y-%m-%d'),
             "status": {
-                "play_status": "TEMP" if self.play_class.get() == "OTO" else "NEW",
+                "play_status": "TEMP" if self._infer_play_class() == "OTO" else "NEW",
                 "order_id": None,
                 "position_uuid": None,
                 "order_status": None,
@@ -2146,8 +2514,9 @@ class PlayCreatorGUI:
         # Check OCO/OTO setup
         conditional = play.get("conditional_plays", {})
         if play.get("play_class") == "OTO":
+            # OTO means this play IS a child waiting to be triggered by a parent
             if not conditional.get("oto", {}).get("parent_play"):
-                result["warnings"].append("OTO play has no parent play specified")
+                result["warnings"].append("OTO play class inferred but no parent play specified")
         
         # Check expiration
         try:
@@ -2188,6 +2557,8 @@ class PlayCreatorGUI:
         # Map playbook values to strategy-specific defaults
         defaults = {
             ("option_swings", "default"): {"tp_pct": 50.0, "sl_pct": 25.0},
+            ("option_swings", "pb_v3"): {"tp_pct": 50.0, "sl_pct": 35.0},  # Playbook v3: 1:1.5 RRR, max 35% SL
+            ("option_swings", "pb_v3_long"): {"tp_pct": 50.0, "sl_pct": 35.0},  # Same as pb_v3
             ("momentum", "gap_move"): {"tp_pct": 50.0, "sl_pct": 30.0},
             ("momentum", "gap_fade"): {"tp_pct": 25.0, "sl_pct": 20.0},
             ("momentum", "manual"): {"tp_pct": 50.0, "sl_pct": 30.0},
@@ -2388,7 +2759,7 @@ class PlayCreatorGUI:
         
         # Reset advanced options
         self.play_expiration.set("")
-        self.play_class.set("SIMPLE")
+        # Note: play_class is now inferred from conditional orders, no need to reset
         self.sl_type.set("STOP")
         self.contingency_sl_pct.set(50.0)
         self.entry_order_type.set("Limit at Bid")
@@ -2398,22 +2769,33 @@ class PlayCreatorGUI:
         self.use_stock_price_sl.set(False)
         self.tp_stock_price.set(0.0)
         self.sl_stock_price.set(0.0)
-        self.trailing_enabled.set(False)
-        self.trailing_activation_pct.set(20.0)
+        self.trailing_tp_enabled.set(False)
+        self.trailing_tp_activation_pct.set(20.0)
+        self.trailing_sl_enabled.set(False)
+        self.trailing_sl_activation_pct.set(10.0)
         self.multiple_tps_enabled.set(False)
         self.num_tp_levels.set(2)
         self.dynamic_tp_sl_enabled.set(False)
         self.oco_plays.set("")
         self.oto_parent.set("")
         self.oto_trigger_condition.set("on_fill")
+        self.oco_peer_set_numbers.set("")
         
         # Clear TP levels UI
         self._clear_tp_levels_ui()
         
-        # Reset advanced panel state
+        # Clear OCO/OSO listboxes
+        if hasattr(self, 'oco_listbox'):
+            self.oco_listbox.delete(0, tk.END)
+        if hasattr(self, 'oso_listbox'):
+            self.oso_listbox.delete(0, tk.END)
+        
+        # Reset panel states
         self._on_sl_type_changed()
         self._on_stock_price_toggle()
-        self._on_trailing_toggle()
+        self._on_trailing_tp_toggle()
+        if hasattr(self, 'trailing_sl_spin'):
+            self._on_trailing_sl_toggle()
         self._on_multi_tp_toggle()
         
         # Clear option chain
@@ -2429,6 +2811,10 @@ class PlayCreatorGUI:
         
         self.selected_option_label.config(text="No option selected")
         self.validation_label.config(text="Enter symbol and fetch data to preview play", foreground="gray")
+        
+        # Reset contract preview in header
+        if hasattr(self, 'contract_preview_label'):
+            self.contract_preview_label.config(text="[ No contract selected ]", foreground="#999999")
         
         self._set_status("Ready", "green")
         

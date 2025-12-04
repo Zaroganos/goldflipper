@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import subprocess
 import platform
@@ -9,6 +10,9 @@ from textual.widgets import Header, Footer, Static, Button
 from textual.containers import Container, Horizontal
 from textual.widget import Widget
 from rich.text import Text
+
+# Import exe-aware path utilities
+from goldflipper.utils.exe_utils import get_plays_dir, get_settings_path, get_tools_dir
 
 def open_file_explorer(path):
     """
@@ -188,10 +192,10 @@ class PlayCard(Widget):
             editor_path = os.path.join(current_dir, "play-edit-tool.py")
             
             if os.name == 'nt':  # Windows
-                cmd = ['cmd', '/k', 'python', editor_path, '--file', filename]
+                cmd = [sys.executable, editor_path, '--file', filename]
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', 'python', editor_path, '--file', filename])
+                subprocess.Popen(['gnome-terminal', '--', sys.executable, editor_path, '--file', filename])
         except Exception as e:
             self.app.notify(f"Error launching editor: {str(e)}", severity="error")
 
@@ -263,15 +267,15 @@ class ViewPlaysApp(App):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "folder_button":
-            plays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../plays"))
+            plays_dir = str(get_plays_dir())
             open_file_explorer(plays_dir)
 
     async def on_mount(self):
         await self.load_plays()
 
     async def load_plays(self):
-        # Load settings
-        config_path = os.path.join(os.path.dirname(__file__), "../config/settings.yaml")
+        # Load settings using exe-aware path
+        config_path = str(get_settings_path())
         with open(config_path, 'r') as f:
             settings = yaml.safe_load(f)
         
@@ -289,7 +293,8 @@ class ViewPlaysApp(App):
             plays_container.remove(child)
 
         for folder in folders:
-            folder_path = os.path.join(os.path.dirname(__file__), "../plays", folder.lower())
+            # Use exe-aware plays directory
+            folder_path = str(get_plays_dir() / folder.lower())
             plays = format_play_files(folder_path)
 
             title_text = f"{folder.title()} Plays"  # Capitalize folder name
@@ -303,6 +308,10 @@ class ViewPlaysApp(App):
                 play_card = PlayCard(play)
                 plays_container.mount(play_card)
 
-if __name__ == "__main__":
+def main():
+    """Entry point for launcher."""
     app = ViewPlaysApp()
     app.run()
+
+if __name__ == "__main__":
+    main()
