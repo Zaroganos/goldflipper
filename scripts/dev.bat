@@ -52,12 +52,12 @@ exit /b 1
 
 :build
 echo Building dev exe (fast mode - no LTO, no compression)...
-uv run python scripts/build_nuitka_dev.py %*
+uv run python build_nuitka_dev.py %*
 goto end
 
 :build_prod
 echo Building production exe (full optimization)...
-uv run python scripts/build_nuitka.py %*
+uv run python build_nuitka.py %*
 goto end
 
 :usage

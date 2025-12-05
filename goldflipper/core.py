@@ -14,6 +14,7 @@ from alpaca.trading.requests import (
     ClosePositionRequest
 )
 from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, AssetStatus
+from goldflipper.strategy.base import OrderAction
 from alpaca.common.exceptions import APIError
 import json
 from goldflipper.tools.option_data_fetcher import calculate_greeks  # Currently unused. Kept for potential future analytics
@@ -467,7 +468,19 @@ def open_position(play, play_file):
         display.warning("Greeks capture failed, opening data recorded but with zero Greeks")
         # Continue with position opening even if Greeks capture fails
     
-    logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
+    # Determine order side based on action field (supports sell_puts STO and other short strategies)
+    action_str = play.get('action', 'BTO').upper()
+    try:
+        order_action = OrderAction.from_string(action_str)
+        order_side = OrderSide.BUY if order_action.is_buy() else OrderSide.SELL
+    except (ValueError, AttributeError):
+        # Default to BUY for backward compatibility
+        order_action = OrderAction.BUY_TO_OPEN
+        order_side = OrderSide.BUY
+        logging.warning(f"Invalid or missing action '{action_str}', defaulting to BTO (BUY)")
+    
+    side_str = "BUY" if order_side == OrderSide.BUY else "SELL"
+    logging.info(f"Opening position for {play['contracts']} contracts of {contract.symbol} (action: {action_str}, side: {side_str})")
     # display.info(f"Opening position for {play['contracts']} contracts of {contract.symbol}")
     
     try:
@@ -501,24 +514,24 @@ def open_position(play, play_file):
                 symbol=contract.symbol,
                 qty=play['contracts'],
                 limit_price=limit_price,
-                side=OrderSide.BUY,
+                side=order_side,
                 type=OrderType.LIMIT,
                 time_in_force=TimeInForce.DAY,
             )
-            logging.info(f"Creating limit buy order with limit price: ${limit_price:.2f}")
-            # display.info(f"Creating limit buy order with limit price: ${limit_price:.2f}")
-            display.status(f"Submitting {'LIMIT' if is_limit_order else 'MARKET'} BUY order for {play['contracts']} {contract.symbol}")
+            logging.info(f"Creating limit {side_str} order with limit price: ${limit_price:.2f}")
+            # display.info(f"Creating limit {side_str} order with limit price: ${limit_price:.2f}")
+            display.status(f"Submitting {'LIMIT' if is_limit_order else 'MARKET'} {side_str} order for {play['contracts']} {contract.symbol}")
         else:
             order_req = MarketOrderRequest(
                 symbol=contract.symbol,
                 qty=play['contracts'],
-                side=OrderSide.BUY,
+                side=order_side,
                 type=OrderType.MARKET,
                 time_in_force=TimeInForce.DAY,
             )
-            logging.info("Creating market buy order")
-            # display.info("Creating market buy order")
-            display.status(f"Submitting {'LIMIT' if is_limit_order else 'MARKET'} BUY order for {play['contracts']} {contract.symbol}")
+            logging.info(f"Creating market {side_str} order")
+            # display.info(f"Creating market {side_str} order")
+            display.status(f"Submitting {'LIMIT' if is_limit_order else 'MARKET'} {side_str} order for {play['contracts']} {contract.symbol}")
             
         response = client.submit_order(order_req)
         logging.info(f"Order submitted: {response}")
@@ -567,6 +580,22 @@ def close_position(play, close_conditions, play_file):
         return False
     
     qty = play.get('contracts', 1)  # Default to 1 if not specified
+    
+    # Determine closing order side based on entry action
+    # Long positions (BTO) close with SELL, Short positions (STO) close with BUY
+    entry_action_str = play.get('action', 'BTO').upper()
+    try:
+        entry_action = OrderAction.from_string(entry_action_str)
+        # Get the closing action from the entry action
+        closing_action = entry_action.get_closing_action()
+        close_side = OrderSide.BUY if closing_action.is_buy() else OrderSide.SELL
+    except (ValueError, AttributeError):
+        # Default to SELL for backward compatibility (closing long positions)
+        close_side = OrderSide.SELL
+        logging.warning(f"Invalid action '{entry_action_str}', defaulting to SELL for close")
+    
+    close_side_str = "BUY" if close_side == OrderSide.BUY else "SELL"
+    logging.info(f"Closing position with {close_side_str} order (entry was {entry_action_str})")
     
     try:
         # Initialize closing status
@@ -679,13 +708,13 @@ def close_position(play, close_conditions, play_file):
                     symbol=contract_symbol,
                     qty=qty,
                     limit_price=limit_price,
-                    side=OrderSide.SELL,
+                    side=close_side,
                     type=OrderType.LIMIT,
                     time_in_force=TimeInForce.DAY,
                 )
-                logging.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
-                # display.info(f"Creating take profit limit sell order at ${limit_price:.2f}")
-                display.status(f"Submitting TAKE PROFIT LIMIT SELL order for {contract_symbol} at ${limit_price:.2f}")
+                logging.info(f"Creating take profit limit {close_side_str} order at ${limit_price:.2f}")
+                # display.info(f"Creating take profit limit {close_side_str} order at ${limit_price:.2f}")
+                display.status(f"Submitting TAKE PROFIT LIMIT {close_side_str} order for {contract_symbol} at ${limit_price:.2f}")
                 response = client.submit_order(order_req)
                 
                 # Add PENDING-CLOSING transition for limit orders
@@ -804,13 +833,13 @@ def close_position(play, close_conditions, play_file):
                         symbol=contract_symbol,
                         qty=qty,
                         limit_price=limit_price,
-                        side=OrderSide.SELL,
+                        side=close_side,
                         type=OrderType.LIMIT,
                         time_in_force=TimeInForce.DAY,
                     )
-                    logging.info(f"Creating primary SL limit sell order at ${limit_price:.2f}")
-                    # display.info(f"Creating primary SL limit sell order at ${limit_price:.2f}")
-                    display.status(f"Submitting Primary Stop Loss (LIMIT SELL) order for {contract_symbol} at ${limit_price:.2f}")
+                    logging.info(f"Creating primary SL limit {close_side_str} order at ${limit_price:.2f}")
+                    # display.info(f"Creating primary SL limit {close_side_str} order at ${limit_price:.2f}")
+                    display.status(f"Submitting Primary Stop Loss (LIMIT {close_side_str}) order for {contract_symbol} at ${limit_price:.2f}")
                     response = client.submit_order(order_req)
                     
                     # Add PENDING-CLOSING transition for limit orders
@@ -876,13 +905,13 @@ def close_position(play, close_conditions, play_file):
                     symbol=contract_symbol,
                     qty=qty,
                     limit_price=limit_price,
-                    side=OrderSide.SELL,
+                    side=close_side,
                     type=OrderType.LIMIT,
                     time_in_force=TimeInForce.DAY,
                 )
-                logging.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
-                # display.info(f"Creating stop loss limit sell order at ${limit_price:.2f}")
-                display.status(f"Submitting STOP LOSS LIMIT SELL order for {contract_symbol} at ${limit_price:.2f}")
+                logging.info(f"Creating stop loss limit {close_side_str} order at ${limit_price:.2f}")
+                # display.info(f"Creating stop loss limit {close_side_str} order at ${limit_price:.2f}")
+                display.status(f"Submitting STOP LOSS LIMIT {close_side_str} order for {contract_symbol} at ${limit_price:.2f}")
                 response = client.submit_order(order_req)
                 
                 # Add PENDING-CLOSING transition for limit orders
