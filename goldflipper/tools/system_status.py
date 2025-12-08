@@ -43,14 +43,12 @@ def get_orchestrator_status():
         enabled = orch_config.get('enabled', False)
         mode = orch_config.get('mode', 'sequential')
         dry_run = orch_config.get('dry_run', False)
-        fallback = orch_config.get('fallback_to_legacy', True)
         max_workers = orch_config.get('max_parallel_workers', 3)
         
         return {
             'enabled': enabled,
             'mode': mode,
             'dry_run': dry_run,
-            'fallback_to_legacy': fallback,
             'max_parallel_workers': max_workers
         }
     except Exception as e:
@@ -122,7 +120,6 @@ def check_system_status():
         
         dry_run_str = "[YES - NO LIVE TRADES]" if orch_status['dry_run'] else "No"
         print(f"  Dry-Run Mode:       {dry_run_str}")
-        print(f"  Fallback to Legacy: {'Yes' if orch_status['fallback_to_legacy'] else 'No'}")
     
     # Enabled strategies
     enabled_strategies = get_enabled_strategies()
@@ -210,7 +207,7 @@ def check_system_status():
     if orch_status.get('dry_run', False):
         warnings.append("DRY-RUN MODE IS ACTIVE - No live trades will be executed!")
     if not orch_status.get('enabled', False):
-        warnings.append("Strategy orchestration is DISABLED - using legacy mode.")
+        warnings.append("Strategy orchestration is DISABLED - system will not run.")
     if total_active == 0:
         warnings.append("No active plays found.")
     

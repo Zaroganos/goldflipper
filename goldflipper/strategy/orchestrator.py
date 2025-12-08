@@ -59,7 +59,7 @@ class StrategyOrchestrator:
     - Managing execution order based on priority
     - Coordinating shared resources (market data cache, brokerage client)
     - Supporting both parallel and sequential execution
-    - Providing fallback to legacy behavior if needed
+    - Providing dry-run mode for testing
     
     Attributes:
         strategies (List[BaseStrategy]): Loaded and enabled strategies
@@ -72,7 +72,7 @@ class StrategyOrchestrator:
           enabled: true
           mode: "sequential"  # or "parallel"
           max_parallel_workers: 3
-          fallback_to_legacy: true
+          dry_run: false
     
     Example:
         # Initialize and run
@@ -110,7 +110,6 @@ class StrategyOrchestrator:
         # Execution settings (loaded on initialize)
         self._execution_mode = ExecutionMode.SEQUENTIAL
         self._max_workers = 3
-        self._fallback_enabled = True
         self._enabled = False
         self._dry_run = False
         
@@ -223,7 +222,6 @@ class StrategyOrchestrator:
         )
         
         self._max_workers = orch_config.get('max_parallel_workers', 3)
-        self._fallback_enabled = orch_config.get('fallback_to_legacy', True)
         self._dry_run = orch_config.get('dry_run', False)
         
         self.logger.debug(

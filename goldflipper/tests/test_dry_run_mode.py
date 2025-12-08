@@ -43,7 +43,6 @@ def create_dry_run_config(dry_run: bool = True):
             'enabled': True,
             'mode': 'sequential',
             'max_parallel_workers': 3,
-            'fallback_to_legacy': True,
             'dry_run': dry_run
         },
         'options_swings': {

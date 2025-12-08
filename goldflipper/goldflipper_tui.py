@@ -132,9 +132,9 @@ class WelcomeScreen(Screen):
                     classes="button-column",
                 ),
                 Container(
-                    Button("View / Edit Current Plays", variant="primary", id="view_plays"),
-                    Button("Upkeep and Status", variant="primary", id="system_status"),
-                    Button("Configuration", variant=config_variant, id="configuration"),
+                    Button("View / Edit Plays", variant="primary", id="view_plays"),
+                    Button("System Status", variant="primary", id="system_status"),
+                    Button("Settings", variant=config_variant, id="configuration"),
                     Button("Open Chart", variant="primary", id="open_chart"),
                     Button("Trade Logger", variant="primary", id="trade_logger"),
                     Button("Manage Service", variant="warning", id="manage_service"),

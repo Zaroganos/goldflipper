@@ -1,10 +1,10 @@
 # Multi-Strategy Implementation Plan
 
 **Document Created:** 2025-11-29  
-**Last Updated:** 2025-12-03  
-**Status:** Phase 8 ✅ COMPLETE  
-**Breaking Changes:** None (fully additive, backward compatible)  
-**Current Phase:** Production Validation
+**Last Updated:** 2025-12-06  
+**Status:** MIGRATION COMPLETE ✅  
+**Breaking Changes:** Legacy fallback removed (orchestrator required)  
+**Current Phase:** Post-Migration
 
 ---
 
@@ -514,10 +514,9 @@ class StrategyOrchestrator:
 # settings.yaml additions
 
 strategy_orchestration:
-  enabled: true                  # Master switch for multi-strategy mode
+  enabled: true                  # Master switch for multi-strategy orchestration
   mode: "sequential"             # "sequential" | "parallel"
   max_parallel_workers: 3        # Max concurrent when parallel
-  fallback_to_legacy: true       # Use core.py if orchestrator fails
   dry_run: false                 # Evaluate plays, log actions, skip actual orders
 
 momentum:
@@ -1192,13 +1191,15 @@ BUG FIXES:
 KNOWN ISSUES:
 - Linter errors due to incomplete type annotations in alpaca-py library (runtime works fine)
 
-CRITICAL REQUIREMENTS:
-- Make all changes NON-BREAKING until validated
-- Existing system must continue working when orchestration disabled
-- Test backward compatibility after each change
-- Use fallback_to_legacy: true for safety during transition
-- Only once the new system is confirmed working should the deprecated code be cleaned up.
+LEGACY CLEANUP COMPLETED (2025-12-08):
+- Removed fallback_to_legacy config option from orchestrator.py
+- Removed fallback_to_legacy from system_status.py display
+- Updated settings_template.yaml (orchestration now required)
+- Cleaned up test mock configs
+- All 41 tests pass after cleanup
 
-REMINDER:
-- Continue this work in the order the tasks are indicated
+SYSTEM STATUS:
+- Orchestration is now REQUIRED (no legacy fallback)
+- All multi-strategy features fully implemented and tested
+- Ready for production use
 ```

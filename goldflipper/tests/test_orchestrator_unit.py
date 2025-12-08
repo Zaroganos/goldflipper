@@ -40,8 +40,7 @@ def create_mock_config():
         'strategy_orchestration': {
             'enabled': True,
             'mode': 'sequential',
-            'max_parallel_workers': 3,
-            'fallback_to_legacy': True
+            'max_parallel_workers': 3
         },
         'options_swings': {
             'enabled': True,

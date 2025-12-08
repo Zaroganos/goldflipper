@@ -1,8 +1,7 @@
 """
 Goldflipper Multi-Strategy Entry Point
 
-This module provides an alternative entry point that uses the StrategyOrchestrator
-when strategy_orchestration.enabled is true. Falls back to legacy behavior when disabled.
+This module provides the multi-strategy entry point using the StrategyOrchestrator.
 
 Usage:
     python -m goldflipper.run_multi --mode console
@@ -11,9 +10,9 @@ Configuration (settings.yaml):
     strategy_orchestration:
       enabled: true          # Enable orchestrator
       mode: "sequential"     # or "parallel"
-      fallback_to_legacy: true  # Fall back to core.py if orchestrator fails
+      dry_run: false         # Set true to evaluate without executing orders
 
-Phase 5 of Multi-Strategy Implementation.
+Multi-Strategy Implementation - Migration Complete.
 """
 
 ascii_art = r"""
@@ -125,14 +124,6 @@ def is_orchestration_enabled() -> bool:
     if not isinstance(orch_config, dict):
         return False
     return bool(orch_config.get('enabled', False))
-
-
-def should_fallback_to_legacy() -> bool:
-    """Check if fallback to legacy mode is enabled."""
-    orch_config = config.get('strategy_orchestration', default={})
-    if not isinstance(orch_config, dict):
-        return True
-    return bool(orch_config.get('fallback_to_legacy', True))
 
 
 def validate_market_hours():
@@ -280,68 +271,13 @@ def run_orchestrated_monitoring(console_mode: bool = True, watchdog=None):
     return True
 
 
-def run_legacy_monitoring(console_mode: bool = True, watchdog=None):
-    """
-    Run the legacy monitoring using core.py's monitor_plays_continuously.
-    
-    This is the fallback when orchestration is disabled.
-    """
-    from goldflipper.core import monitor_plays_continuously
-    
-    if console_mode:
-        display.info("Running in legacy mode (orchestration disabled)")
-    logging.info("Running legacy monitoring mode")
-    
-    cycle_count = 0
-    
-    while True:
-        try:
-            cycle_count += 1
-            logging.info(f"Starting legacy cycle {cycle_count}")
-            
-            if watchdog:
-                watchdog.update_heartbeat()
-            
-            # monitor_plays_continuously has its own loop, but we call it per-cycle
-            # Note: The legacy function has an internal while True loop
-            # For compatibility, we just call it once and it runs indefinitely
-            monitor_plays_continuously()
-            
-            # This code is reached only if monitor_plays_continuously returns
-            # (which it currently doesn't due to its infinite loop)
-            if watchdog:
-                watchdog.update_heartbeat()
-            
-            polling_interval: int = _get_config_int('monitoring', 'polling_interval', 30)
-            time.sleep(float(polling_interval))
-            
-        except KeyboardInterrupt:
-            logging.info("KeyboardInterrupt received in legacy monitoring")
-            if console_mode:
-                display.info("\nShutdown requested.")
-            break
-            
-        except Exception as e:
-            logging.error(f"Error in legacy monitoring: {e}")
-            if console_mode:
-                display.error(f"Error in legacy monitoring: {e}")
-            
-            if watchdog:
-                watchdog.update_heartbeat()
-            
-            time.sleep(10)
-
-
 # ==================================================
 # MAIN ENTRY POINTS
 # ==================================================
 
 def run_trading_system_multi(console_mode: bool = True):
     """
-    Run the trading system with orchestrator support.
-    
-    This function decides whether to use the orchestrator or legacy mode
-    based on configuration.
+    Run the trading system using the multi-strategy orchestrator.
     """
     setup_logging(console_mode)
     logging.info(f"Starting Goldflipper Multi-Strategy system in {'console' if console_mode else 'service'} mode")
@@ -378,33 +314,20 @@ def run_trading_system_multi(console_mode: bool = True):
             if console_mode:
                 display.info("Watchdog system is disabled. Check settings to enable.")
         
-        # Decide which mode to run
-        if is_orchestration_enabled():
+        # Run orchestrated monitoring
+        if not is_orchestration_enabled():
+            error_msg = "Strategy orchestration is disabled. Enable it in settings.yaml"
+            logging.error(error_msg)
             if console_mode:
-                display.success("Strategy orchestration is ENABLED")
-                display.info("Using multi-strategy orchestrator")
-            logging.info("Strategy orchestration enabled, using orchestrator")
-            
-            try:
-                run_orchestrated_monitoring(console_mode, watchdog)
-            except Exception as e:
-                logging.error(f"Orchestrator failed: {e}")
-                
-                if should_fallback_to_legacy():
-                    if console_mode:
-                        display.warning(f"Orchestrator failed: {e}")
-                        display.warning("Falling back to legacy monitoring mode")
-                    logging.warning("Falling back to legacy monitoring mode")
-                    run_legacy_monitoring(console_mode, watchdog)
-                else:
-                    raise
-        else:
-            if console_mode:
-                display.info("Strategy orchestration is DISABLED")
-                display.info("Using legacy monitoring mode")
-            logging.info("Strategy orchestration disabled, using legacy mode")
-            
-            run_legacy_monitoring(console_mode, watchdog)
+                display.error(error_msg)
+            raise RuntimeError(error_msg)
+        
+        if console_mode:
+            display.success("Strategy orchestration is ENABLED")
+            display.info("Using multi-strategy orchestrator")
+        logging.info("Strategy orchestration enabled, using orchestrator")
+        
+        run_orchestrated_monitoring(console_mode, watchdog)
             
     except Exception as e:
         error_msg = f"System error: {e}"
@@ -428,27 +351,13 @@ def main():
     )
     parser.add_argument(
         '--mode', 
-        choices=['console', 'legacy'],
+        choices=['console'],
         default='console', 
-        help='Run mode: console (orchestrator) or legacy (core.py)'
-    )
-    parser.add_argument(
-        '--force-legacy',
-        action='store_true',
-        help='Force legacy mode even if orchestration is enabled'
+        help='Run mode (console)'
     )
     
-    args = parser.parse_args()
-    
-    if args.force_legacy or args.mode == 'legacy':
-        display.info("Forcing legacy mode")
-        logging.info("Legacy mode forced via command line")
-        setup_logging(console_mode=True)
-        success, _ = initialize_system()
-        if success:
-            run_legacy_monitoring(console_mode=True, watchdog=None)
-    else:
-        run_trading_system_multi(console_mode=True)
+    parser.parse_args()
+    run_trading_system_multi(console_mode=True)
 
 
 if __name__ == "__main__":

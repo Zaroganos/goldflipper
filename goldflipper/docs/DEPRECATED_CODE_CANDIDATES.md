@@ -1,16 +1,33 @@
 # Deprecated Code Candidates
 
 **Document Created:** 2025-12-01  
-**Status:** Review Only - Do NOT remove until production validation complete  
+**Last Updated:** 2025-12-06  
+**Status:** ✅ MIGRATION COMPLETE - Legacy fallback removed  
 **Related:** Phase 8 Cleanup
 
 ---
 
 ## Overview
 
-This document identifies code in `core.py` that is a candidate for deprecation after the multi-strategy system is fully validated in production. 
+This document identifies code in `core.py` that was a candidate for deprecation. The multi-strategy migration is now **complete** as of 2025-12-06.
 
-**Critical Requirement:** Per `MULTI_STRATEGY_IMPLEMENTATION.md`, deprecated code cleanup should ONLY happen AFTER the new system is confirmed working in production with `fallback_to_legacy: false`.
+### Completed Removal (2025-12-06)
+
+The following legacy code has been removed:
+- ✅ `monitor_plays_continuously()` - Legacy main loop removed from `core.py`
+- ✅ `fallback_to_legacy` config option removed from `settings.yaml`
+- ✅ Legacy code paths removed from `run.py` and `run_multi.py`
+- ✅ `run_legacy_monitoring()` removed from `run_multi.py`
+- ✅ `--force-legacy` CLI option removed
+
+### Remaining Dead Code (Future Cleanup)
+
+The following functions are now dead code but still exist in `core.py` for reference:
+- `execute_trade()` - Was called only by `monitor_plays_continuously()`
+- `monitor_and_manage_position()` - Was called only by `execute_trade()`
+- `handle_api_error()` - Was always unused
+
+These can be removed in a future cleanup pass.
 
 ---
 
