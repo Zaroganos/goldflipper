@@ -338,5 +338,24 @@ def main():
     else:
         display.info("No open positions found")
 
+    # Pause to keep console window open when launched from TUI
+    print("\n  Press Enter to exit...")
+    try:
+        input()
+    except:
+        pass
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        print("\n" + "=" * 50)
+        print("  ERROR: Script crashed!")
+        print("=" * 50)
+        traceback.print_exc()
+        print("\n  Press Enter to exit...")
+        try:
+            input()
+        except:
+            pass

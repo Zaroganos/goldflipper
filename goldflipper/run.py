@@ -23,7 +23,7 @@ import os
 import logging
 import logging.handlers
 # from goldflipper.core import monitor_plays_continuously  // Deprecated
-from goldflipper.startup_test import run_startup_tests
+from goldflipper.startup_test import run_startup_tests, format_test_results
 from goldflipper.config.config import config
 import sys
 from goldflipper.utils.display import TerminalDisplay as display
@@ -50,7 +50,15 @@ def setup_logging(console_mode=False):
     configure_logging(console_mode=console_mode)
 
 def initialize_system():
-    """Initialize the trading system and perform startup checks."""
+    """
+    Initialize the trading system and perform startup checks.
+    
+    Returns:
+        Tuple of (success: bool, state_manager: StateManager, test_results: dict)
+        - success: True if system can start (no critical failures)
+        - state_manager: Initialized StateManager instance
+        - test_results: Full test results dictionary for further processing
+    """
     display.header("Initializing Goldflipper Trading System")
     
     # Initialize state manager
@@ -70,23 +78,41 @@ def initialize_system():
     # Run startup self-tests
     test_results = run_startup_tests()
     
-    # Display test results
+    # Display test results using formatted output
     display.header("Startup Self-Test Results")
     
     for test_name, test_data in test_results["tests"].items():
+        severity = test_data.get("severity", "error")
+        is_primary = test_data.get("is_primary_provider", False)
+        provider_tag = " [PRIMARY]" if is_primary else ""
+        
         if test_data["success"]:
-            display.success(f"{test_name.upper()} Test: PASSED")
-            display.info(f"Details: {test_data['result']}")
+            display.success(f"{test_name.upper()}{provider_tag} Test: PASSED")
+            display.info(f"  Details: {test_data['result']}")
+        elif severity == "error":
+            display.error(f"{test_name.upper()}{provider_tag} Test: FAILED (CRITICAL)")
+            display.error(f"  Details: {test_data['result']}")
         else:
-            display.error(f"{test_name.upper()} Test: FAILED")
-            display.error(f"Details: {test_data['result']}")
+            display.warning(f"{test_name.upper()}{provider_tag} Test: FAILED (WARNING)")
+            display.warning(f"  Details: {test_data['result']}")
     
+    # Summary
     if test_results["all_passed"]:
         display.success("\nAll Tests Passed Successfully!")
-        return True, state_manager
+        return True, state_manager, test_results
+    elif test_results.get("should_block_trading", False):
+        display.error("\n" + "=" * 60)
+        display.error("CRITICAL TEST FAILURES - TRADING BLOCKED")
+        display.error(f"Critical failures: {', '.join(test_results.get('critical_failures', []))}")
+        if test_results.get("warnings"):
+            display.warning(f"Warnings: {', '.join(test_results.get('warnings', []))}")
+        return False, state_manager, test_results
     else:
-        display.error("\nSome Tests Failed - Check Details Above")
-        return False, state_manager
+        # Only warnings, not critical failures
+        display.warning("\n" + "=" * 60)
+        display.warning("Some tests failed with warnings - trading can continue")
+        display.warning(f"Warnings: {', '.join(test_results.get('warnings', []))}")
+        return True, state_manager, test_results
 
 class GoldflipperService(win32serviceutil.ServiceFramework):
     _svc_name_ = "GoldflipperService"
@@ -123,9 +149,9 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
             self.running = True
             
             # Initialize system
-            success, self.state_manager = initialize_system()
+            success, self.state_manager, test_results = initialize_system()
             if not success:
-                raise Exception("System initialization failed")
+                raise Exception("System initialization failed - critical test failures")
             
             # Start watchdog only if enabled in config
             watchdog_enabled = bool(config.get('watchdog', 'enabled', default=False))
@@ -272,9 +298,17 @@ def run_trading_system(console_mode=False):
     
     try:
         # Run initialization and startup tests
-        success, state_manager = initialize_system()
+        success, state_manager, test_results = initialize_system()
         if not success:
             display.error("System initialization failed. Check the logs for details.")
+            # Keep window open if configured
+            if test_results.get("pause_on_error", True):
+                display.error("\n" + "=" * 60)
+                display.error("STARTUP FAILED - Press Enter to exit...")
+                try:
+                    input()
+                except (EOFError, KeyboardInterrupt):
+                    pass
             return
         
         logging.info("Initializing WatchdogManager")

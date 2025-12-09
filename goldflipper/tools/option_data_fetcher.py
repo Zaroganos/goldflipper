@@ -12,6 +12,7 @@ from datetime import datetime
 import pandas as pd
 import json
 import yaml
+
 from goldflipper.utils.display import TerminalDisplay as display
 
 from goldflipper.data.greeks.base import OptionData
@@ -441,8 +442,8 @@ def calculate_indicators(ticker: str, settings: dict) -> pd.DataFrame:
         if settings['indicators']['ttm_squeeze']['enabled']:
             ttm_calc = TTMSqueezeCalculator(
                 market_data,
-                bb_mult=settings['indicators']['ttm_squeeze']['bb_multiplier'],
-                kc_mult=settings['indicators']['ttm_squeeze']['kc_multiplier']
+                bb_mult=float(settings['indicators']['ttm_squeeze']['bb_multiplier']),
+                kc_mult=float(settings['indicators']['ttm_squeeze']['kc_multiplier'])
             )
             ttm_indicators = ttm_calc.calculate()
             # Extract single values from Series

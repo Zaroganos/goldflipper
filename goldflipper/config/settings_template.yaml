@@ -395,6 +395,34 @@ watchdog:
     trigger_recovery: false         # Attempt to recover automatically when system appears unresponsive
 
 ####################################################################################################
+# Startup Self-Tests Configuration
+####################################################################################################
+# Self-tests run at system startup to verify connectivity and configuration
+startup_self_tests:
+  enabled: true                       # Master switch for startup self-tests
+  
+  # Behavior on test failure
+  on_primary_failure: "error"         # "error" = block trading start; "warn" = warn and continue
+  on_fallback_failure: "warn"         # "error" or "warn" for non-primary market data providers
+  on_brokerage_failure: "error"       # Brokerage (Alpaca) test failure behavior
+  
+  # Keep console window open on error to show user what happened
+  pause_on_error: true                # If true, pause and wait for user input on critical errors
+  
+  # Individual test toggles (these are auto-enabled based on provider config if set to "auto")
+  tests:
+    alpaca_sdk:
+      enabled: true                   # Test Alpaca SDK connectivity
+    alpaca_api:
+      enabled: true                   # Test Alpaca direct API connectivity
+    marketdataapp:
+      enabled: "auto"                 # "auto" = enabled if provider is enabled in config
+    yfinance:
+      enabled: "auto"                 # "auto" = enabled if provider is enabled in config
+    alpaca_market_data:
+      enabled: "auto"                 # "auto" = enabled if provider is enabled in config
+
+####################################################################################################
 # Market Hours Settings
 ####################################################################################################
 market_hours:

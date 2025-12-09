@@ -2,12 +2,14 @@
 [CmdletBinding()]
 param(
     [string]$InstallPath = (Join-Path $env:USERPROFILE 'goldflipper'),
-    [string]$Branch = 'main',
+    [string]$Branch = 'multistrat',
     [switch]$NoLaunch
 )
 
 <#
-TODO: Address the following concerns in Update-Repository function:
+TODO: Update the BRANCH to MAIN once the code is rebased. CRITICAL
+And also:
+Address the following concerns in Update-Repository function:
 
 1. Non-git directory handling:
    - Currently, if the directory exists but is NOT a git repo, the script only prints a warning
