@@ -28,7 +28,12 @@
 - [ ] `uv run pyright goldflipper` passes.  
   - Fails with 431 errors; primarily due to untyped config/logging plumbing.
 - [x] `uv run pytest` passes or reports only acknowledged flaky tests.  
-  - Result: `tests/test_market_data.py::test_market_data` passed (warning from `websockets` deprecation only).
+  - 2025-11-29: `tests/test_market_data.py::test_market_data` passed (warning from `websockets` deprecation only).
+  - 2025-12-08: Full multi-strategy test suite passes (41 tests total):
+    * `test_orchestrator_unit.py`: 16 passed
+    * `test_dry_run_mode.py`: 9 passed
+    * `test_parallel_execution.py`: 4 passed
+    * `test_strategy_evaluation.py`: 12 passed
 
 ## Runtime Functionality
 
@@ -59,4 +64,12 @@
 
 - `uv run goldflipper --mode console` and first-run wizard verification require an interactive terminal/GUI; leaving for manual validation.
 - Ruff and Pyright failures reflect historical debt; documenting counts here rather than remediating immediately.
+
+## Recent Updates
+
+### 2025-12-08: Legacy Code Cleanup
+- Removed `fallback_to_legacy` config option from orchestrator.py, system_status.py, settings_template.yaml
+- Orchestration is now REQUIRED (no legacy fallback mode)
+- All 41 multi-strategy tests pass after cleanup
+
 
