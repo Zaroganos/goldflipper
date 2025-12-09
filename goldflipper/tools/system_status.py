@@ -12,15 +12,15 @@ from datetime import datetime
 import subprocess
 import alpaca
 from goldflipper.alpaca_client import get_alpaca_client
-from goldflipper.config.config import config
+from goldflipper.config.config import config, get_active_account_name, get_account_nickname
 from goldflipper.utils.exe_utils import get_plays_dir
 
 def get_plays_count():
     """
-    Get play counts from each folder.
+    Get play counts from each folder for the active account.
     Uses exe-aware path utilities for frozen mode compatibility.
     """
-    plays_dir = get_plays_dir()  # Uses exe_utils for proper path resolution
+    plays_dir = get_plays_dir()  # Now returns account-aware path: plays/{account}/shared/
     folders = ['new', 'temp', 'pending-opening', 'open', 'pending-closing', 'closed', 'expired']
     counts = {}
     
@@ -33,6 +33,22 @@ def get_plays_count():
             counts[folder] = 0
     
     return counts
+
+
+def get_active_account_info():
+    """
+    Get information about the currently active trading account.
+    """
+    account_name = get_active_account_name()
+    nickname = get_account_nickname(account_name)
+    plays_dir = str(get_plays_dir())
+    
+    return {
+        'name': account_name,
+        'nickname': nickname,
+        'plays_directory': plays_dir
+    }
+
 
 def get_orchestrator_status():
     """

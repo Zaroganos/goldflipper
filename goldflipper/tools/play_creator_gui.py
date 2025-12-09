@@ -31,8 +31,9 @@ import logging
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-from goldflipper.config.config import config
+from goldflipper.config.config import config, get_active_account_name, get_account_nickname
 from goldflipper.utils.display import TerminalDisplay as display
+from goldflipper.utils.exe_utils import get_plays_dir, get_play_subdir
 from goldflipper.data.market.manager import MarketDataManager
 
 
@@ -122,12 +123,13 @@ class PlayCreatorGUI:
         
         # Load configuration
         self.settings = config.get('auto_play_creator', default={})
-        self.plays_dir = os.path.join(project_root, 'goldflipper', 'plays', 'new')
+        # Use account-aware plays directory
+        self.plays_dir = str(get_play_subdir('new'))
         self.templates_dir = os.path.join(
             os.path.dirname(__file__), 'templates'
         )
         
-        # Ensure plays directory exists
+        # Ensure plays directory exists (get_play_subdir already creates it)
         os.makedirs(self.plays_dir, exist_ok=True)
         
         # State variables
@@ -2598,7 +2600,7 @@ class PlayCreatorGUI:
         
         # Determine save directory based on play class
         if play_data.get('play_class') == 'OTO':
-            save_dir = os.path.join(project_root, 'goldflipper', 'plays', 'temp')
+            save_dir = str(get_play_subdir('temp'))
         else:
             save_dir = self.plays_dir
         os.makedirs(save_dir, exist_ok=True)

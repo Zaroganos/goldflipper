@@ -17,15 +17,15 @@ except ImportError as e:
 class PlayLogger:
     def __init__(self, base_directory=None, save_to_desktop=True, enable_backfill=True):
         if base_directory is None:
-            # Get the project root directory
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            self.base_directory = os.path.join(project_root, "goldflipper", "plays")
+            # Use exe-aware, account-aware path utilities
+            from goldflipper.utils.exe_utils import get_plays_dir
+            self.base_directory = str(get_plays_dir())
         else:
             self.base_directory = base_directory
         
-        # Main log directory - use absolute path to ensure it's in the correct location
-        current_file_dir = os.path.dirname(os.path.abspath(__file__))
-        self.log_directory = os.path.join(current_file_dir, "logs")
+        # Main log directory - use exe-aware path utilities
+        from goldflipper.utils.exe_utils import get_logs_dir
+        self.log_directory = os.path.join(str(get_logs_dir()), "trade_logging")
         
         # Create log directory if it doesn't exist
         if not os.path.exists(self.log_directory):

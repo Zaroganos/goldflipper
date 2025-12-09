@@ -1,13 +1,64 @@
-# Virtual environments
+#=========================#
+# GLOBAL WILDCARD IGNORES #
+#=========================#
+*.bak
+*.old
+*.tmp
+*.swp
+*.log
+
+# Virtual Environments #
 venv/
 .venv/
 env/
 .env/
 
-# Trade Logging System
-goldflipper/trade_logging/logs/*
+# Python Bytecode #
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
 
-# Plays folder (change if need to keep some set of plays shared)
+# OS Generated Files #
+.DS_Store
+Thumbs.db
+
+# IDE Specific Files #
+.vscode/
+.idea/
+
+#=======================================================#
+# PLAYS DIRECTORIES - Account-Based Structure (Current) #
+#=======================================================#
+# New account-based plays directory structure (2025-12-09)
+# plays/{account_X}/shared/{status}/ where account_X = account_1..account_4
+
+# Account 1 (Live)
+plays/account_1/
+goldflipper/plays/account_1/
+# Account 2 (paper_1 - default)
+plays/account_2/
+goldflipper/plays/account_2/
+# Account 3 (paper_2)
+plays/account_3/
+goldflipper/plays/account_3/
+# Account 4 (paper_3)
+plays/account_4/
+goldflipper/plays/account_4/
+# Keep .gitkeep files
+!plays/account_*/.gitkeep
+!plays/account_*/shared/.gitkeep
+!plays/account_*/shared/*/.gitkeep
+!goldflipper/plays/account_*/.gitkeep
+!goldflipper/plays/account_*/shared/.gitkeep
+!goldflipper/plays/account_*/shared/*/.gitkeep
+
+#============================================================================#
+# PLAYS DIRECTORIES - Legacy Structure (DEPRECATED - remove after migration) #
+#============================================================================#
+# NOTE: These legacy paths were used before account-based structure (pre-2025-12)
+# They can be removed once all plays are migrated to account_X/shared/ structure
+
 goldflipper/plays/new/*
 goldflipper/plays/pending-opening/*
 goldflipper/plays/open/*
@@ -24,56 +75,32 @@ goldflipper/plays/temp/*
 !goldflipper/plays/expired/.gitkeep
 !goldflipper/plays/old/.gitkeep
 !goldflipper/plays/temp/.gitkeep
-goldflipper/plays - Copy/*
-goldflipper/plays-live/*
-goldflipper/plays-paper/*
 
-# Python bytecode
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-
-# Logs
-*.log
+# Trade Logging System #
+goldflipper/trade_logging/logs/*
 logs/
 
-# Configurations and Secrets
+# Configurations and Secrets #
 # User-specific settings file (generated from template)
 goldflipper/config/settings.yaml
-goldflipper/config/settings.old.yaml
-goldflipper/config/settings.yaml.old
-# to goldflipper/config/config.py, but make sure the it is somehow initialized separately and the user enters the keys???
-# The user's entered credentials also should be encrypted somehow so they are not stored in plaintext.
+# TODO: config.py should be initialized separately with encrypted credentials
 config/config.py
 .env
 
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# IDE specific files
-.vscode/
-.idea/
-
-# Optional - Test results and coverage reports
+# Test Results and Coverage #
 .pytest_cache/
 coverage/
 *.cover
 
-# Optional - Build artifacts
+# Build Artifacts #
 build/
 dist/
 *.egg-info/
 
-# Optional - Temporary files
-*.tmp
-*.swp
-
-# Development notes
+# Development Notes #
 dev-notes/
 
-# Reference and Strategyfiles
+# Reference and Strategy Files #
 goldflipper/strategy/template/*
 goldflipper/strategy/playbooks/*
 docs/Options_Swing_PB_v3.md

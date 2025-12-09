@@ -5,6 +5,13 @@ import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Import account-aware path utilities
+try:
+    from goldflipper.utils.exe_utils import get_plays_dir, get_play_subdir
+    USE_ACCOUNT_PATHS = True
+except ImportError:
+    USE_ACCOUNT_PATHS = False
+
 def get_input(prompt, type_cast=str, validation=None, error_message=None, optional=False):
     """Helper function to get and validate user input"""
     while True:
@@ -40,37 +47,64 @@ def save_play(filepath, play_data):
         return False
 
 def get_all_plays():
-    """Get all plays from all folders"""
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../plays"))
-    folders = ['new', 'open', 'closed', 'temp', 'expired']
+    """Get all plays from all folders using account-aware paths."""
+    folders = ['new', 'open', 'closed', 'temp', 'expired', 'pending-opening', 'pending-closing']
     plays = []
     
-    for folder in folders:
-        folder_path = os.path.join(base_dir, folder)
-        if os.path.exists(folder_path):
-            for file in os.listdir(folder_path):
-                if file.endswith('.json'):
-                    filepath = os.path.join(folder_path, file)
-                    plays.append({
-                        'filepath': filepath,
-                        'folder': folder,
-                        'filename': file
-                    })
+    if USE_ACCOUNT_PATHS:
+        # Use account-aware paths
+        for folder in folders:
+            folder_path = str(get_play_subdir(folder))
+            if os.path.exists(folder_path):
+                for file in os.listdir(folder_path):
+                    if file.endswith('.json'):
+                        filepath = os.path.join(folder_path, file)
+                        plays.append({
+                            'filepath': filepath,
+                            'folder': folder,
+                            'filename': file
+                        })
+    else:
+        # Fallback to legacy paths (for standalone use)
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../plays"))
+        for folder in folders:
+            folder_path = os.path.join(base_dir, folder)
+            if os.path.exists(folder_path):
+                for file in os.listdir(folder_path):
+                    if file.endswith('.json'):
+                        filepath = os.path.join(folder_path, file)
+                        plays.append({
+                            'filepath': filepath,
+                            'folder': folder,
+                            'filename': file
+                        })
     return plays
 
 def find_play_file(filename):
-    """Locate a play file across all play folders"""
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../plays"))
-    folders = ['new', 'open', 'closed', 'temp', 'expired']
+    """Locate a play file across all play folders using account-aware paths."""
+    folders = ['new', 'open', 'closed', 'temp', 'expired', 'pending-opening', 'pending-closing']
     
-    for folder in folders:
-        filepath = os.path.join(base_dir, folder, filename)
-        if os.path.exists(filepath):
-            return {
-                'filepath': filepath,
-                'folder': folder,
-                'filename': filename
-            }
+    if USE_ACCOUNT_PATHS:
+        # Use account-aware paths
+        for folder in folders:
+            filepath = os.path.join(str(get_play_subdir(folder)), filename)
+            if os.path.exists(filepath):
+                return {
+                    'filepath': filepath,
+                    'folder': folder,
+                    'filename': filename
+                }
+    else:
+        # Fallback to legacy paths
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../plays"))
+        for folder in folders:
+            filepath = os.path.join(base_dir, folder, filename)
+            if os.path.exists(filepath):
+                return {
+                    'filepath': filepath,
+                    'folder': folder,
+                    'filename': filename
+                }
     return None
 
 def edit_play_field(play_data, field, filepath):
@@ -938,11 +972,30 @@ def get_display_name(field):
     }
     return display_names.get(field, field)
 
-def edit_specific_play(filename):
-    play_info = find_play_file(filename)
-    if not play_info:
-        print(f"Error: Play file '{filename}' not found")
-        return
+def edit_specific_play(file_arg):
+    """Edit a specific play file.
+    
+    Args:
+        file_arg: Can be a full path or just a filename.
+    """
+    # Check if file_arg is a full path that exists
+    if os.path.isfile(file_arg):
+        # Full path provided - extract info from path
+        filepath = file_arg
+        filename = os.path.basename(filepath)
+        # Extract folder name from path (e.g., 'new', 'open', etc.)
+        folder = os.path.basename(os.path.dirname(filepath))
+        play_info = {
+            'filepath': filepath,
+            'folder': folder,
+            'filename': filename
+        }
+    else:
+        # Filename only - search for it
+        play_info = find_play_file(file_arg)
+        if not play_info:
+            print(f"Error: Play file '{file_arg}' not found")
+            return
     
     print(f"\nEditing play: [{play_info['folder']}] {play_info['filename']}")
     play_data = load_play(play_info['filepath'])

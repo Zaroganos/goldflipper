@@ -209,6 +209,85 @@ class Config:
 # Global config instance
 config = Config()
 
+
+# =============================================================================
+# Account Helper Functions
+# =============================================================================
+
+# Account directory mapping: config name -> directory name
+ACCOUNT_DIR_MAP = {
+    'live': 'account_1',
+    'paper_1': 'account_2',
+    'paper_2': 'account_3',
+    'paper_3': 'account_4',
+}
+
+# Reverse mapping: directory name -> config name
+DIR_ACCOUNT_MAP = {v: k for k, v in ACCOUNT_DIR_MAP.items()}
+
+
+def get_active_account_name() -> str:
+    """
+    Get the name of the currently active account from config.
+    
+    Returns:
+        Account name (e.g., 'live', 'paper_1', 'paper_2', 'paper_3')
+    """
+    return config.get('alpaca', 'active_account', default='paper_1')
+
+
+def get_active_account_dir() -> str:
+    """
+    Get the directory name for the currently active account.
+    
+    Returns:
+        Account directory name (e.g., 'account_1', 'account_2', etc.)
+    """
+    account_name = get_active_account_name()
+    return ACCOUNT_DIR_MAP.get(account_name, 'account_2')  # Default to paper_1's dir
+
+
+def get_account_dir(account_name: str) -> str:
+    """
+    Get the directory name for a specific account.
+    
+    Args:
+        account_name: Account name from config (e.g., 'live', 'paper_1')
+        
+    Returns:
+        Account directory name (e.g., 'account_1', 'account_2', etc.)
+    """
+    return ACCOUNT_DIR_MAP.get(account_name, 'account_2')
+
+
+def get_enabled_accounts() -> list:
+    """
+    Get list of enabled account names.
+    
+    Returns:
+        List of enabled account names (e.g., ['paper_1', 'paper_2'])
+    """
+    accounts = config.get('alpaca', 'accounts', default={})
+    enabled = []
+    for name, settings in accounts.items():
+        if settings.get('enabled', False):
+            enabled.append(name)
+    return enabled
+
+
+def get_account_nickname(account_name: str) -> str:
+    """
+    Get the display nickname for an account.
+    
+    Args:
+        account_name: Account name from config (e.g., 'live', 'paper_1')
+        
+    Returns:
+        Account nickname (e.g., 'Live Trading', 'Paper 1')
+    """
+    return config.get('alpaca', 'accounts', account_name, 'nickname', default=account_name)
+
+
 # For backward compatibility
 ALPACA_API_KEY = config.ALPACA_API_KEY
 ALPACA_SECRET_KEY = config.ALPACA_SECRET_KEY

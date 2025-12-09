@@ -590,12 +590,19 @@ class BaseStrategy(ABC):
         """
         Get the full path to a play status directory.
         
+        Uses account-aware path resolution from exe_utils for proper support of:
+        - Multi-account directory structure (plays/account_X/shared/...)
+        - Nuitka onefile mode (persistent data next to exe)
+        
         Args:
             status: PlayStatus enum value
         
         Returns:
-            str: Full path to the directory
+            str: Full path to the directory (e.g., plays/account_2/shared/new/)
         """
+        # Import here to avoid circular imports
+        from goldflipper.utils.exe_utils import get_play_subdir
+        
         # Map status to folder name
         folder_map = {
             PlayStatus.NEW: 'new',
@@ -608,11 +615,10 @@ class BaseStrategy(ABC):
         }
         
         folder = folder_map.get(status, status.value.lower())
-        base_dir = self.get_plays_base_dir()
         
-        # Get absolute path relative to goldflipper package
-        package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return os.path.join(package_dir, base_dir, folder)
+        # Use exe-aware, account-aware path resolution
+        # This returns: plays/{active_account_dir}/shared/{folder}/
+        return str(get_play_subdir(folder))
     
     def log_trade_action(
         self, 

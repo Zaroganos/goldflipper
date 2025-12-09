@@ -219,7 +219,9 @@ def get_config_dir() -> Path:
         config_dir = custom_data_dir / "config"
     elif is_frozen():
         # Config lives next to the exe for persistence
-        config_dir = Path(sys.executable).parent / "config"
+        # Use sys.argv[0] for actual exe location (NOT sys.executable which is python.exe in temp!)
+        exe_path = sys.argv[0] if sys.argv else sys.executable
+        config_dir = Path(exe_path).resolve().parent / "config"
     else:
         # From source: goldflipper/config
         return Path(__file__).resolve().parent.parent / "config"
@@ -294,7 +296,9 @@ def get_external_dir(dir_name: str) -> Path:
     """
     if is_frozen():
         # External dirs should be next to the exe
-        return Path(sys.executable).parent / dir_name
+        # Use sys.argv[0] for actual exe location (NOT sys.executable which is python.exe in temp!)
+        exe_path = sys.argv[0] if sys.argv else sys.executable
+        return Path(exe_path).resolve().parent / dir_name
     else:
         return get_package_root() / dir_name
 
@@ -435,28 +439,31 @@ def debug_paths() -> dict:
         'settings_exists': settings_path.exists(),
         'settings_template_path': str(template_path),
         'settings_template_exists': template_path.exists(),
-        'plays_dir': str(get_plays_dir()),
+        'plays_root': str(get_plays_root()),
+        'plays_dir_active': str(get_plays_dir()),
         'logs_dir': str(get_logs_dir()),
         'tools_dir': str(get_tools_dir()),
         'icon_path': str(get_icon_path()),
     }
 
 
-def get_plays_dir() -> Path:
+def get_plays_root() -> Path:
     """
-    Get the root directory for play files.
+    Get the root directory for all play files (contains account subdirectories).
     
     CRITICAL: In frozen mode, plays must persist NEXT TO the exe, not in temp extraction.
     If a custom data directory is configured, plays go there.
     
     Returns:
-        Path to plays/ directory (persistent).
+        Path to plays/ root directory (persistent).
     """
     custom_data_dir = get_custom_data_directory()
     if custom_data_dir:
         plays_dir = custom_data_dir / "plays"
     elif is_frozen():
-        plays_dir = Path(sys.executable).parent / "plays"
+        # Use sys.argv[0] for actual exe location (NOT sys.executable which is python.exe in temp!)
+        exe_path = sys.argv[0] if sys.argv else sys.executable
+        plays_dir = Path(exe_path).resolve().parent / "plays"
     else:
         # From source: project_root/plays/
         plays_dir = get_package_root() / "plays"
@@ -466,19 +473,113 @@ def get_plays_dir() -> Path:
     return plays_dir
 
 
-def get_play_subdir(subdir: str) -> Path:
+def get_plays_dir(account_name: Optional[str] = None, strategy: str = "shared") -> Path:
     """
-    Get a specific play subdirectory (new, open, closed, etc.).
+    Get the plays directory for the active account and strategy.
+    
+    Directory structure:
+        plays/
+        ├── account_1/                    # Live account
+        │   ├── shared/                   # Shared pool (legacy/cross-strategy)
+        │   │   ├── new/
+        │   │   ├── open/
+        │   │   └── ...
+        │   ├── option_swings/            # Strategy-specific (future)
+        │   └── ...
+        ├── account_2/                    # Paper account 1
+        │   └── ...
+        └── ...
+    
+    Args:
+        account_name: Optional account name override (e.g., 'live', 'paper_1').
+                      If None, uses the active account from config.
+        strategy: Strategy name for strategy-specific directories.
+                  Default is "shared" for the legacy shared pool.
+    
+    Returns:
+        Path to plays/{account_dir}/{strategy}/ directory.
+    """
+    from goldflipper.config.config import get_active_account_dir, get_account_dir
+    
+    plays_root = get_plays_root()
+    
+    # Determine account directory
+    if account_name:
+        account_dir = get_account_dir(account_name)
+    else:
+        account_dir = get_active_account_dir()
+    
+    # Build full path: plays/{account_dir}/{strategy}/
+    plays_dir = plays_root / account_dir / strategy
+    plays_dir.mkdir(parents=True, exist_ok=True)
+    
+    return plays_dir
+
+
+def get_play_subdir(subdir: str, account_name: Optional[str] = None, strategy: str = "shared") -> Path:
+    """
+    Get a specific play subdirectory (new, open, closed, etc.) for an account/strategy.
     
     Args:
         subdir: Subdirectory name (new, open, pending-opening, pending-closing, closed, expired, temp)
+        account_name: Optional account name override. If None, uses active account.
+        strategy: Strategy name. Default is "shared".
         
     Returns:
         Path to the play subdirectory (created if doesn't exist).
     """
-    play_subdir = get_plays_dir() / subdir
+    play_subdir = get_plays_dir(account_name=account_name, strategy=strategy) / subdir
     play_subdir.mkdir(parents=True, exist_ok=True)
     return play_subdir
+
+
+def get_all_account_plays_dirs() -> dict:
+    """
+    Get plays directories for all enabled accounts.
+    
+    Returns:
+        Dict mapping account names to their plays directory paths.
+        E.g., {'paper_1': Path('plays/account_2/shared'), ...}
+    """
+    from goldflipper.config.config import get_enabled_accounts, get_account_dir
+    
+    plays_root = get_plays_root()
+    result = {}
+    
+    for account_name in get_enabled_accounts():
+        account_dir = get_account_dir(account_name)
+        result[account_name] = plays_root / account_dir / "shared"
+    
+    return result
+
+
+def ensure_account_plays_structure(account_name: Optional[str] = None) -> Path:
+    """
+    Ensure the full plays directory structure exists for an account.
+    
+    Creates:
+        plays/{account_dir}/shared/new/
+        plays/{account_dir}/shared/pending-opening/
+        plays/{account_dir}/shared/open/
+        plays/{account_dir}/shared/pending-closing/
+        plays/{account_dir}/shared/closed/
+        plays/{account_dir}/shared/expired/
+        plays/{account_dir}/shared/temp/
+    
+    Args:
+        account_name: Optional account name. If None, uses active account.
+        
+    Returns:
+        Path to the account's shared plays directory.
+    """
+    plays_dir = get_plays_dir(account_name=account_name, strategy="shared")
+    
+    # Create all standard subdirectories
+    subdirs = ['new', 'pending-opening', 'open', 'pending-closing', 'closed', 'expired', 'temp']
+    for subdir in subdirs:
+        (plays_dir / subdir).mkdir(parents=True, exist_ok=True)
+    
+    return plays_dir
 
 
 def get_logs_dir() -> Path:
@@ -494,7 +595,9 @@ def get_logs_dir() -> Path:
     if custom_data_dir:
         logs_dir = custom_data_dir / "logs"
     elif is_frozen():
-        logs_dir = Path(sys.executable).parent / "logs"
+        # Use sys.argv[0] for actual exe location (NOT sys.executable which is python.exe in temp!)
+        exe_path = sys.argv[0] if sys.argv else sys.executable
+        logs_dir = Path(exe_path).resolve().parent / "logs"
     else:
         logs_dir = get_package_root() / "logs"
     

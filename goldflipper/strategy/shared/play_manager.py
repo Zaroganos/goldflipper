@@ -29,7 +29,7 @@ from uuid import UUID
 from enum import Enum
 from datetime import datetime
 
-from goldflipper.utils.exe_utils import get_plays_dir
+from goldflipper.utils.exe_utils import get_plays_dir as exe_get_plays_dir, get_plays_root, get_play_subdir
 
 from goldflipper.utils.atomic_io import atomic_write_json
 from goldflipper.utils.display import TerminalDisplay as display
@@ -98,37 +98,49 @@ class PlayManager:
     Handles moving plays between folders, saving/loading play data,
     and provides account-aware routing for multi-account setups.
     
+    Directory Structure:
+        plays/
+        ├── account_1/                    # Live account
+        │   ├── shared/                   # Shared pool (legacy/cross-strategy)
+        │   │   ├── new/
+        │   │   ├── open/
+        │   │   └── ...
+        │   ├── option_swings/            # Strategy-specific (future)
+        │   └── ...
+        ├── account_2/                    # Paper account 1
+        │   └── ...
+        └── ...
+    
     Attributes:
         logger: Logger instance for this module
-        plays_base_dir: Base directory for play files (default: 'plays')
-        
-    Future:
-        Account-based routing will use plays/{account_X}/{strategy}/
-        where account_X maps to config account names.
+        _account_name: Account name for this manager instance
+        _strategy: Strategy name for directory routing
     """
     
-    # Account mapping: config name -> directory name
-    ACCOUNT_DIR_MAP = {
-        'live': 'account_1',
-        'paper_1': 'account_2',
-        'paper_2': 'account_3',
-        'paper_3': 'account_4',
-    }
-    
-    def __init__(self, plays_base_dir: Optional[str] = None):
+    def __init__(
+        self, 
+        account_name: Optional[str] = None,
+        strategy: str = "shared",
+        plays_base_dir: Optional[str] = None
+    ):
         """
         Initialize the PlayManager.
         
         Args:
+            account_name: Account name for routing (e.g., 'live', 'paper_1').
+                          If None, uses the active account from config.
+            strategy: Strategy name for directory routing. Default is "shared".
             plays_base_dir: Override for plays directory. If None, uses default.
         """
         self.logger = logging.getLogger(__name__)
+        self._account_name = account_name  # None means use active account
+        self._strategy = strategy
         
         if plays_base_dir:
             self._plays_base_dir = plays_base_dir
         else:
             # Use exe-aware path for plays directory (persists next to exe in frozen mode)
-            self._plays_base_dir = str(get_plays_dir())
+            self._plays_base_dir = str(exe_get_plays_dir(account_name=account_name, strategy=strategy))
     
     @property
     def plays_base_dir(self) -> str:
@@ -380,21 +392,27 @@ class PlayManager:
         
         Args:
             status: PlayStatus enum value
-            strategy_name: Optional strategy name for strategy-specific dirs
-            account_name: Optional account name for account-based routing
+            strategy_name: Optional strategy name override for strategy-specific dirs
+            account_name: Optional account name override for account-based routing
         
         Returns:
-            Full path to the plays directory
-            
-        Future:
-            When account routing is enabled, returns:
-            plays/{account_dir}/{strategy_name}/{status_folder}/
+            Full path to the plays directory:
+            plays/{account_dir}/{strategy}/{status_folder}/
         """
         folder = PlayStatus.to_folder_name(status)
         
-        # For now, use legacy structure
-        # Future: Add account-based routing here
-        return os.path.join(self._plays_base_dir, folder)
+        # Use provided overrides or fall back to instance defaults
+        strategy = strategy_name if strategy_name else self._strategy
+        account = account_name if account_name else self._account_name
+        
+        # Get the base plays directory for this account/strategy
+        base_dir = str(exe_get_plays_dir(account_name=account, strategy=strategy))
+        
+        # Build full path with status folder
+        full_path = os.path.join(base_dir, folder)
+        os.makedirs(full_path, exist_ok=True)
+        
+        return full_path
     
     def list_plays(
         self, 

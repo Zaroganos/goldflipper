@@ -1,36 +1,40 @@
 # ==================================================
 # Goldflipper Configuration File - TEMPLATE
+#     last revised: 2025-12-09
 # ==================================================
-# This YAML file contains all configurable settings for the Goldflipper trading system.
+# This YAML `settings` file contains all configurable settings for the Goldflipper trading system.
 # All paths are relative to the project root directory unless specified as absolute.
 #
-# ===== GETTING STARTED FOR NEW USERS =====
-#
+# ===== GETTING STARTED =====
 # IMPORTANT SETUP INSTRUCTIONS:
-# 1. Save this file as "settings.yaml" in the same directory
-# 2. Replace all placeholder values (marked with YOUR_*) with your actual values
-# 3. Review all settings and adjust according to your preferences
-# 4. Save the file when done
+# 1. Save this file as "settings.yaml" in the same directory (the setup tool will do this for you).
+# 2. Replace all placeholder values (marked with YOUR_*) with your actual keys and values
+# 3. Review all settings and adjust the settings and default values according to your preferences
+# 4. Save your `settings.yaml` file when finished, or, press `save` if using the graphical settings tool.
 #
 # REQUIRED CHANGES:
-# - Alpaca API Keys: You must obtain API keys from Alpaca (https://app.alpaca.markets)
-#   and replace the placeholders in the alpaca.accounts section
-# - MarketDataApp API Key: If you plan to use MarketDataApp as a data provider,
-#   replace the placeholder in market_data_providers.providers.marketdataapp.api_key
+# - Alpaca API Keys:
+#     - You must obtain API keys from Alpaca (https://app.alpaca.markets)
+#       and replace the placeholders in the alpaca.accounts section
+# - MarketDataApp API Key:
+#     - If you plan to use MarketDataApp as a data provider,
+#       replace the placeholder in market_data_providers.providers.marketdataapp.api_key
+#     - You can find how to obtain an API Key for a free tier plan called "Free Forever" at:
+#       (https://www.marketdata.app/docs/account/free-accounts)
 #
 # CONFIGURATION SECTIONS:
 # - Alpaca API Settings: API keys and account configuration for Alpaca trading
 # - Strategy Settings: Configure options trading strategies
-# - Market Data Settings: Configure data sources and display options
+# - Market Data Settings: Configure market data provider sources and display options
 # - Order Settings: Configure order execution parameters
-# - File Operations: Configure file paths for play management
+# - File Operations: Configure file paths for state based play management
 # - Logging Configuration: Configure logging behavior
-# - Market Hours Settings: Configure market hours validation
+# - Market Hours Settings: Configure market hours recognition
 #
-# For detailed documentation on all settings, please refer to the Goldflipper documentation.
+# For detailed documentation on all settings, please contact the Goldflipper Team for support.
 #
-# ===== END GETTING STARTED =====
-
+# ===== FINE TUNING =====
+#
 # Display Configuration Instructions:
 # To enable/disable columns in the option chain display:
 # 1. Under market_data.option_chain_display.default_columns:
@@ -45,50 +49,51 @@
 # Example:
 # market_data:
 #   option_chain_display:
-#     default_columns:        # Show only these basic columns
+#     default_columns:       # Show only these basic columns
 #       - strike
 #       - lastPrice
 #       - bid
 #       - ask
 #     greeks:
 #       enabled: true        # Enable Greeks display
-#       columns:            # Show only these Greeks
+#       columns:             # Show only these Greeks
 #         - delta
 #         - theta
 
 ####################################################################################################
 # Alpaca API Settings
 ####################################################################################################
-# IMPORTANT: You must replace the placeholder API keys with your own Alpaca API credentials
+# IMPORTANT: Replace the placeholder API keys with your own Alpaca API credentials
 # Get your API keys from: https://app.alpaca.markets/paper/dashboard/overview
 alpaca:
   accounts:
     live:
-      enabled: false  # Set to true only when you're ready for live trading with real money
+      enabled: false
+      # Set to true only when you are ready to trade live, with real money
       nickname: "Live Trading"
-      api_key: 'YOUR_LIVE_API_KEY'  # Replace with your live API key
-      secret_key: 'YOUR_LIVE_SECRET_KEY'  # Replace with your live secret key
+      api_key: 'YOUR_LIVE_API_KEY'           # Replace with your live API key
+      secret_key: 'YOUR_LIVE_SECRET_KEY'     # Replace with your live secret key
       base_url: 'https://api.alpaca.markets/v2'
     paper_1:
       enabled: true
       nickname: "Paper 1"
-      api_key: 'YOUR_PAPER_API_KEY_1'  # Replace with your paper trading API key
+      api_key: 'YOUR_PAPER_API_KEY_1'        # Replace with your paper trading API key
       secret_key: 'YOUR_PAPER_SECRET_KEY_1'  # Replace with your paper trading secret key
       base_url: 'https://paper-api.alpaca.markets/v2'
     paper_2:
       enabled: true
       nickname: "Paper 2"
-      api_key: 'YOUR_PAPER_API_KEY_2'  # Replace with your paper trading API key (optional)
+      api_key: 'YOUR_PAPER_API_KEY_2'        # Replace with your paper trading API key (optional)
       secret_key: 'YOUR_PAPER_SECRET_KEY_2'  # Replace with your paper trading secret key (optional)
       base_url: 'https://paper-api.alpaca.markets/v2'
     paper_3:
       enabled: true
       nickname: "Paper 3"
-      api_key: 'YOUR_PAPER_API_KEY_3'  # Replace with your paper trading API key (optional)
+      api_key: 'YOUR_PAPER_API_KEY_3'        # Replace with your paper trading API key (optional)
       secret_key: 'YOUR_PAPER_SECRET_KEY_3'  # Replace with your paper trading secret key (optional)
       base_url: 'https://paper-api.alpaca.markets/v2'
-  default_account: 'paper_1'  # Specify which account to use by default
-  active_account: 'paper_1'  # Specify which account is currently active
+  default_account: 'paper_1'                 # Specify which account to use by default
+  active_account: 'paper_1'                  # Specify which account is currently active
 
 
   
@@ -96,11 +101,11 @@ alpaca:
 # Data Paths (UNUSED)
 ####################################################################################################
 paths:
-  data_dir: 'data'                    # Main data directory
-  raw_data_dir: 'data/raw'           # Raw market data storage
+  data_dir: 'data'                # Main data directory
+  raw_data_dir: 'data/raw'        # Raw market data storage
   processed_data_dir: 'data/processed'  # Processed data storage
-  log_dir: 'logs'                    # Directory for log files
-  log_file: 'logs/app.log'           # Main application log file
+  log_dir: 'logs'                 # Directory for log files
+  log_file: 'logs/app.log'        # Main application log file
 
 ####################################################################################################
 # Strategy Settings
@@ -109,13 +114,14 @@ paths:
 # Multi-Strategy Orchestration
 # ==========================================================================
 # The orchestrator coordinates execution of multiple trading strategies.
-# NOTE: Orchestration is now REQUIRED - legacy mode has been removed.
+# NOTE: Orchestration is now required as the legacy mode has been removed.
 strategy_orchestration:
-  enabled: true                     # Master switch - REQUIRED for system to run
-  mode: "sequential"                # "sequential" | "parallel"
-  max_parallel_workers: 3           # Max concurrent strategies when mode=parallel
-  dry_run: false                    # Dry-run mode: evaluate plays, log actions, but skip actual orders
-                                    # Useful for testing when market is closed or validating configurations
+  # Possibly deprecated as there is no other ochestration mode at this time
+  enabled: true                   # Master switch - REQUIRED enabled for system to run
+  mode: "sequential"              # "sequential" | "parallel"
+  max_parallel_workers: 3         # Max concurrent strategies when mode=parallel
+  dry_run: false                  # Dry-run mode: evaluate plays, log actions, but skip actual orders
+  # Useful for testing when market is closed or validating configurations
 
 # ==========================================================================
 # Individual Strategy Configurations
@@ -123,11 +129,11 @@ strategy_orchestration:
 
 options_swings:
   enabled: true
-  entry_order_types:                      # Types of orders to use
+  entry_order_types:              # Types of orders to use
     - market
     - limit
 
-  TP-SL_types:                # Types of take profit and stop loss to use
+  TP-SL_types:                    # Types of take-profit and stop-loss to use
     - STOCK_PRICE
     - PREMIUM_PCT
     - STOCK_PRICE_PCT
@@ -138,7 +144,7 @@ options_swings:
       - market
       - limit
 
-  SL_order_types:                  # Types of stop loss to use
+  SL_order_types:                 # Types of stop loss to use
     - STOP
     - LIMIT
     - CONTINGENCY
@@ -147,20 +153,53 @@ options_swings:
     enabled: true
     reload_oco_peers: true
 
-  play_types:                       # Types of plays to create
+  play_types:                      # Types of plays to create
     - SIMPLE
 #    - PRIMARY
 #    - OCO
 #    - OTO
   # Default values for live plays (NOT CURRENTLY IN USE. FOR FUTURE STREAMLINING/DEFAULTS)
-  expiration_days: 14                # Default expiration in days for live plays
-  entry_buffer: 0.05                # Entry price buffer for live plays (e.g., ±$0.01)
-  take_profit_pct: 50.0              # Default take profit percentage
-  stop_loss_pct: 25.5                # Default stop loss percentage
+  expiration_days: 14              # Default expiration in days for live plays
+  entry_buffer: 0.05               # Entry price buffer for live plays (e.g., ±$0.01)
+  take_profit_pct: 50.0            # Default take profit percentage
+  stop_loss_pct: 25.5              # Default stop loss percentage
 
-# K's Strategy: Options Spreads
+# Options Spreads
 spreads:
   enabled: false
+  spread_types:                    # Types of spreads to trade (future implementation)
+    - vertical
+    - iron_condor
+    - butterfly
+
+# Automated Options Swings (Auto-generated plays from scanner)
+option_swings_auto:
+  enabled: false
+  auto_entry: true                 # Automatically enter positions
+  auto_exit: true                  # Automatically exit positions
+  risk_per_trade_pct: 2.0          # Max risk per trade as % of account
+  max_concurrent_positions: 5      # Maximum open positions
+
+# Momentum Strategy (Gap plays, squeeze fires, etc.)
+momentum:
+  enabled: false
+  scan_interval: 60                # Seconds between scans
+  indicators:
+    ttm_squeeze: true
+    ema_cross: true
+  entry_signals:
+    - squeeze_fire
+    - ema_crossover
+
+# Sell Puts Strategy (Cash-secured puts / TastyTrade style)
+sell_puts:
+  enabled: false
+  target_delta: 0.3                 # Target delta for put selection
+  dte_range:                        # Days to expiration range
+    - 30
+    - 45
+  profit_target_pct: 50.0           # Close at 50% of max profit
+  min_premium: 0.5                  # Minimum premium to collect
 
 ####################################################################################################
 # Trading Parameters * NOT USED, CONSIDER REMOVING *
@@ -187,7 +226,7 @@ market_data:
       - impliedVolatility
     
     # Greeks display settings
-    # NOTE: only main 5 Greeks are displayed. Uncomment the ones you want to see.
+    # By default only main 5 Greeks are displayed. Uncomment the ones you want to see.
     greeks:
       enabled: true
       columns:
@@ -278,8 +317,8 @@ trailing:
 # Order Settings
 ####################################################################################################
 orders:
-  limit_buy:                         # THI WAS AUTO GENERATED, NOT USED ATM.
-    price_buffer: 0.25               # Buffer for limit order prices (25%) (NOT USED)
+  limit_buy:                         # THIS WAS AUTO GENERATED, NOT USED ATM.
+    price_buffer: 0.25               # Buffer for limit order prices (NOT USED)
   bid_price_settings:                # AT THE BID PRICE SETTINGS
     use_bid_price: true              # Master switch for using bid prices
     entry: true                      # Use bid price for entry limit orders
@@ -296,13 +335,13 @@ orders:
 # Directories for play file management
 file_paths:
   plays_dir: "plays"                      # Root directory for all play files
-  new_dir: "new"                          # New/pending plays
-  pending_opening_dir: "pending-opening"  # Plays whose BUY condition has hit but limit order has not yet been filled
+  new_dir: "new"                          # New plays which are yet to meet an entry condition
+  pending_opening_dir: "pending-opening"  # Plays whose ENTRY condition has hit but limit order has not yet been filled
   open_dir: "open"                        # Currently active plays
-  pending_closing_dir: "pending-closing"  # Plays whose SELL condition has hit but limit order has not yet been filled
-  closed_dir: "closed"                    # Completed plays
-  expired_dir: "expired"                  # Expired plays
-  temp_dir: "temp"                        # Temporary play storage
+  pending_closing_dir: "pending-closing"  # Plays whose EXIT condition has hit but limit order has not yet been filled
+  closed_dir: "closed"                    # Closed plays whose position was closed
+  expired_dir: "expired"                  # Expired plays (did not enter position by expiration date(s))
+  temp_dir: "temp"                        # Temporary play storage for OTO conditional plays
 
 
 ####################################################################################################  
@@ -337,26 +376,38 @@ logging:
   rotation:
     type: "time"                     # "time" (TimedRotatingFileHandler) or "size" (RotatingFileHandler)
     when: "midnight"                 # For time-based rotation: 'S','M','H','D','midnight','W0'-'W6'
-    interval: 30                      # Rotate every N intervals (e.g., ~monthly)
-    backup_count: 14                  # How many rotated files to keep
-    max_bytes: 10485760               # For size-based rotation: 10MB
-    compress: true                    # Compress rotated logs
-    compression_format: "gz"          # "gz" or "zip"
+    interval: 30                     # Rotate every N intervals (e.g., ~monthly)
+    backup_count: 14                 # How many rotated files to keep
+    max_bytes: 10485760              # For size-based rotation: 10MB
+    compress: true                   # Compress rotated logs
+    compression_format: "gz"         # "gz" or "zip"
+
+####################################################################################################
+# Watchdog / Heartbeat System Settings (CURRENTLY DISABLED -- NEEDS WORK)
+####################################################################################################
+watchdog:
+  enabled: false                    # Enable/disable the watchdog/heartbeat monitoring system
+  check_interval: 30                # Interval in seconds between health checks
+  warning: "EXPERIMENTAL: The watchdog system is experimental and may cause unexpected
+    behavior."
+  actions:
+    log_warnings: true              # Log warning messages when issues are detected
+    trigger_recovery: false         # Attempt to recover automatically when system appears unresponsive
 
 ####################################################################################################
 # Market Hours Settings
 ####################################################################################################
 market_hours:
-  enabled: true                    # Enable/disable market hours validation
-  timezone: "America/New_York"     # Market timezone
+  enabled: true                     # Enable/disable market hours validation
+  timezone: "America/New_York"      # Market timezone
   regular_hours:
-    start: "09:30"                # Regular market open (HH:MM) -- start at market open
+    start: "09:30"                  # Regular market open (HH:MM) -- start at market open
     # start: "09:29"                # Regular market open (HH:MM) -- start one minute early to account for cycle time
-    end: "16:16"                  # Regular market close (HH:MM) -- note, some tickers e.g. SPY trade until 16:15
+    end: "16:16"                    # Regular market close (HH:MM) -- note, some tickers e.g. SPY trade until 16:15
   extended_hours:
-    enabled: false                # Enable/disable extended hours trading
-    pre_market_start: "04:00"     # Pre-market start (HH:MM)
-    after_market_end: "20:00"     # After-market end (HH:MM)
+    enabled: false                  # Enable/disable extended hours trading
+    pre_market_start: "04:00"       # Pre-market start (HH:MM)
+    after_market_end: "20:00"       # After-market end (HH:MM)
 
 ####################################################################################################
 # Auto Play Creator Settings
@@ -366,7 +417,7 @@ auto_play_creator:
   order_types:                      # Types of orders to use
     - market
     - limit
-  TP-SL_types:                # Types of take profit and stop loss to use
+  TP-SL_types:                      # Types of take profit and stop loss to use
     - STOCK_PRICE
     - PREMIUM_PCT
     - STOCK_PRICE_PCT
@@ -396,13 +447,13 @@ auto_play_creator:
     # Optional overrides used only in Simulate Real Plays mode
     take_profit_pct: 50.0
     stop_loss_pct: 30.0
-    entry_buffer: 0.10           # Uncomment to override entry jitter for simulate_real
+    entry_buffer: 0.10              # Uncomment to override entry jitter for simulate_real
   # Defaults for Option 3 (OCO Peer Sets)
   oco_peer_set:
     # Optional overrides used only in OCO Peer Sets mode
-    entry_buffer: 0.05           # Override entry jitter specifically for OCO (fraction, e.g., 0.01 = ±1%)
-    take_profit_pct: 50.0        # Override TP percent specifically for OCO
-    stop_loss_pct: 30.0          # Override SL percent specifically for OCO
+    entry_buffer: 0.05              # Override entry jitter specifically for OCO (fraction, e.g., 0.01 = ±1%)
+    take_profit_pct: 50.0           # Override TP percent specifically for OCO
+    stop_loss_pct: 30.0             # Override SL percent specifically for OCO
   test_symbols:                     # Symbols to use for test plays
     - SPY
     - QQQ
@@ -635,7 +686,7 @@ market_data_display:
 ####################################################################################################
 csv_ingestor:
   open_after_creation: false  # Whether to automatically open created JSON files
-  default_viewer: "code"      # Options: "code" (VSCode), "explorer" (File Explorer), "none"
+  default_viewer: "explorer"      # Options: "code" (VSCode), "explorer" (File Explorer), "none"
   validation:
     enabled: true             # Enable CSV validation before processing
     strictness_level: "moderate"  # "high" | "moderate" | "low" - controls how strictly validation results gate ingestion

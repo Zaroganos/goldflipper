@@ -261,9 +261,11 @@ def get_option_premium_data(ticker, expiration_date=None, strike_price=None, opt
 
 def get_all_plays():
     """Get all plays from various play folders."""
+    from goldflipper.utils.exe_utils import get_plays_dir
+    
     play_folders = ['new', 'open', 'temp']
     plays = []
-    base_path = os.path.join(os.path.dirname(__file__), '..', 'plays')
+    base_path = str(get_plays_dir())  # Account-aware, exe-aware path
     
     for folder in play_folders:
         folder_path = os.path.join(base_path, folder)

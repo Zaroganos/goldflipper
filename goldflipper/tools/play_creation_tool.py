@@ -6,12 +6,12 @@ import platform
 import subprocess
 import yaml
 import sys
+from goldflipper.utils.display import TerminalDisplay
+from goldflipper.utils.exe_utils import get_play_subdir
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
-
-from goldflipper.utils.display import TerminalDisplay
 
 def get_input(prompt, input_type=str, validation=None, error_message="Invalid input. Please try again.", optional=False):
     """
@@ -113,7 +113,7 @@ def create_option_contract_symbol(symbol, expiration_date, strike_price, trade_t
     return final_symbol
 
 def get_price_condition_type():
-    """Get user's choice for price condition type."""
+    """Get user's choice for price condition type(s)."""
     print("\nSelect price condition type(s):")
     print("1. Stock price (absolute value)")
     print("2. Option premium %")
@@ -731,11 +731,11 @@ class PlayBuilder:
         base_play_name = self.play['play_name']
         base_filename = self.filename.replace('.json', '')
         
-        # Determine the appropriate directory based on play class
+        # Determine the appropriate directory based on play class (account-aware)
         if self.play['play_class'] == 'OTO':
-            plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'temp')
+            plays_dir = str(get_play_subdir('temp'))
         else:
-            plays_dir = os.path.join(os.path.dirname(__file__), '..', 'plays', 'new')
+            plays_dir = str(get_play_subdir('new'))
         
         os.makedirs(plays_dir, exist_ok=True)
         

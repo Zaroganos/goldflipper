@@ -236,8 +236,9 @@ def main():
     # Define a standard separator length
     SEP_LENGTH = 50
 
-    # Get base plays directory
-    base_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'plays')
+    # Get base plays directory using account-aware, exe-aware paths
+    from goldflipper.utils.exe_utils import get_plays_dir
+    base_dir = str(get_plays_dir())
     folders = ['new', 'pending-opening', 'open', 'pending-closing', 'closed', 'expired']
 
     display.header("Checking Plays Status...")

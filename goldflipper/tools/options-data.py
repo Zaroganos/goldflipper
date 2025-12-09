@@ -25,8 +25,10 @@ def load_plays(status=None):
     Args:
         status (str, optional): 'new' or 'open' to filter plays. None for both.
     """
+    from goldflipper.utils.exe_utils import get_plays_dir
+    
     plays = []
-    base_path = os.path.join(os.path.dirname(__file__), '..', 'plays')
+    base_path = str(get_plays_dir())  # Account-aware, exe-aware path
     folders = ['new', 'open'] if status is None else [status.lower()]
     
     for folder in folders:

@@ -1,10 +1,10 @@
 # Multi-Strategy Implementation Plan
 
 **Document Created:** 2025-11-29  
-**Last Updated:** 2025-12-06  
-**Status:** MIGRATION COMPLETE ✅  
+**Last Updated:** 2025-12-09  
+**Status:** MIGRATION COMPLETE ✅ (Path resolution fixed 2025-12-09)  
 **Breaking Changes:** Legacy fallback removed (orchestrator required)  
-**Current Phase:** Post-Migration
+**Current Phase:** Post-Migration (Phase 9 Complete)
 
 ---
 
@@ -437,6 +437,68 @@ Key additions to play templates:
 - **Upload Template**: Now uses `play_csv_ingestion_multitool.py` (multi-strategy CSV ingestion)
 
 **Note:** Deprecated code cleanup should only happen AFTER the new system is confirmed working in production.
+
+---
+
+### Phase 9: Plays Directory Migration Fix ✅ COMPLETE (2025-12-09)
+
+The plays directory migration was completed but the trading system was not finding plays due to path resolution issues.
+
+**Root Causes Identified:**
+
+1. **`BaseStrategy.get_plays_dir()`** was using `__file__` and didn't include the account subdirectory structure. Strategies were looking in the wrong location (`goldflipper/plays/new/` instead of `plays/account_X/shared/new/`).
+
+2. **Several `exe_utils.py` functions** were using `sys.executable` for frozen mode paths, which in Nuitka onefile mode points to the temp extraction directory instead of the actual exe location.
+
+3. **Multiple tool files** had hardcoded paths using `__file__` that bypassed the account-aware path utilities.
+
+**Files Fixed:**
+
+| File | Issue | Fix |
+|------|-------|-----|
+| `strategy/base.py` | `get_plays_dir()` used `__file__` | Now uses `exe_utils.get_play_subdir()` |
+| `utils/exe_utils.py` | `get_plays_root()` used `sys.executable` | Now uses `sys.argv[0]` for frozen mode |
+| `utils/exe_utils.py` | `get_logs_dir()` used `sys.executable` | Now uses `sys.argv[0]` for frozen mode |
+| `utils/exe_utils.py` | `get_config_dir()` used `sys.executable` | Now uses `sys.argv[0]` for frozen mode |
+| `utils/exe_utils.py` | `get_external_dir()` used `sys.executable` | Now uses `sys.argv[0]` for frozen mode |
+| `trade_logging/trade_logger.py` | `PlayLogger.__init__()` hardcoded paths | Now uses `exe_utils.get_plays_dir()` and `exe_utils.get_logs_dir()` |
+| `tools/option_data_fetcher.py` | `get_all_plays()` hardcoded path | Now uses `exe_utils.get_plays_dir()` |
+| `tools/options-data.py` | `load_plays()` hardcoded path | Now uses `exe_utils.get_plays_dir()` |
+| `tools/get_alpaca_info.py` | Hardcoded plays directory | Now uses `exe_utils.get_plays_dir()` |
+| `tests/test_parallel_execution.py` | Hardcoded plays directory | Now uses `exe_utils.get_plays_dir()` |
+
+**Key Fix Pattern:**
+
+```python
+# BEFORE (broken in Nuitka onefile + doesn't use account structure):
+base_dir = Path(sys.executable).parent / "plays"
+# or
+base_dir = os.path.join(os.path.dirname(__file__), '..', 'plays')
+
+# AFTER (works correctly):
+from goldflipper.utils.exe_utils import get_plays_dir
+base_dir = str(get_plays_dir())  # Returns: plays/account_X/shared/
+```
+
+**Nuitka Onefile Path Resolution (Critical):**
+
+In Nuitka onefile mode:
+- `sys.executable` → `C:\Temp\ONEFIL~1\python.exe` (TEMP extraction - WRONG for persistent data!)
+- `sys.argv[0]` → `C:\path\to\goldflipper.exe` (ACTUAL exe path - CORRECT)
+- `__file__` → temp extraction directory (for bundled data only, not persistent data)
+
+**ALWAYS use `sys.argv[0]` for persistent data paths (settings, plays, logs).**
+
+**Expected Behavior After Fix:**
+
+The trading system now correctly finds plays in the account-aware directory structure:
+```
+plays/
+├── account_1/shared/new/     # Live account
+├── account_2/shared/new/     # Paper 1 (active by default)
+├── account_3/shared/new/     # Paper 2
+└── account_4/shared/new/     # Paper 3
+```
 
 ---
 
@@ -1198,8 +1260,59 @@ LEGACY CLEANUP COMPLETED (2025-12-08):
 - Cleaned up test mock configs
 - All 41 tests pass after cleanup
 
+ACCOUNT-BASED PLAY ROUTING IMPLEMENTED (2025-12-09):
+**Directory Structure:**
+- Plays now stored in `plays/{account_dir}/shared/{status}/` format
+- Account mapping: live → account_1, paper_1 → account_2, etc.
+- Automatic routing based on active account in settings.yaml
+- **LEGACY `goldflipper/plays/` DIRECTORY IS DEPRECATED** - Do not use
+
+**DIRECTIVE: All code referencing plays directories MUST use account-aware functions:**
+```python
+# CORRECT - Use these functions from exe_utils:
+from goldflipper.utils.exe_utils import get_plays_dir, get_play_subdir
+
+plays_dir = get_plays_dir()                    # → plays/account_X/shared/
+new_dir = get_play_subdir('new')               # → plays/account_X/shared/new/
+open_dir = get_play_subdir('open')             # → plays/account_X/shared/open/
+
+# WRONG - Never use hardcoded paths:
+# "../plays/new"              # ❌ LEGACY
+# "plays/new"                 # ❌ LEGACY
+# os.path.join(..., "plays")  # ❌ LEGACY
+```
+
+**When adding new code that reads/writes play files:**
+1. Import `get_plays_dir` and/or `get_play_subdir` from `goldflipper.utils.exe_utils`
+2. Use `get_play_subdir(status_folder)` to get the correct path
+3. Never hardcode plays directory paths
+
+**Files Updated:**
+- `config/config.py` - Added account helper functions:
+  * `get_active_account_name()` - Get current account from config
+  * `get_active_account_dir()` - Get directory name for active account
+  * `get_account_dir(account_name)` - Get directory for any account
+  * `get_enabled_accounts()` - List all enabled accounts
+  * `get_account_nickname(account_name)` - Get display name
+  * `ACCOUNT_DIR_MAP` / `DIR_ACCOUNT_MAP` - Mapping dictionaries
+- `utils/exe_utils.py` - Account-aware path functions:
+  * `get_plays_root()` - Returns base plays/ directory
+  * `get_plays_dir(account_name, strategy)` - Returns account/strategy path
+  * `get_play_subdir(subdir, account_name, strategy)` - Status folder path
+  * `get_all_account_plays_dirs()` - All enabled account paths
+  * `ensure_account_plays_structure()` - Create full directory structure
+- `strategy/shared/play_manager.py` - Full account routing in `get_plays_dir()`
+- `tools/view_plays.py` - Shows active account, uses account paths
+- `tools/system_status.py` - Added `get_active_account_info()`
+- `tools/play_creator_gui.py` - Uses `get_play_subdir()` for saves
+- `tools/play_creation_tool.py` - Uses account-aware paths
+- `tools/auto_play_creator.py` - Uses account-aware paths
+- `tools/play-edit-tool.py` - Uses account-aware paths with fallback
+- `utils/json_fixer.py` - Uses account-aware paths
+
 SYSTEM STATUS:
 - Orchestration is now REQUIRED (no legacy fallback)
+- Account-based play routing FULLY IMPLEMENTED
 - All multi-strategy features fully implemented and tested
 - Ready for production use
 ```

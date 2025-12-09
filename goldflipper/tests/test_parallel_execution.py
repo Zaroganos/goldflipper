@@ -418,11 +418,10 @@ def test_parallel_with_plays():
     
     from goldflipper.strategy.orchestrator import StrategyOrchestrator
     from goldflipper.data.market.manager import MarketDataManager
+    from goldflipper.utils.exe_utils import get_plays_dir
     
-    # Get plays directory
-    plays_dir = os.path.abspath(os.path.join(
-        os.path.dirname(__file__), '..', 'plays'
-    ))
+    # Get plays directory using account-aware paths
+    plays_dir = str(get_plays_dir())
     
     print(f"Plays directory: {plays_dir}")
     

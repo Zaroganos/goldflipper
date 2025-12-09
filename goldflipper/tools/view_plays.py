@@ -12,7 +12,8 @@ from textual.widget import Widget
 from rich.text import Text
 
 # Import exe-aware path utilities
-from goldflipper.utils.exe_utils import get_plays_dir, get_settings_path, get_tools_dir
+from goldflipper.utils.exe_utils import get_plays_dir, get_plays_root, get_settings_path, get_tools_dir
+from goldflipper.config.config import get_active_account_name, get_account_nickname
 
 def open_file_explorer(path):
     """
@@ -34,10 +35,12 @@ def format_play_files(folder_path):
         for file in os.listdir(folder_path):
             if file.endswith('.json'):
                 try:
-                    with open(os.path.join(folder_path, file), 'r') as f:
+                    full_path = os.path.join(folder_path, file)
+                    with open(full_path, 'r') as f:
                         play_data = json.load(f)
                         plays.append({
                             'filename': file,
+                            'filepath': full_path,  # Store full path for editing
                             'data': play_data
                         })
                 except json.JSONDecodeError:
@@ -183,19 +186,24 @@ class PlayCard(Widget):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id.startswith("edit_"):
-            filename = f"{event.button.id.replace('edit_', '')}.json"
-            self.launch_editor(filename)
+            # Use stored full path for editing
+            filepath = self.play.get('filepath', '')
+            if filepath:
+                self.launch_editor(filepath)
+            else:
+                self.app.notify("Could not find file path", severity="error")
 
-    def launch_editor(self, filename: str) -> None:
+    def launch_editor(self, filepath: str) -> None:
+        """Launch the play edit tool with the full file path."""
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             editor_path = os.path.join(current_dir, "play-edit-tool.py")
             
             if os.name == 'nt':  # Windows
-                cmd = [sys.executable, editor_path, '--file', filename]
+                cmd = [sys.executable, editor_path, '--file', filepath]
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', sys.executable, editor_path, '--file', filename])
+                subprocess.Popen(['gnome-terminal', '--', sys.executable, editor_path, '--file', filepath])
         except Exception as e:
             self.app.notify(f"Error launching editor: {str(e)}", severity="error")
 
@@ -267,6 +275,7 @@ class ViewPlaysApp(App):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "folder_button":
+            # Open the active account's shared plays directory
             plays_dir = str(get_plays_dir())
             open_file_explorer(plays_dir)
 
@@ -292,8 +301,18 @@ class ViewPlaysApp(App):
             child = plays_container.children[0]
             plays_container.remove(child)
 
+        # Get active account info for display
+        active_account = get_active_account_name()
+        account_nickname = get_account_nickname(active_account)
+        
+        # Display account info
+        plays_container.mount(Static(
+            f"\n[bold cyan]Active Account:[/bold cyan] {account_nickname} ({active_account})\n",
+            classes="folder-title"
+        ))
+        
         for folder in folders:
-            # Use exe-aware plays directory
+            # Use account-aware plays directory
             folder_path = str(get_plays_dir() / folder.lower())
             plays = format_play_files(folder_path)
 

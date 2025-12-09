@@ -13,6 +13,7 @@ sys.path.append(project_root)
 
 from goldflipper.config.config import config
 from goldflipper.utils.display import TerminalDisplay as display
+from goldflipper.utils.exe_utils import get_play_subdir
 from goldflipper.data.market.manager import MarketDataManager
 import logging
 
@@ -840,12 +841,9 @@ class AutoPlayCreator:
         return play
         
     def save_play(self, play):
-        """Save the play to the appropriate directory."""
-        # Resolve directories from config for alignment
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        plays_root = config.get('file_paths', 'plays_dir', default='plays')
-        new_dir = config.get('file_paths', 'new_dir', default='new')
-        plays_dir = os.path.join(base_dir, plays_root, new_dir)
+        """Save the play to the appropriate directory (account-aware)."""
+        # Use account-aware plays directory
+        plays_dir = str(get_play_subdir('new'))
         os.makedirs(plays_dir, exist_ok=True)
         
         filename = f"{play['play_name']}.json"

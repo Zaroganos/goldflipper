@@ -4,30 +4,27 @@ import logging
 from pathlib import Path
 import re
 from goldflipper.utils.logging_setup import configure_logging
+from goldflipper.utils.exe_utils import get_plays_dir, get_play_subdir
 
 class PlayFileFixer:
     """Utility for detecting and repairing corrupted play JSON files."""
     
+    # Standard play status folders
+    PLAY_STATUS_FOLDERS = ['new', 'open', 'pending-opening', 'pending-closing', 'closed', 'expired', 'temp']
+    
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        # Play directories to check
-        self.play_dirs = [
-            'plays/new',
-            'plays/open',
-            'plays/pending-opening',
-            'plays/pending-closing',
-            'plays/closed',
-            'plays/expired',
-            'plays/temp'
-        ]
-        self.base_dir = Path(__file__).parent.parent
+        # Use account-aware plays directory
+        self.plays_base_dir = get_plays_dir()
+        # Build list of play directories from the account-aware base
+        self.play_dirs = [str(self.plays_base_dir / folder) for folder in self.PLAY_STATUS_FOLDERS]
         self.fix_count = 0
         self.reference_templates = {}
     
     def _load_reference_templates(self):
         """Load reference templates from closed plays to use for structure validation only."""
         self.reference_templates = {}
-        closed_dir = self.base_dir / 'plays/closed'
+        closed_dir = get_play_subdir('closed')
         
         if not closed_dir.exists():
             self.logger.warning("Closed plays directory does not exist, cannot load templates")
@@ -59,10 +56,10 @@ class PlayFileFixer:
         """Get all play JSON files from all play directories."""
         all_play_files = []
         for dir_path in self.play_dirs:
-            full_dir_path = self.base_dir / dir_path
-            if full_dir_path.exists():
+            dir_path = Path(dir_path)
+            if dir_path.exists():
                 all_play_files.extend([
-                    f for f in full_dir_path.glob('*.json')
+                    f for f in dir_path.glob('*.json')
                     if f.is_file()
                 ])
         return all_play_files
