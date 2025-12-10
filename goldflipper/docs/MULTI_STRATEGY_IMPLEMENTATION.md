@@ -2,7 +2,7 @@
 
 **Document Created:** 2025-11-29  
 **Last Updated:** 2025-12-09  
-**Status:** MIGRATION COMPLETE ✅ (Path resolution fixed 2025-12-09)  
+**Status:** MIGRATION COMPLETE ✅ (First-run setup & Nuitka build fixes 2025-12-09)  
 **Breaking Changes:** Legacy fallback removed (orchestrator required)  
 **Current Phase:** Post-Migration (Phase 9 Complete)
 
@@ -693,6 +693,11 @@ The fallback mechanism ensures production stability during migration.
 | 2025-12-01 | 8 | Updated README.md | Added multi-strategy features, config examples |
 | 2025-12-01 | 8 | **Phase 8 Complete** | All documentation updated, ready for production validation |
 | 2025-12-03 | 6 | Updated option_swings playbooks | v3 → v3.1: SL 35%→29%, DTE 14→14-21, RSI indicator, soft OI |
+| 2025-12-09 | 9 | Fixed Nuitka build bundling | Only bundle settings_template.yaml, not settings.yaml |
+| 2025-12-09 | 9 | Fixed first-run setup trigger | Use `.setup_complete` marker instead of settings.yaml existence |
+| 2025-12-09 | 9 | Improved setup wizard UX | Always show full options (shortcut, data dir, settings), pre-load existing |
+| 2025-12-09 | 9 | Made tkinterdnd2 optional | Graceful fallback to standard Tk if native DLLs fail to load |
+| 2025-12-09 | 9 | Enhanced debug output | Always print critical path info at startup for troubleshooting |
 
 ---
 
@@ -1316,3 +1321,51 @@ SYSTEM STATUS:
 - All multi-strategy features fully implemented and tested
 - Ready for production use
 ```
+
+---
+
+## First-Run Setup Wizard (Fixed 2025-12-09)
+
+### Problem
+The Tkinter first-run setup wizard was not appearing in Nuitka builds due to two issues:
+1. **Bundled settings.yaml** - The build script bundled the entire `goldflipper/config/` directory, including the developer's `settings.yaml`, causing the wizard to be incorrectly skipped
+2. **tkinterdnd2 native library** - The `TkinterDnD.Tk()` call could raise `RuntimeError` if the native `tkdnd` DLLs failed to load, but only `ImportError` was caught
+
+### Solution
+
+**1. Build Script Fix** (`scripts/build_nuitka.py`):
+```python
+# OLD - bundled entire config dir including settings.yaml
+(PROJECT_ROOT / "goldflipper" / "config", "goldflipper/config"),
+
+# NEW - only bundle the template
+(PROJECT_ROOT / "goldflipper" / "config" / "settings_template.yaml", "goldflipper/config/settings_template.yaml"),
+```
+
+**2. Setup Trigger Logic** (`goldflipper/launcher.py`):
+- Changed from checking `settings.yaml` existence to checking `.setup_complete` marker
+- Marker created after wizard completes successfully
+- Settings existence only determines if existing settings are pre-loaded as defaults
+
+**3. Unified Setup UI** (`goldflipper/first_run_setup.py`):
+- Always shows full options: shortcut creation, data directory, settings file
+- If settings exist: Shows green checkmark with current path, allows switching
+- If no settings: Allows selecting existing file or creating from template
+- Existing settings preserved unless user explicitly provides new file
+
+**4. tkinterdnd2 Optional** (`goldflipper/first_run_setup.py`):
+```python
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    self.root = TkinterDnD.Tk()
+    self.dnd_available = True
+except (ImportError, RuntimeError, Exception) as e:
+    # Graceful fallback - drag-and-drop disabled but wizard works
+    self.root = tk.Tk()
+    self.dnd_available = False
+```
+
+### Files Modified
+- `scripts/build_nuitka.py` - Only bundle settings_template.yaml
+- `goldflipper/launcher.py` - Use `.setup_complete` marker, enhanced debug output
+- `goldflipper/first_run_setup.py` - Unified UI, optional tkinterdnd2, preserve existing settings

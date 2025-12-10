@@ -40,9 +40,11 @@ PACKAGES_TO_COMPILE = [
 # DATA FILES (use --include-data-dir / --include-data-files)
 # These are non-Python files: YAML configs, JSON templates, CSV reference data.
 # ============================================================================
+# IMPORTANT: Do NOT bundle settings.yaml! Only bundle the template.
+# settings.yaml is user-specific and created on first run.
 DATA_MAPPINGS = [
-    # Core config templates (YAML)
-    (PROJECT_ROOT / "goldflipper" / "config", "goldflipper/config"),
+    # Config template ONLY (not settings.yaml which is user-specific)
+    (PROJECT_ROOT / "goldflipper" / "config" / "settings_template.yaml", "goldflipper/config/settings_template.yaml"),
     
     # Reference data (CSV files)
     (PROJECT_ROOT / "goldflipper" / "reference", "goldflipper/reference"),

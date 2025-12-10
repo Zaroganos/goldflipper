@@ -21,14 +21,31 @@ from goldflipper.utils.exe_utils import (
 
 class FirstRunSetup:
     def __init__(self):
-        # Import TkinterDnD2 for drag and drop support
+        # Import TkinterDnD2 for drag and drop support (optional)
+        # In Nuitka onefile builds, the native tkdnd library may fail to load
+        self.dnd_available = False
+        self.DND_FILES = None
+        
         try:
             from tkinterdnd2 import DND_FILES, TkinterDnD
-            self.DND_FILES = DND_FILES  # Store for later use
-            self.root = TkinterDnD.Tk()  # Use TkinterDnD.Tk() instead of tk.Tk()
-        except ImportError:
-            print("TkinterDnD2 not found. Please install it using: uv pip install tkinterdnd2")
-            sys.exit(1)
+            self.DND_FILES = DND_FILES
+            self.root = TkinterDnD.Tk()
+            self.dnd_available = True
+            print("[FirstRunSetup] TkinterDnD2 loaded successfully - drag and drop enabled")
+        except ImportError as e:
+            print(f"[FirstRunSetup] TkinterDnD2 not available (ImportError): {e}")
+            print("[FirstRunSetup] Falling back to standard Tk (drag and drop disabled)")
+            self.root = tk.Tk()
+        except RuntimeError as e:
+            # tkdnd native library failed to load (common in Nuitka onefile builds)
+            print(f"[FirstRunSetup] TkinterDnD2 native library failed to load (RuntimeError): {e}")
+            print("[FirstRunSetup] Falling back to standard Tk (drag and drop disabled)")
+            self.root = tk.Tk()
+        except Exception as e:
+            # Catch any other unexpected errors
+            print(f"[FirstRunSetup] TkinterDnD2 initialization failed ({type(e).__name__}): {e}")
+            print("[FirstRunSetup] Falling back to standard Tk (drag and drop disabled)")
+            self.root = tk.Tk()
         
         # Check if settings file already exists (using exe-aware paths)
         self.config_dir = str(get_config_dir())
@@ -37,7 +54,7 @@ class FirstRunSetup:
         self.settings_exist = os.path.exists(self.settings_path)
         
         self.root.title("Goldflipper First-run Setup")
-        self.root.geometry("450x500")  # Taller to accommodate data directory option
+        self.root.geometry("550x650")  # Wider and taller for better readability
         
         # Center the window
         self.root.update_idletasks()
@@ -55,36 +72,8 @@ class FirstRunSetup:
         welcome_label = tk.Label(self.main_frame, text="Goldflipper Setup Wizard", font=('Arial', 14, 'bold'))
         welcome_label.pack(pady=(0, 20))
         
-        # If settings exist, show choice dialog first
-        if self.settings_exist:
-            self.show_existing_settings_choice()
-        else:
-            self.show_new_setup_ui()
-    
-    def show_existing_settings_choice(self):
-        """Show dialog when settings file already exists"""
-        choice_frame = tk.LabelFrame(self.main_frame, text="Settings File Detected", padx=10, pady=10)
-        choice_frame.pack(fill='x', pady=10)
-        
-        info_label = tk.Label(choice_frame, 
-                             text=f"Found existing settings file:\n{self.settings_path}\n\nWhat would you like to do?",
-                             justify='left')
-        info_label.pack(pady=10)
-        
-        button_frame = tk.Frame(choice_frame)
-        button_frame.pack(pady=10)
-        
-        use_existing_btn = tk.Button(button_frame, text="Use Existing Settings Profile", 
-                                    command=self.use_existing_settings, width=20)
-        use_existing_btn.pack(side='left', padx=5)
-        
-        create_new_btn = tk.Button(button_frame, text="Create New Settings Profile", 
-                                  command=self.show_new_setup_ui, width=20)
-        create_new_btn.pack(side='left', padx=5)
-    
-    def use_existing_settings(self):
-        """User chose to use existing settings - just handle shortcut and finish"""
-        self.show_shortcut_option()
+        # Always show the full setup UI - settings existence just changes defaults
+        self.show_setup_ui()
     
     def _create_data_directory_ui(self):
         """Create UI for choosing custom data directory (exe mode only)."""
@@ -158,16 +147,16 @@ class FirstRunSetup:
         if dir_path:
             self.custom_data_dir.set(dir_path)
     
-    def show_new_setup_ui(self):
-        """Show UI for new settings setup"""
+    def show_setup_ui(self):
+        """Show the main setup UI - works for both new and existing settings"""
         # Clear existing widgets except welcome message
         for widget in self.main_frame.winfo_children():
-            if not isinstance(widget, tk.Label) or widget.cget("text") != "Welcome to Goldflipper!":
+            if not isinstance(widget, tk.Label) or widget.cget("text") != "Goldflipper Setup Wizard":
                 widget.destroy()
         
         # Shortcut creation checkbox
         self.create_shortcut_var = tk.BooleanVar(value=True)
-        shortcut_check = tk.Checkbutton(self.main_frame, text="Create desktop shortcut", 
+        shortcut_check = tk.Checkbutton(self.main_frame, text="Create Desktop shortcut", 
                                       variable=self.create_shortcut_var)
         shortcut_check.pack(pady=5)
         
@@ -179,13 +168,17 @@ class FirstRunSetup:
         settings_frame = tk.LabelFrame(self.main_frame, text="Settings Configuration", padx=10, pady=10)
         settings_frame.pack(fill='x', pady=10)
         
-        # Settings file question
+        # Show current settings status
         if self.settings_exist:
+            current_label = tk.Label(settings_frame, 
+                                    text=f"✓ Current settings: {self.settings_path}",
+                                    fg='green', font=('Arial', 9))
+            current_label.pack(pady=2)
             settings_label = tk.Label(settings_frame, 
-                                    text="Select a new settings file to use (settings.yaml)")
+                                    text="To use a different settings file, select it below:")
         else:
             settings_label = tk.Label(settings_frame, 
-                                    text="Do you have an existing settings file? (settings.yaml)")
+                                    text="Select an existing settings file (settings.yaml) or leave empty to generate a new one.")
         settings_label.pack(pady=5)
         
         # File selection frame
@@ -198,16 +191,22 @@ class FirstRunSetup:
         self.file_entry.pack(side='left', padx=5)
         
         # Browse button
-        browse_btn = tk.Button(self.file_frame, text="Browse", command=self.browse_file)
+        browse_btn = tk.Button(self.file_frame, text="Browse...", command=self.browse_file)
         browse_btn.pack(side='left', padx=5)
         
-        # Drag and drop label
-        drop_label = tk.Label(settings_frame, text="or drag and drop your settings.yaml file here")
-        drop_label.pack(pady=5)
-        
-        # Configure drag and drop
-        self.file_entry.drop_target_register(self.DND_FILES)
-        self.file_entry.dnd_bind('<<Drop>>', self.handle_drop)
+        # Drag and drop (only if available)
+        if self.dnd_available and self.DND_FILES:
+            drop_label = tk.Label(settings_frame, text="or drag and drop your settings.yaml file here")
+            drop_label.pack(pady=5)
+            try:
+                self.file_entry.drop_target_register(self.DND_FILES)
+                self.file_entry.dnd_bind('<<Drop>>', self.handle_drop)
+            except Exception as e:
+                print(f"[FirstRunSetup] Failed to register drag-and-drop: {e}")
+        else:
+            # No drag-and-drop available - just show browse instruction
+            drop_label = tk.Label(settings_frame, text="(use Browse button to select file)")
+            drop_label.pack(pady=5)
         
         # Note about creating from template
         note_label = tk.Label(settings_frame, 
@@ -227,36 +226,6 @@ class FirstRunSetup:
         self.status_label = tk.Label(self.main_frame, text="", fg="blue")
         self.status_label.pack(pady=5)
     
-    def show_shortcut_option(self):
-        """Show only shortcut option when using existing settings"""
-        # Clear existing widgets except welcome message
-        for widget in self.main_frame.winfo_children():
-            if not isinstance(widget, tk.Label) or widget.cget("text") != "Welcome to Goldflipper!":
-                widget.destroy()
-        
-        info_label = tk.Label(self.main_frame, 
-                             text="Using existing settings file.\nYou can create a desktop shortcut below.",
-                             justify='center')
-        info_label.pack(pady=10)
-        
-        # Shortcut creation checkbox
-        self.create_shortcut_var = tk.BooleanVar(value=True)
-        shortcut_check = tk.Checkbutton(self.main_frame, text="Create desktop shortcut", 
-                                      variable=self.create_shortcut_var)
-        shortcut_check.pack(pady=10)
-        
-        # Button frame
-        button_frame = tk.Frame(self.main_frame)
-        button_frame.pack(pady=20)
-        
-        # Continue button
-        continue_btn = tk.Button(button_frame, text="Continue", command=self.process_setup)
-        continue_btn.pack(side='left', padx=5)
-        
-        # Status label
-        self.status_label = tk.Label(self.main_frame, text="", fg="blue")
-        self.status_label.pack(pady=5)
-        
     def browse_file(self):
         file_path = filedialog.askopenfilename(
             title="Select settings.yaml",
@@ -302,11 +271,10 @@ class FirstRunSetup:
                 if settings_path:
                     # User provided a settings file - copy it (may overwrite existing)
                     self.copy_settings_file(settings_path)
-                else:
-                    # No file provided - create from template
-                    # This will overwrite existing settings if they exist
+                elif not self.settings_exist:
+                    # No file provided AND no existing settings - create from template
                     self.create_settings_from_template()
-            # If using existing settings (no file_path attribute), no action needed
+                # If settings exist and no new file provided, keep existing (do nothing)
             
             self.status_label.config(text="Setup completed successfully!", fg="green")
             messagebox.showinfo("Success", "Setup completed successfully!")
@@ -403,7 +371,7 @@ class FirstRunSetup:
                 target_path = os.path.join(package_root, "launch_goldflipper.bat")
                 working_dir = package_root
                 icon_path = os.path.join(package_root, "goldflipper.ico")
-                description = "Launch Goldflipper (Dev Mode)"
+                description = "Launch Goldflipper in Dev Mode"
             
             shortcut_path = os.path.join(desktop, "Goldflipper.lnk")
             

@@ -37,40 +37,89 @@ def reset_settings_created_flag():
     global settings_just_created
     settings_just_created = False
 
-def load_config():
+def load_config(auto_create: bool = False):
+    """
+    Load configuration from settings.yaml.
+    
+    Args:
+        auto_create: If True, automatically create settings from template if missing.
+                     If False (default), return empty config if settings don't exist.
+                     This allows the first-run wizard to handle settings creation.
+    """
     global settings_just_created
     
     # Use exe-aware path utilities
     config_path = str(get_settings_path())
     template_path = str(get_settings_template_path())
     
-    # Check if settings.yaml exists, if not, create it from template
+    # Check if settings.yaml exists
     if not os.path.exists(config_path):
-        if not os.path.exists(template_path):
-            raise FileNotFoundError(f"Neither settings.yaml nor template file found at {template_path}")
-        
-        # Ensure config directory exists (important for frozen mode)
-        config_dir = get_config_dir()
-        os.makedirs(config_dir, exist_ok=True)
+        if auto_create:
+            # Auto-create mode: copy template to settings.yaml
+            if not os.path.exists(template_path):
+                raise FileNotFoundError(f"Neither settings.yaml nor template file found at {template_path}")
             
-        try:
-            # Copy the template to settings.yaml
-            shutil.copy2(template_path, config_path)
-            settings_just_created = True
-            logging.info(f"Created new settings file from template at {config_path}")
-            print(f"\nCreated new settings file from template at {config_path}")
-            print(f"Please review and update the settings with your API keys and preferences.")
-        except Exception as e:
-            raise IOError(f"Error creating settings file from template: {e}")
+            # Ensure config directory exists (important for frozen mode)
+            config_dir = get_config_dir()
+            os.makedirs(config_dir, exist_ok=True)
+                
+            try:
+                # Copy the template to settings.yaml
+                shutil.copy2(template_path, config_path)
+                settings_just_created = True
+                logging.info(f"Created new settings file from template at {config_path}")
+                print(f"\nCreated new settings file from template at {config_path}")
+                print(f"Please review and update the settings with your API keys and preferences.")
+            except Exception as e:
+                raise IOError(f"Error creating settings file from template: {e}")
+        else:
+            # No auto-create: return empty config, let first-run wizard handle it
+            # This prevents config loading from bypassing the setup wizard
+            return {}
     
     try:
         with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
+            return yaml.safe_load(f) or {}
     except FileNotFoundError:
-        raise FileNotFoundError(f"Configuration file not found at {config_path}")
+        return {}  # Settings don't exist yet - first-run wizard will create them
     except yaml.YAMLError as e:
         raise ValueError(f"Error parsing YAML configuration: {e}")
 
+
+def reload_config(auto_create: bool = False):
+    """
+    Reload the global config after settings have been created/modified.
+    
+    Call this after the first-run wizard creates settings.yaml.
+    """
+    global config
+    
+    # If config is a Config class instance, use its reload method
+    if hasattr(config, 'reload'):
+        config.reload()  # type: ignore[union-attr]
+        return config
+    
+    # Otherwise reload as dict (fallback)
+    config = load_config(auto_create=auto_create)
+    return config
+
+
+def is_config_loaded() -> bool:
+    """
+    Check if config has been properly loaded with actual settings.
+    
+    Returns False if settings.yaml doesn't exist (config is empty).
+    Works with both dict (from load_config) and Config class instance.
+    """
+    if isinstance(config, dict):
+        return bool(config) and 'alpaca' in config
+    elif hasattr(config, '_config'):
+        # Config class instance
+        return bool(config._config) and 'alpaca' in config._config
+    return False
+
+
+# Initial config load (may be empty if settings.yaml doesn't exist yet)
 config = load_config()
 
 class Config:
@@ -102,6 +151,7 @@ class Config:
         if cls._instance is None:
             cls._instance = super(Config, cls).__new__(cls)
             cls._instance._load_config()
+            # Setup paths (with defaults if config is empty)
             cls._instance._setup_paths()
         return cls._instance
 
@@ -111,14 +161,19 @@ class Config:
         
         Attempts to load settings.yaml from the config directory.
         Falls back to empty dict if file is not found or invalid.
+        Does NOT auto-create settings - let the first-run wizard handle that.
         
         Uses exe-aware path utilities for frozen mode compatibility.
         """
         config_path = str(get_settings_path())
         try:
             with open(config_path, 'r') as f:
-                self._config = yaml.safe_load(f)
-            logging.info(f"Configuration loaded from {config_path}")
+                self._config = yaml.safe_load(f) or {}
+            if self._config:
+                logging.info(f"Configuration loaded from {config_path}")
+        except FileNotFoundError:
+            # Settings don't exist yet - first-run wizard will create them
+            self._config = {}
         except Exception as e:
             logging.error(f"Error loading configuration: {e}")
             self._config = {}
@@ -126,6 +181,7 @@ class Config:
     def reload(self):
         """Reload configuration from the settings.yaml file."""
         self._load_config()
+        self._setup_paths()  # Re-setup paths with new config values
 
     def _setup_paths(self):
         """
@@ -133,6 +189,7 @@ class Config:
         
         Converts relative paths from config to absolute paths and creates
         necessary directories if they don't exist.
+        Sets default paths if config is empty (first-run before wizard).
         
         Uses exe-aware path utilities for frozen mode compatibility.
         """
@@ -140,18 +197,22 @@ class Config:
         # In source mode: base_dir is the goldflipper package directory
         base_dir = str(get_executable_dir()) if is_frozen() else os.path.dirname(os.path.dirname(__file__))
         
-        # Setup data paths
-        self.DATA_DIR = os.path.join(base_dir, self._config['paths']['data_dir'])
-        self.RAW_DATA_DIR = os.path.join(base_dir, self._config['paths']['raw_data_dir'])
-        self.PROCESSED_DATA_DIR = os.path.join(base_dir, self._config['paths']['processed_data_dir'])
+        # Get paths from config or use defaults
+        paths = self._config.get('paths', {}) if self._config else {}
         
-        # Setup log paths
-        self.LOG_DIR = os.path.join(base_dir, self._config['paths']['log_dir'])
-        self.LOG_FILE = os.path.join(base_dir, self._config['paths']['log_file'])
+        # Setup data paths (with defaults if config is empty)
+        self.DATA_DIR = os.path.join(base_dir, paths.get('data_dir', 'data'))
+        self.RAW_DATA_DIR = os.path.join(base_dir, paths.get('raw_data_dir', 'data/raw'))
+        self.PROCESSED_DATA_DIR = os.path.join(base_dir, paths.get('processed_data_dir', 'data/processed'))
         
-        # Create directories if they don't exist
-        for directory in [self.DATA_DIR, self.RAW_DATA_DIR, self.PROCESSED_DATA_DIR, self.LOG_DIR]:
-            os.makedirs(directory, exist_ok=True)
+        # Setup log paths (with defaults if config is empty)
+        self.LOG_DIR = os.path.join(base_dir, paths.get('log_dir', 'logs'))
+        self.LOG_FILE = os.path.join(base_dir, paths.get('log_file', 'logs/goldflipper.log'))
+        
+        # Only create directories if config is loaded (not during first-run wizard)
+        if self._config and 'paths' in self._config:
+            for directory in [self.DATA_DIR, self.RAW_DATA_DIR, self.PROCESSED_DATA_DIR, self.LOG_DIR]:
+                os.makedirs(directory, exist_ok=True)
 
     def get(self, *keys, default=None):
         """
