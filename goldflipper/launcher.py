@@ -188,7 +188,7 @@ def _launch_tui() -> None:
     
     # Resize terminal window before Textual takes over (Windows only)
     # Note: launch_goldflipper.bat handles this more reliably for batch launches
-    resize_terminal(120, 45)
+    resize_terminal(120, 40)
     
     app = GoldflipperTUI()
     app.run()

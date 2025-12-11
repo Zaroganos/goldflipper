@@ -752,7 +752,7 @@ class GoldflipperTUI(App):
         align: center middle;
         background: $surface-darken-2;
         border: solid $primary;
-        padding: 2;
+        padding: 1;
         margin-top: 1;
     }
 
@@ -760,7 +760,7 @@ class GoldflipperTUI(App):
         width: 100%;
         height: auto;
         align: center middle;
-        padding: 1;
+        padding: 0;
     }
     
     .button-column {
@@ -809,7 +809,7 @@ class GoldflipperTUI(App):
         self.refresh(repaint=True)  # Refresh to adapt to new window size
 
 
-def resize_terminal(cols: int = 120, rows: int = 45) -> None:
+def resize_terminal(cols: int = 120, rows: int = 40) -> None:
     """Resize the terminal window on Windows to a reasonable initial size.
 
     Must be called BEFORE Textual takes over the terminal.
@@ -863,6 +863,6 @@ def maximize_console_window() -> bool:
 
 
 if __name__ == "__main__":
-    resize_terminal(120, 45)
+    resize_terminal(120, 40)
     app = GoldflipperTUI()
     app.run()
