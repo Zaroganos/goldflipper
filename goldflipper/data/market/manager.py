@@ -10,18 +10,17 @@ from .providers.alpaca_provider import AlpacaProvider
 from .cache import CycleCache
 from .errors import *
 from goldflipper.utils.display import TerminalDisplay as display
+from goldflipper.utils.exe_utils import get_settings_path
 
 class MarketDataManager:
     """Central manager for market data operations"""
     
     def __init__(self, provider: Optional[MarketDataProvider] = None):
         self.logger = logging.getLogger(__name__)
-        # Get absolute path to project root (one level up from 'goldflipper' package)
-        current_dir = os.path.dirname(os.path.abspath(__file__))  # /market
-        package_dir = os.path.dirname(os.path.dirname(current_dir))  # /goldflipper
-        project_root = os.path.dirname(package_dir)  # project root
-        
-        self.config_path = os.path.join(project_root, 'goldflipper', 'config', 'settings.yaml')
+        # Use exe-aware path for Nuitka compatibility
+        # CRITICAL: In Nuitka onefile mode, __file__ points to temp extraction,
+        # but settings.yaml should be read from next to the exe
+        self.config_path = str(get_settings_path())
         self.config = self._load_config(self.config_path)
         self.cache = CycleCache(self.config)
         self.providers = self._initialize_providers()
@@ -124,9 +123,10 @@ class MarketDataManager:
             quote = self._try_providers('get_option_quote', contract_symbol)
             
             if quote is not None and not quote.empty:
-                bid = quote.iloc[0].get('bid', 0.0)
-                ask = quote.iloc[0].get('ask', 0.0)
-                last = quote.iloc[0].get('last', 0.0)
+                row = quote.iloc[0]
+                bid = float(row.get('bid', 0.0) or 0.0)
+                ask = float(row.get('ask', 0.0) or 0.0)
+                last = float(row.get('last', 0.0) or 0.0)
                 
                 # Calculate mid price
                 mid = (bid + ask) / 2 if bid > 0 and ask > 0 else 0.0
@@ -137,10 +137,10 @@ class MarketDataManager:
                     'last': last,
                     'mid': mid,
                     'premium': last,  # Keep for backward compatibility, but will be replaced
-                    'delta': quote.iloc[0].get('delta', 0.0),
-                    'theta': quote.iloc[0].get('theta', 0.0),
-                    'volume': quote.iloc[0].get('volume', 0.0),
-                    'open_interest': quote.iloc[0].get('open_interest', 0.0)
+                    'delta': float(row.get('delta', 0.0) or 0.0),
+                    'theta': float(row.get('theta', 0.0) or 0.0),
+                    'volume': float(row.get('volume', 0.0) or 0.0),
+                    'open_interest': float(row.get('open_interest', 0.0) or 0.0)
                 }
                 self.cache.set(cache_key, result)
                 return result

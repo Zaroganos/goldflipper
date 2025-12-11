@@ -105,10 +105,21 @@ class AlpacaProvider(MarketDataProvider):
         # Load settings from YAML
         self.settings = self._load_settings()
         
-        # Get credentials from settings
-        self.api_key = self.settings['alpaca']['api_key']
-        self.secret_key = self.settings['alpaca']['secret_key']
-        self.base_url = self.settings['alpaca']['base_url']
+        # Get active account credentials from settings
+        # Structure: alpaca.accounts.<account_name>.{api_key, secret_key, base_url}
+        active_account = self.settings.get('alpaca', {}).get('active_account', 'paper_1')
+        accounts = self.settings.get('alpaca', {}).get('accounts', {})
+        account_settings = accounts.get(active_account, {})
+        
+        if not account_settings:
+            raise ValueError(f"No credentials found for active account '{active_account}'")
+        
+        self.api_key = account_settings.get('api_key')
+        self.secret_key = account_settings.get('secret_key')
+        self.base_url = account_settings.get('base_url', 'https://paper-api.alpaca.markets/v2')
+        
+        if not self.api_key or not self.secret_key:
+            raise ValueError(f"Missing api_key or secret_key for account '{active_account}'")
         
         # Use v2 endpoints for data and streaming
         self.data_url = 'https://data.alpaca.markets'
@@ -178,8 +189,9 @@ class AlpacaProvider(MarketDataProvider):
     
     def _load_settings(self) -> dict:
         """Load settings from YAML file"""
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-        config_path = os.path.join(project_root, 'config', 'settings.yaml')
+        # Use exe-aware path for Nuitka onefile compatibility
+        from goldflipper.utils.exe_utils import get_settings_path
+        config_path = str(get_settings_path())
         with open(config_path, 'r') as f:
             return yaml.safe_load(f)
     
@@ -390,18 +402,19 @@ class AlpacaProvider(MarketDataProvider):
         self.stream_client = None
         self._ws_connected = False
     
-    async def get_stock_price(self, symbol: str) -> float:
-        """Get current stock price for a symbol"""
+    def get_stock_price(self, symbol: str) -> float:
+        """Get current stock price for a symbol using REST API.
+        
+        Note: This method is synchronous to match the base class interface.
+        WebSocket data is not used here to avoid async/sync mismatch issues.
+        """
         try:
             # Normalize symbol
             symbol = symbol.upper()
             
-            # Subscribe to WebSocket updates for this symbol
-            await self.subscribe_symbol(symbol)
-            
-            # Try WebSocket data first
+            # Try cached WebSocket data first (if available from background streaming)
             if symbol in self._latest_data:
-                logging.debug(f"Using WebSocket data for {symbol}: {self._latest_data[symbol]}")
+                logging.debug(f"Using cached WebSocket data for {symbol}: {self._latest_data[symbol]}")
                 
                 # Try quote data first
                 quote = self._latest_data[symbol].get('quote')
@@ -410,19 +423,19 @@ class AlpacaProvider(MarketDataProvider):
                     bid = float(quote.get('bid_price', 0))
                     if ask > 0 and bid > 0:
                         price = (ask + bid) / 2
-                        logging.debug(f"Using WebSocket quote for {symbol}: bid={bid}, ask={ask}, mid={price}")
-                        return price
+                        logging.debug(f"Using cached WebSocket quote for {symbol}: bid={bid}, ask={ask}, mid={price}")
+                        return float(price)
                 
                 # Try last trade if quote isn't available
                 trade = self._latest_data[symbol].get('last_trade')
                 if trade:
                     price = float(trade.get('price', 0))
                     if price > 0:
-                        logging.debug(f"Using WebSocket trade for {symbol}: price={price}")
-                        return price
+                        logging.debug(f"Using cached WebSocket trade for {symbol}: price={price}")
+                        return float(price)
             
-            # Fallback to REST API
-            logging.debug(f"No WebSocket data available for {symbol}, falling back to REST API")
+            # Use REST API (synchronous)
+            logging.debug(f"No WebSocket data available for {symbol}, using REST API")
             
             request = StockLatestQuoteRequest(symbol_or_symbols=[symbol])
             response = self.stock_client.get_stock_latest_quote(request)
@@ -433,20 +446,22 @@ class AlpacaProvider(MarketDataProvider):
                 raise ValueError(f"No quote data returned for {symbol}")
             
             quote = response[symbol]
-            bid_price = float(quote.bid_price) if quote.bid_price is not None else None
-            ask_price = float(quote.ask_price) if quote.ask_price is not None else None
+            bid_price = float(quote.bid_price) if quote.bid_price is not None else 0.0
+            ask_price = float(quote.ask_price) if quote.ask_price is not None else 0.0
             
-            # Use bid price if ask is 0 or None
-            if ask_price is None or ask_price == 0:
+            # Use bid price if ask is 0
+            if ask_price == 0:
                 price = bid_price
+            elif bid_price == 0:
+                price = ask_price
             else:
                 price = (ask_price + bid_price) / 2
             
-            if price is None or price == 0:
+            if price == 0:
                 raise ValueError(f"No valid price data for {symbol}")
             
             logging.debug(f"Calculated price for {symbol}: {price}")
-            return price
+            return float(price)
             
         except Exception as e:
             logging.error(f"Error getting stock price for {symbol}: {str(e)}")
@@ -654,6 +669,34 @@ class AlpacaProvider(MarketDataProvider):
         }
         return interval_map.get(interval.lower(), TimeFrame.Minute) 
     
+    def _extract_strike(self, option_symbol: str) -> float:
+        """Extract strike price from OCC option symbol.
+        
+        OCC format: SYMBOL + YYMMDD + C/P + 8-digit strike (in tenths of cents)
+        Example: SPY251211C00590000 -> strike = 590.0
+        """
+        try:
+            # Strike is last 8 characters, in tenths of cents
+            strike_str = option_symbol[-8:]
+            return float(strike_str) / 1000
+        except (ValueError, IndexError):
+            return 0.0
+    
+    def _extract_expiry(self, option_symbol: str) -> str:
+        """Extract expiration date from OCC option symbol.
+        
+        OCC format: SYMBOL + YYMMDD + C/P + 8-digit strike
+        Example: SPY251211C00590000 -> expiry = 2025-12-11
+        """
+        try:
+            # Date is 6 characters before the C/P indicator (position -15 to -9)
+            date_str = option_symbol[-15:-9]
+            if len(date_str) == 6 and date_str.isdigit():
+                return f"20{date_str[:2]}-{date_str[2:4]}-{date_str[4:6]}"
+            return ''
+        except (ValueError, IndexError):
+            return ''
+    
     def get_option_greeks(self, option_symbol: str) -> Dict[str, float]:
         """Get option Greeks from Alpaca"""
         # Alpaca doesn't provide Greeks directly, so we'll return empty values
@@ -719,56 +762,116 @@ class AlpacaProvider(MarketDataProvider):
         # Add missing columns with default values
         for col in column_map.values():
             if col not in df.columns:
-                df[col] = 0.0 if col not in ['symbol', 'type', 'expiration'] else ''
+                df.loc[:, col] = 0.0 if col not in ['symbol', 'type', 'expiration'] else ''
                 
         # Ensure numeric columns are float
         numeric_cols = ['strike', 'bid', 'ask', 'last', 'volume', 'open_interest', 
                        'implied_volatility', 'delta', 'gamma', 'theta', 'vega', 'rho']
         for col in numeric_cols:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+                df.loc[:, col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
                 
         return df
 
     def get_option_quote(self, contract_symbol: str):
         """Get single option quote for a specific contract symbol.
 
+        Uses REST API to get real-time option snapshot data.
         Returns a DataFrame with standardized columns or an empty DataFrame if unavailable.
         """
         try:
-            data = self._latest_option_data.get(contract_symbol, {})
-            quote = data.get('quote', {})
-            trade = data.get('trade', {})
-
-            # Build a single-row DataFrame using whatever we have; fill unknowns with defaults
+            # Try cached WebSocket data first
+            if contract_symbol in self._latest_option_data:
+                data = self._latest_option_data[contract_symbol]
+                quote = data.get('quote', {})
+                trade = data.get('trade', {})
+                if quote or trade:
+                    row = {
+                        'symbol': contract_symbol,
+                        'strike': self._extract_strike(contract_symbol),
+                        'expiration': self._extract_expiry(contract_symbol),
+                        'type': 'call' if 'C' in contract_symbol[-9] else 'put',
+                        'bid': float(quote.get('bid_price', 0.0) or 0.0),
+                        'ask': float(quote.get('ask_price', 0.0) or 0.0),
+                        'last': float(trade.get('price', 0.0) or 0.0),
+                        'volume': int(trade.get('size', 0) or 0),
+                        'open_interest': 0,
+                        'implied_volatility': 0.0,
+                        'delta': 0.0,
+                        'gamma': 0.0,
+                        'theta': 0.0,
+                        'vega': 0.0,
+                        'rho': 0.0
+                    }
+                    df = pd.DataFrame([row])
+                    return self.standardize_columns(df)
+            
+            # Fall back to REST API for option snapshot
+            logging.debug(f"Using REST API for option quote: {contract_symbol}")
+            request = OptionSnapshotRequest(symbol_or_symbols=contract_symbol)
+            response = self.option_client.get_option_snapshot(request)
+            
+            if not response or contract_symbol not in response:
+                logging.warning(f"No option snapshot returned for {contract_symbol}")
+                return pd.DataFrame()
+            
+            snapshot = response[contract_symbol]
+            quote = snapshot.latest_quote
+            trade = snapshot.latest_trade
+            greeks = snapshot.greeks
+            
             row = {
                 'symbol': contract_symbol,
-                'strike': 0.0,
-                'expiration': '',
-                'type': 'call' if 'C' in contract_symbol else 'put',
-                'bid': quote.get('bid_price', 0.0),
-                'ask': quote.get('ask_price', 0.0),
-                'last': trade.get('price', 0.0),
-                'volume': trade.get('size', 0),
+                'strike': self._extract_strike(contract_symbol),
+                'expiration': self._extract_expiry(contract_symbol),
+                'type': 'call' if 'C' in contract_symbol[-9] else 'put',
+                'bid': float(quote.bid_price) if quote and quote.bid_price else 0.0,
+                'ask': float(quote.ask_price) if quote and quote.ask_price else 0.0,
+                'last': float(trade.price) if trade and trade.price else 0.0,
+                'volume': int(trade.size) if trade and trade.size else 0,
                 'open_interest': 0,
-                'implied_volatility': 0.0,
-                'delta': 0.0,
-                'gamma': 0.0,
-                'theta': 0.0,
-                'vega': 0.0,
-                'rho': 0.0
+                'implied_volatility': float(snapshot.implied_volatility) if snapshot.implied_volatility else 0.0,
+                'delta': float(greeks.delta) if greeks and greeks.delta else 0.0,
+                'gamma': float(greeks.gamma) if greeks and greeks.gamma else 0.0,
+                'theta': float(greeks.theta) if greeks and greeks.theta else 0.0,
+                'vega': float(greeks.vega) if greeks and greeks.vega else 0.0,
+                'rho': float(greeks.rho) if greeks and greeks.rho else 0.0
             }
-
+            
             df = pd.DataFrame([row])
             return self.standardize_columns(df)
+            
         except Exception as e:
             logging.error(f"Error getting option quote for {contract_symbol}: {str(e)}")
-            # Return empty DataFrame on failure; manager will try fallback providers
             return pd.DataFrame()
 
     def get_option_expirations(self, symbol: str) -> list:
-        """Provide an empty list for expirations (manager will use other providers)."""
+        """Get available option expirations from Alpaca by querying option contracts."""
         try:
-            return []
-        except Exception:
+            # Query option contracts for this symbol to get available expirations
+            from alpaca.trading.requests import GetOptionContractsRequest
+            
+            request = GetOptionContractsRequest(
+                underlying_symbols=[symbol.upper()],
+                status='active'
+            )
+            
+            response = self.trading_client.get_option_contracts(request)
+            
+            if not response or not response.option_contracts:
+                logging.debug(f"No option contracts found for {symbol}")
+                return []
+            
+            # Extract unique expiration dates
+            expirations = set()
+            for contract in response.option_contracts:
+                if hasattr(contract, 'expiration_date') and contract.expiration_date:
+                    exp_str = str(contract.expiration_date)
+                    expirations.add(exp_str)
+            
+            # Sort and return as list
+            return sorted(list(expirations))
+            
+        except Exception as e:
+            logging.error(f"Error getting option expirations for {symbol}: {str(e)}")
             return []

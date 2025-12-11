@@ -51,10 +51,8 @@ PACKAGES_TO_COMPILE = [
 # DATA FILES (use --include-data-dir / --include-data-files)
 # These are non-Python files: YAML configs, JSON templates, CSV reference data.
 # ============================================================================
-# IMPORTANT: Do NOT bundle settings.yaml! Only bundle the template.
-# settings.yaml is user-specific and created on first run.
 DATA_MAPPINGS = [
-    # Core config templates (YAML)
+    # Config directory (settings.yaml excluded below)
     (PROJECT_ROOT / "goldflipper" / "config", "goldflipper/config"),
     
     # Reference data (CSV files)
@@ -68,6 +66,19 @@ DATA_MAPPINGS = [
     
     # Application icon
     (PROJECT_ROOT / "goldflipper.ico", "goldflipper.ico"),
+]
+
+# ============================================================================
+# DATA FILES TO EXCLUDE (use --noinclude-data-files)
+# These patterns exclude gitignored or user-specific files from bundling.
+# ============================================================================
+DATA_EXCLUDE_PATTERNS = [
+    "**/settings.yaml",      # User-specific config (created on first run)
+    "**/*.log",              # Log files
+    "**/*.bak",              # Backup files
+    "**/*.old",              # Old leftover files
+    "**/*.tmp",              # Temp files
+    "**/__pycache__/**",     # Python cache
 ]
 
 OUTPUT_DIR = PROJECT_ROOT / "dist"
@@ -144,6 +155,11 @@ def build() -> None:
     # Windows icon for the executable
     if icon_path.exists():
         cmd.append(f"--windows-icon-from-ico={icon_path}")
+    
+    # Add exclusion patterns for gitignored/user-specific files
+    for pattern in DATA_EXCLUDE_PATTERNS:
+        cmd.append(f"--noinclude-data-files={pattern}")
+        print(f"[INFO] Excluding data pattern: {pattern}")
     
     # Add package compilation flags BEFORE data flags
     cmd.extend(package_flags)

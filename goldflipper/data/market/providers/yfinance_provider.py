@@ -11,7 +11,6 @@ class YFinanceProvider(MarketDataProvider):
     COLUMN_MAPPING = {
         'contractSymbol': 'symbol',
         'strike': 'strike',
-        'lastTradeDate': 'expiration',
         'lastPrice': 'last',
         'bid': 'bid',
         'ask': 'ask',
@@ -24,6 +23,90 @@ class YFinanceProvider(MarketDataProvider):
     def __init__(self, config_path: str = None):
         self._cache = {}  # Simple memory cache
         self.config_path = config_path
+    
+    def standardize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Standardize column names and formats for yfinance data.
+        
+        yfinance returns columns like: contractSymbol, lastTradeDate, strike,
+        lastPrice, bid, ask, change, percentChange, volume, openInterest,
+        impliedVolatility, inTheMoney, contractSize, currency
+        
+        We need to map these to our standard columns and add missing ones.
+        """
+        df = df.copy()
+        
+        # Rename columns using the class mapping
+        df = df.rename(columns={old: new for old, new in self.COLUMN_MAPPING.items() if old in df.columns})
+        
+        # Extract expiration from contractSymbol if available
+        # OCC format: SYMBOL + YYMMDD + C/P + 8-digit strike
+        if 'symbol' in df.columns and 'expiration' not in df.columns:
+            def extract_expiration(sym):
+                try:
+                    # Find where the date portion starts (after ticker, before C/P)
+                    # Standard OCC: SPY251219C00590000
+                    for i, c in enumerate(sym):
+                        if c.isdigit():
+                            date_str = sym[i:i+6]
+                            if len(date_str) == 6 and date_str.isdigit():
+                                return f"20{date_str[:2]}-{date_str[2:4]}-{date_str[4:6]}"
+                    return ''
+                except Exception:
+                    return ''
+            df['expiration'] = df['symbol'].apply(extract_expiration)
+        
+        # Determine option type from symbol
+        if 'symbol' in df.columns and 'type' not in df.columns:
+            def extract_type(sym):
+                try:
+                    # OCC format: TICKER + YYMMDD + C/P + 8-digit strike
+                    # Find where digits start (after ticker), then skip 6 date digits
+                    for i, c in enumerate(sym):
+                        if c.isdigit():
+                            # i is start of date, type char is at i+6
+                            if i + 6 < len(sym):
+                                type_char = sym[i + 6]
+                                if type_char == 'C':
+                                    return 'call'
+                                elif type_char == 'P':
+                                    return 'put'
+                            break
+                    return ''
+                except Exception:
+                    return ''
+            df['type'] = df['symbol'].apply(extract_type)
+        
+        # Add missing columns with default values
+        standard_columns = {
+            'symbol': '',
+            'strike': 0.0,
+            'type': '',
+            'expiration': '',
+            'bid': 0.0,
+            'ask': 0.0,
+            'last': 0.0,
+            'volume': 0.0,
+            'open_interest': 0.0,
+            'implied_volatility': 0.0,
+            'delta': 0.0,
+            'gamma': 0.0,
+            'theta': 0.0,
+            'vega': 0.0,
+            'rho': 0.0
+        }
+        
+        for col, default_value in standard_columns.items():
+            if col not in df.columns:
+                df.loc[:, col] = default_value
+        
+        # Ensure numeric columns are Python float (not numpy scalar)
+        numeric_cols = ['strike', 'bid', 'ask', 'last', 'volume', 'open_interest', 
+                       'implied_volatility', 'delta', 'gamma', 'theta', 'vega', 'rho']
+        for col in numeric_cols:
+            if col in df.columns:
+                df.loc[:, col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+        
+        return df
         
     def get_stock_price(self, symbol: str) -> float:
         """Get current stock price"""
@@ -119,43 +202,74 @@ class YFinanceProvider(MarketDataProvider):
             return {'calls': pd.DataFrame(), 'puts': pd.DataFrame()}
 
     def get_option_quote(self, contract_symbol: str, strike_price: float = None) -> pd.DataFrame:
-        """Get option quote with proper Pandas filtering"""
+        """Get option quote for a specific contract.
+        
+        Supports both OCC format (SPY251211C00590000) and underscore format (SPY_251211C00590000).
+        """
         try:
-            # Parse contract symbol to get underlying
-            parts = contract_symbol.split('_')
-            if len(parts) < 2:
-                logging.error(f"Invalid contract symbol format: {contract_symbol}")
-                return pd.DataFrame()
-                
-            symbol = parts[0]
-            # Extract expiration date
-            exp_date = None
-            for part in parts[1:]:
-                if part.endswith('C') or part.endswith('P'):
-                    exp_date = part[:-1]  # Remove C/P
-                    break
-                    
-            if not exp_date:
-                logging.error(f"Could not extract expiration from contract symbol: {contract_symbol}")
-                return pd.DataFrame()
-                
-            chain = self.get_option_chain(symbol, exp_date)
+            # Normalize: remove underscores if present
+            normalized = contract_symbol.replace('_', '')
             
-            # Determine if call or put
-            is_call = 'C' in contract_symbol
+            # Parse OCC format: SYMBOL + YYMMDD + C/P + 8-digit strike
+            # Find where date starts (first digit after ticker)
+            ticker_end = 0
+            for i, c in enumerate(normalized):
+                if c.isdigit():
+                    ticker_end = i
+                    break
+            
+            if ticker_end == 0:
+                logging.error(f"Could not parse contract symbol: {contract_symbol}")
+                return pd.DataFrame()
+            
+            symbol = normalized[:ticker_end]
+            date_str = normalized[ticker_end:ticker_end+6]
+            
+            if len(date_str) != 6 or not date_str.isdigit():
+                logging.error(f"Invalid date in contract symbol: {contract_symbol}")
+                return pd.DataFrame()
+            
+            # Determine call/put from position after date
+            type_char_pos = ticker_end + 6
+            if type_char_pos >= len(normalized):
+                logging.error(f"Contract symbol too short: {contract_symbol}")
+                return pd.DataFrame()
+            
+            type_char = normalized[type_char_pos]
+            is_call = type_char == 'C'
+            
+            # Extract strike from 8-digit portion (in tenths of cents)
+            strike_str = normalized[type_char_pos+1:]
+            if len(strike_str) >= 8:
+                extracted_strike = float(strike_str[:8]) / 1000
+            else:
+                extracted_strike = None
+            
+            # Convert date to yfinance format: YYYY-MM-DD
+            exp_date = f"20{date_str[:2]}-{date_str[2:4]}-{date_str[4:6]}"
+            
+            logging.debug(f"Parsed contract: symbol={symbol}, exp={exp_date}, call={is_call}, strike={extracted_strike}")
+            
+            # Get option chain for that expiration
+            chain = self.get_option_chain(symbol, exp_date)
             options_data = chain['calls'] if is_call else chain['puts']
             
-            # Use proper Pandas filtering if strike price provided
-            if strike_price is not None:
-                filtered_data = options_data[options_data['strike'] == strike_price]
+            if options_data.empty:
+                logging.warning(f"No options data for {symbol} exp {exp_date}")
+                return pd.DataFrame()
+            
+            # Filter by strike price
+            use_strike = strike_price if strike_price is not None else extracted_strike
+            if use_strike is not None:
+                filtered_data = options_data[options_data['strike'] == use_strike]
             else:
                 filtered_data = options_data
-                
+            
             if filtered_data.empty:
-                logging.warning(f"No matching options found for {contract_symbol}")
+                logging.warning(f"No matching options found for {contract_symbol} (strike={use_strike})")
                 return pd.DataFrame()
-                
-            return filtered_data.copy()  # Return a copy to avoid SettingWithCopyWarning
+            
+            return filtered_data.copy()
             
         except Exception as e:
             logging.error(f"Error getting option quote for {contract_symbol}: {str(e)}")

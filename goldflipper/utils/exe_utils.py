@@ -46,14 +46,24 @@ def is_frozen() -> bool:
     if _FROZEN_STATE is not None:
         return _FROZEN_STATE
     
+    # DEBUG: Print diagnostic info to help identify frozen detection issues
+    _debug = os.environ.get('GOLDFLIPPER_DEBUG_FROZEN', '')
+    if _debug:
+        print(f"[is_frozen DEBUG] sys.argv = {sys.argv}")
+        print(f"[is_frozen DEBUG] sys.executable = {sys.executable}")
+    
     # Check 1: __nuitka_binary_dir in main module (most reliable for onefile)
     main_module = sys.modules.get('__main__')
     if main_module is not None:
         if hasattr(main_module, '__nuitka_binary_dir'):
+            if _debug:
+                print(f"[is_frozen DEBUG] Found __nuitka_binary_dir = {main_module.__nuitka_binary_dir}")
             _FROZEN_STATE = True
             return True
         # Check if main module was compiled by Nuitka
         if hasattr(main_module, '__compiled__'):
+            if _debug:
+                print(f"[is_frozen DEBUG] Found __compiled__ on main module")
             _FROZEN_STATE = True
             return True
     
@@ -61,6 +71,8 @@ def is_frozen() -> bool:
     # Use globals() explicitly since 'in dir()' doesn't work reliably
     try:
         if globals().get('__compiled__', False):
+            if _debug:
+                print(f"[is_frozen DEBUG] Found __compiled__ in globals")
             _FROZEN_STATE = True
             return True
     except Exception:
@@ -72,17 +84,25 @@ def is_frozen() -> bool:
     # - sys.argv[0] = actual exe path (CORRECT!)
     if sys.argv:
         argv0_name = Path(sys.argv[0]).stem.lower()
+        if _debug:
+            print(f"[is_frozen DEBUG] argv0_name = {argv0_name}")
         # Match both production and dev builds
         if argv0_name.startswith('goldflipper'):
+            if _debug:
+                print(f"[is_frozen DEBUG] Matched 'goldflipper' prefix")
             _FROZEN_STATE = True
             return True
         # Check if argv[0] is a .exe that's not python
         if sys.argv[0].lower().endswith('.exe'):
             if argv0_name not in ('python', 'pythonw', 'python3', 'python3w'):
+                if _debug:
+                    print(f"[is_frozen DEBUG] Matched non-python .exe")
                 # Likely a compiled executable
                 _FROZEN_STATE = True
                 return True
     
+    if _debug:
+        print(f"[is_frozen DEBUG] No frozen indicators found, returning False")
     _FROZEN_STATE = False
     return False
 

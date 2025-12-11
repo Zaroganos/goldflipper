@@ -414,7 +414,7 @@ class PlayLogger:
                             'strategy', 'action', 'trade_type', 'expiration_date']
             for col in string_columns:
                 if col in df.columns:
-                    df[col] = df[col].astype('object')
+                    df.loc[:, col] = df[col].astype('object')
         
         # Create new DataFrame entry
         new_entry = pd.DataFrame([play_entry])
@@ -434,7 +434,7 @@ class PlayLogger:
             # Add any new columns from new_entry to existing df
             for col in new_entry.columns:
                 if col not in df.columns:
-                    df[col] = None
+                    df.loc[:, col] = None
             
             # Ensure both DataFrames have columns in the same order
             new_entry = new_entry[df.columns]
@@ -642,7 +642,7 @@ class PlayLogger:
         
         for col in numeric_columns:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+                df.loc[:, col] = pd.to_numeric(df[col], errors='coerce')
         
         # Define friendly column names mapping (with strategy/action for multi-strategy)
         column_mapping = {

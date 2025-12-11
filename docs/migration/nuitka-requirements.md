@@ -58,6 +58,25 @@ The executable supports special command-line arguments:
 - [ ] Validate the executable on a clean Windows machine
 - [ ] Re-run Nuitka build on a higher-power PC (current attempt cancelled)
 
+## Data Exclusion Patterns (2025-12-11)
+
+**Problem:** The config directory was bundled entirely, including `settings.yaml` which is gitignored and user-specific.
+
+**Solution:** Added `--noinclude-data-files` patterns in build scripts to exclude gitignored files:
+```python
+DATA_EXCLUDE_PATTERNS = [
+    "**/settings.yaml",      # User-specific config (created on first run)
+    "**/*.log",              # Log files
+    "**/*.bak",              # Backup files
+    "**/*.tmp",              # Temp files
+    "**/__pycache__/**",     # Python cache
+]
+```
+
+**Adding more exclusions:** To exclude additional files, add patterns to `DATA_EXCLUDE_PATTERNS` in both:
+- `scripts/build_nuitka.py`
+- `scripts/build_nuitka_dev.py`
+
 ## Build Status (2025-12-03)
 - **Nuitka Version:** 2.8.9
 - **Python Version:** 3.12.10

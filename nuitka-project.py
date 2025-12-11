@@ -71,3 +71,17 @@ NUITKA_DATA_FILES = [
     # Application icon
     ("goldflipper.ico", "goldflipper.ico"),
 ]
+
+# ============================================================================
+# DATA FILES TO EXCLUDE (--noinclude-data-files)
+# These patterns exclude gitignored or user-specific files from bundling.
+# Applied in build scripts (build_nuitka.py, build_nuitka_dev.py).
+# ============================================================================
+NUITKA_DATA_EXCLUDE_PATTERNS = [
+    "**/settings.yaml",      # User-specific config (created on first run)
+    "**/*.log",              # Log files
+    "**/*.bak",              # Backup files
+    "**/*.old",              # Old leftover files  
+    "**/*.tmp",              # Temp files
+    "**/__pycache__/**",     # Python cache
+]

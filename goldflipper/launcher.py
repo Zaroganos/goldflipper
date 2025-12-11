@@ -325,6 +325,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         return _run_tool(args.tool)
     
     if args.trading_mode:
+        # CRITICAL DEBUG: Print sys.argv and is_frozen BEFORE importing run module
+        # This helps diagnose path resolution issues in subprocess
+        print(f"\n[TRADING MODE DEBUG]")
+        print(f"  sys.argv = {sys.argv}")
+        print(f"  sys.argv[0] = {sys.argv[0] if sys.argv else 'EMPTY'}")
+        print(f"  is_frozen() = {is_frozen()}")
+        print(f"  get_settings_path() = {get_settings_path()}")
+        print(f"  settings exists = {get_settings_path().exists()}")
+        print()
+        
         LOGGER.info("Trading mode requested; launching trading system directly.")
         try:
             from goldflipper.run import run_trading_system
