@@ -144,10 +144,52 @@ def _run_first_run_setup(force: bool) -> bool:
     return created_now
 
 
+def _configure_terminal_for_textual() -> None:
+    """Configure terminal environment for optimal Textual rendering.
+    
+    This helps with conhost (legacy Windows console) which has limited
+    Unicode rendering compared to Windows Terminal.
+    """
+    import os
+    
+    # Force color output even if terminal detection fails
+    os.environ.setdefault("FORCE_COLOR", "1")
+    
+    # Ensure proper color mode (truecolor if supported)
+    os.environ.setdefault("COLORTERM", "truecolor")
+    
+    # On Windows, set PYTHONIOENCODING to UTF-8 for consistent encoding
+    if os.name == "nt":
+        os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+        
+        # Enable VT processing for ANSI escape codes in conhost
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            # Get stdout handle
+            STD_OUTPUT_HANDLE = -11
+            handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+            # Get current mode
+            mode = ctypes.c_ulong()
+            kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+            # Enable ENABLE_VIRTUAL_TERMINAL_PROCESSING (0x0004)
+            ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+            kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+        except Exception:
+            pass  # Ignore if this fails - not critical
+
+
 def _launch_tui() -> None:
     """Start the Textual interface."""
-    from goldflipper.goldflipper_tui import GoldflipperTUI
+    from goldflipper.goldflipper_tui import GoldflipperTUI, resize_terminal
 
+    # Configure terminal for optimal Textual rendering (especially in conhost)
+    _configure_terminal_for_textual()
+    
+    # Resize terminal window before Textual takes over (Windows only)
+    # Note: launch_goldflipper.bat handles this more reliably for batch launches
+    resize_terminal(120, 45)
+    
     app = GoldflipperTUI()
     app.run()
 
@@ -284,9 +326,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     
     if args.trading_mode:
         LOGGER.info("Trading mode requested; launching trading system directly.")
-        from goldflipper.run import run_trading_system
-        run_trading_system(console_mode=True)
-        return 0
+        try:
+            from goldflipper.run import run_trading_system
+            run_trading_system(console_mode=True)
+            return 0
+        except Exception as e:
+            import traceback
+            print(f"\n{'='*60}")
+            print(f"[ERROR] Trading system suffered a fatal error!")
+            print(f"[ERROR] Exception: {e}")
+            print(f"{'='*60}")
+            traceback.print_exc()
+            print(f"{'='*60}")
+            input("\nPress Enter to exit...")
+            return 1
     
     if args.service_install:
         LOGGER.info("Service installation requested.")

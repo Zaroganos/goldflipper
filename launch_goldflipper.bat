@@ -1,16 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: Check if this is the first run by looking for the settings file
 set SCRIPT_PATH=%~dp0
-cd /d %SCRIPT_PATH%
 
-:: Launch the desktop TUI (goldflipper.launcher) via uv-managed environment
-echo Goldflipper Multistrat is starting up ...
-uv run python -m goldflipper.launcher %*
-if errorlevel 1 (
-    echo Error occurred while running Goldflipper
-    pause
-    exit /b 1
-)
-pause
+:: Launch in a new window (no /MAX - maximization is handled by Python code after Textual initializes)
+:: chcp 65001 = UTF-8 for better Unicode rendering
+:: No /WAIT = original window closes immediately
+start "Goldflipper" cmd /c "cd /d %SCRIPT_PATH% && chcp 65001 >nul && uv run python -m goldflipper.launcher %*"

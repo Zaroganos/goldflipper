@@ -35,6 +35,7 @@ import win32event
 import servicemanager
 from goldflipper.watchdog.watchdog_manager import WatchdogManager
 from src.state.state_manager import StateManager
+from goldflipper.utils.exe_utils import get_application_dir
 from datetime import datetime
 import time
 import argparse
@@ -61,8 +62,8 @@ def initialize_system():
     """
     display.header("Initializing Goldflipper Trading System")
     
-    # Initialize state manager
-    state_dir = Path(__file__).parent / 'state'
+    # Initialize state manager - use exe_utils for Nuitka-compatible path
+    state_dir = get_application_dir() / 'state'
     state_dir.mkdir(exist_ok=True)
     state_manager = StateManager(state_dir)
     
@@ -344,7 +345,8 @@ def run_trading_system(console_mode=False):
             if console_mode:
                 display.info("Watchdog system is disabled. Check settings to enable.")
         
-        state_dir = Path(__file__).parent / 'state'
+        # Use exe_utils for Nuitka-compatible path
+        state_dir = get_application_dir() / 'state'
         state_dir.mkdir(exist_ok=True)
         state_manager = StateManager(state_dir)
         

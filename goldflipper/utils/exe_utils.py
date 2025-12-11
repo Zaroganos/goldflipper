@@ -6,7 +6,8 @@ from a compiled executable (frozen) or from source, and handles path resolution
 accordingly.
 
 CRITICAL: In Nuitka onefile mode:
-- sys.executable = path to the .exe file
+- sys.executable = python.exe in TEMP extraction directory (NOT the exe!)
+- sys.argv[0] = actual path to the .exe file (USE THIS for persistent data!)
 - __file__ for modules = temp extraction directory (NOT the exe directory)
 - Settings/config should persist NEXT TO the exe, not in temp extraction
 - Bundled data files (templates, reference) are in temp extraction
@@ -65,20 +66,22 @@ def is_frozen() -> bool:
     except Exception:
         pass
     
-    # Check 3: sys.executable is our app (not python.exe/pythonw.exe)
-    # In Nuitka, sys.executable points to the compiled exe
-    exe_name = Path(sys.executable).stem.lower()
-    if exe_name == 'goldflipper':
-        _FROZEN_STATE = True
-        return True
-    
-    # Check 4: Check if running from a .exe that's not python
-    if sys.executable.lower().endswith('.exe'):
-        exe_stem = Path(sys.executable).stem.lower()
-        if exe_stem not in ('python', 'pythonw', 'python3', 'python3w'):
-            # Likely a compiled executable
+    # Check 3: sys.argv[0] is our app (use argv[0], NOT sys.executable!)
+    # CRITICAL: In Nuitka onefile mode:
+    # - sys.executable = python.exe in TEMP extraction dir (WRONG!)
+    # - sys.argv[0] = actual exe path (CORRECT!)
+    if sys.argv:
+        argv0_name = Path(sys.argv[0]).stem.lower()
+        # Match both production and dev builds
+        if argv0_name.startswith('goldflipper'):
             _FROZEN_STATE = True
             return True
+        # Check if argv[0] is a .exe that's not python
+        if sys.argv[0].lower().endswith('.exe'):
+            if argv0_name not in ('python', 'pythonw', 'python3', 'python3w'):
+                # Likely a compiled executable
+                _FROZEN_STATE = True
+                return True
     
     _FROZEN_STATE = False
     return False

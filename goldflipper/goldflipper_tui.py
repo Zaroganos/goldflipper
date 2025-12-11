@@ -124,19 +124,22 @@ class WelcomeScreen(Screen):
                     Button("Play Creator GUI", variant="success", id="play_creator_gui"),
                     Button("Create New Play", variant="primary", id="create_play"),
                     Button("Fetch Option Data", variant="primary", id="option_data_fetcher"),
-                    Button("Launch Trading System", variant=launch_variant, id="start_monitor"),
                     Button("Auto Play Creator", variant="primary", id="auto_play_creator"),
-                    Button("Get Alpaca Info", variant="primary", id="get_alpaca_info"),
                     # Button("Market Data Compare", variant="primary", id="market_data_compare"),  # Temporarily commented out
                     Button("Upload Template", variant="primary", id="upload_template"),
                     classes="button-column",
                 ),
                 Container(
+                    Button("Launch Trading System", variant=launch_variant, id="start_monitor"),
                     Button("View / Edit Plays", variant="primary", id="view_plays"),
+                    Button("Trade Logger", variant="primary", id="trade_logger"),
+                    Button("Open Chart", variant="primary", id="open_chart"),
+                    classes="button-column",
+                ),
+                Container(
                     Button("System Status", variant="primary", id="system_status"),
                     Button("Settings", variant=config_variant, id="configuration"),
-                    Button("Open Chart", variant="primary", id="open_chart"),
-                    Button("Trade Logger", variant="primary", id="trade_logger"),
+                    Button("Get Alpaca Info", variant="primary", id="get_alpaca_info"),
                     Button("Manage Service", variant="warning", id="manage_service"),
                     classes="button-column",
                 ),
@@ -411,7 +414,8 @@ class WelcomeScreen(Screen):
     def run_option_data_fetcher(self):
         try:
             if is_frozen():
-                run_tool_in_thread("goldflipper.tools.option_data_fetcher")
+                # Console tool - needs its own console window via subprocess
+                subprocess.Popen([get_exe_path(), '--tool', 'option_data_fetcher'], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 self.notify("Option Data Fetcher launched", severity="information")
             else:
                 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -426,7 +430,8 @@ class WelcomeScreen(Screen):
     def run_play_creation_tool(self):
         try:
             if is_frozen():
-                run_tool_in_thread("goldflipper.tools.play_creation_tool")
+                # Console tool - needs its own console window via subprocess
+                subprocess.Popen([get_exe_path(), '--tool', 'play_creation_tool'], creationflags=subprocess.CREATE_NEW_CONSOLE)
                 self.notify("Play Creation Tool launched", severity="information")
             else:
                 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -683,6 +688,8 @@ class GoldflipperTUI(App):
     Screen {
         align: center middle;
         background: $surface;
+        min-width: 120;
+        min-height: 120;
     }
 
     #header_container {
@@ -701,7 +708,7 @@ class GoldflipperTUI(App):
         color: gold;
         background: $surface;
         text-style: bold;
-        border: heavy $accent;
+        border: solid $accent;
         opacity: 1;
         transition: opacity 0.5s linear;
     }
@@ -716,7 +723,7 @@ class GoldflipperTUI(App):
         margin: 1;
         padding: 0;
         background: $surface;
-        border: heavy $accent;
+        border: solid $accent;
         color: gold;
     }
 
@@ -736,7 +743,7 @@ class GoldflipperTUI(App):
     }
 
     #account_selector:focus {
-        border: heavy $accent;
+        border: solid $accent;
     }
     
     .container {
@@ -744,7 +751,7 @@ class GoldflipperTUI(App):
         height: auto;
         align: center middle;
         background: $surface-darken-2;
-        border: panel $primary;
+        border: solid $primary;
         padding: 2;
         margin-top: 1;
     }
@@ -757,7 +764,7 @@ class GoldflipperTUI(App):
     }
     
     .button-column {
-        width: 50%;
+        width: 33%;
         height: auto;
         align: center middle;
         padding: 1;
@@ -789,8 +796,73 @@ class GoldflipperTUI(App):
     """
 
     def on_mount(self) -> None:
+        # Force a full refresh to clear any rendering artifacts from resize
+        self.refresh(repaint=True)
         self.push_screen(WelcomeScreen())
+        # NOTE: Window maximization disabled - causes desktop freezes when combined
+        # with Tkinter dialogs (e.g., Upload Template file picker).
+        # Uncomment to test: self.set_timer(0.5, self._deferred_maximize)
+
+    def _deferred_maximize(self) -> None:
+        """Maximize the console window after Textual is fully initialized."""
+        maximize_console_window()
+        self.refresh(repaint=True)  # Refresh to adapt to new window size
+
+
+def resize_terminal(cols: int = 120, rows: int = 45) -> None:
+    """Resize the terminal window on Windows to a reasonable initial size.
+
+    Must be called BEFORE Textual takes over the terminal.
+    This sets a good starting size; maximization is handled separately
+    after Textual is fully initialized (see GoldflipperTUI.on_mount).
+    """
+    if os.name != "nt":
+        return
+
+    # Method 1: ANSI escape codes for size (Windows Terminal - preferred)
+    try:
+        sys.stdout.write(f"\x1b[8;{rows};{cols}t")
+        sys.stdout.flush()
+        time.sleep(0.5)  # Small delay to let terminal resize
+    except Exception:
+        pass
+
+    # Method 2: mode command (legacy conhost fallback)
+    try:
+        os.system(f"mode con: cols={cols} lines={rows}")
+    except Exception:
+        pass
+
+
+def maximize_console_window() -> bool:
+    """Maximize the console window using Windows API.
+    
+    This should be called AFTER Textual has fully initialized to avoid
+    conflicts between the maximized window state and Tkinter dialogs.
+    
+    Returns True if maximization succeeded, False otherwise.
+    """
+    if os.name != "nt":
+        return False
+
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+        
+        # Get console window handle
+        hwnd = kernel32.GetConsoleWindow()
+        if hwnd:
+            SW_MAXIMIZE = 3
+            user32.ShowWindow(hwnd, SW_MAXIMIZE)
+            return True
+    except Exception:
+        pass
+    
+    return False
+
 
 if __name__ == "__main__":
+    resize_terminal(120, 45)
     app = GoldflipperTUI()
     app.run()

@@ -7,7 +7,7 @@ import subprocess
 import yaml
 import sys
 from goldflipper.utils.display import TerminalDisplay
-from goldflipper.utils.exe_utils import get_play_subdir
+from goldflipper.utils.exe_utils import get_play_subdir, get_settings_path
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -287,7 +287,8 @@ class PlayBuilder:
     
     def _load_settings(self):
         """Load settings from yaml file."""
-        settings_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'settings.yaml')
+        # Use exe_utils for Nuitka-compatible path resolution
+        settings_path = str(get_settings_path())
         
         try:
             if not os.path.exists(settings_path):
@@ -815,5 +816,9 @@ def create_play():
             TerminalDisplay.error(f"Error creating play: {ve}", show_timestamp=False)
             return None
 
-if __name__ == "__main__":
+def main():
+    """Entry point for launcher integration."""
     create_play()
+
+if __name__ == "__main__":
+    main()

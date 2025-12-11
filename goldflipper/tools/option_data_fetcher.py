@@ -14,6 +14,7 @@ import json
 import yaml
 
 from goldflipper.utils.display import TerminalDisplay as display
+from goldflipper.utils.exe_utils import get_settings_path
 
 from goldflipper.data.greeks.base import OptionData
 from goldflipper.data.greeks.delta import DeltaCalculator
@@ -43,7 +44,8 @@ pd.set_option('display.max_rows', None)
 
 def load_settings():
     """Load settings from yaml file."""
-    settings_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'settings.yaml')
+    # Use exe_utils for Nuitka-compatible path resolution
+    settings_path = str(get_settings_path())
     with open(settings_path, 'r') as f:
         return yaml.safe_load(f)
 

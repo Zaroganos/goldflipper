@@ -29,11 +29,15 @@ ENTRY_POINT_CANDIDATES = [
 # copied as data files. Critical for dynamic imports via importlib.
 # ============================================================================
 PACKAGES_TO_COMPILE = [
+    "goldflipper",                 # Root package (core.py, run.py, alpaca_client.py, etc.)
+    "goldflipper.config",          # Configuration module (CRITICAL for settings loading)
+    "goldflipper.data",            # Data modules (greeks, indicators, market)
     "goldflipper.tools",           # All tool modules (GUI, CLI tools)
     "goldflipper.chart",           # Chart viewer module
     "goldflipper.trade_logging",   # Trade logger module
     "goldflipper.strategy",        # Strategy modules (runners, shared, playbooks loader)
     "goldflipper.utils",           # Utility modules
+    "goldflipper.watchdog",        # Watchdog module
 ]
 
 # ============================================================================
@@ -44,7 +48,7 @@ PACKAGES_TO_COMPILE = [
 # settings.yaml is user-specific and created on first run.
 DATA_MAPPINGS = [
     # Config template ONLY (not settings.yaml which is user-specific)
-    (PROJECT_ROOT / "goldflipper" / "config" / "settings_template.yaml", "goldflipper/config/settings_template.yaml"),
+    (PROJECT_ROOT / "goldflipper" / "config", "goldflipper/config"),
     
     # Reference data (CSV files)
     (PROJECT_ROOT / "goldflipper" / "reference", "goldflipper/reference"),

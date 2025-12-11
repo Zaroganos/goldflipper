@@ -358,8 +358,13 @@ class FirstRunSetup:
             # Determine target based on exe vs source mode
             if is_frozen():
                 # Running from compiled exe - shortcut points to the exe
-                target_path = sys.executable
-                working_dir = os.path.dirname(sys.executable)
+                # CRITICAL: In Nuitka onefile mode, sys.executable points to python.exe
+                # in the temp extraction directory! Use sys.argv[0] for the actual exe path.
+                exe_path = sys.argv[0] if sys.argv else sys.executable
+                if not os.path.isabs(exe_path):
+                    exe_path = os.path.abspath(exe_path)
+                target_path = exe_path
+                working_dir = os.path.dirname(exe_path)
                 icon_path = os.path.join(working_dir, "goldflipper.ico")
                 # Fallback icon to exe itself if .ico not found
                 if not os.path.exists(icon_path):
@@ -432,8 +437,12 @@ $Shortcut.Save()
                 os.makedirs(desktop, exist_ok=True)
             
             if is_frozen():
-                target_path = sys.executable
-                working_dir = os.path.dirname(sys.executable)
+                # CRITICAL: Use sys.argv[0] not sys.executable for Nuitka onefile
+                exe_path = sys.argv[0] if sys.argv else sys.executable
+                if not os.path.isabs(exe_path):
+                    exe_path = os.path.abspath(exe_path)
+                target_path = exe_path
+                working_dir = os.path.dirname(exe_path)
             else:
                 package_root = str(get_package_root())
                 target_path = os.path.join(package_root, "launch_goldflipper.bat")
