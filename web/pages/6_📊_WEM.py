@@ -2201,7 +2201,10 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
         'delta_range', 'delta_range_pct', 'rsi', 'upcoming_earnings_date'
     ]
     
-    metrics = metrics or default_metrics
+    if metrics is None:
+        metrics = list(default_metrics)
+    else:
+        metrics = list(metrics)
     
     # Make sure we have the symbol column
     if 'symbol' not in metrics:
@@ -2574,6 +2577,13 @@ class Delta16ValidationConfig:
         self.min_delta_std = 0.05  # Minimum delta standard deviation for good distribution
         self.max_bid_ask_spread_pct = 0.10  # Maximum bid-ask spread as % of mid price (10%)
         self.min_coverage_ratio = 0.8  # Minimum ratio of acceptable options on both sides
+        # Hard guardrail: always enforced regardless of validation toggle (prevents obviously wrong selections)
+        self.hard_max_delta_deviation = 0.10  # Maximum absolute deviation from target delta (10% = 0.06 to 0.26 range for calls)
+        # Sanity-check strictness parameters (for "check your work" validations)
+        self.max_monotonicity_violation_ratio = 0.0  # Fraction of strike pairs allowed to violate monotonicity
+        self.bs_relative_tolerance = 0.10            # Max relative deviation allowed in Black-Scholes check (10%)
+        self.sigma_distance_min = 0.6               # Min expected σ-distance for ~16Δ options
+        self.sigma_distance_max = 1.4               # Max expected σ-distance for ~16Δ options
 
 
 # ============================================================================
@@ -2581,7 +2591,8 @@ class Delta16ValidationConfig:
 # These provide independent verification that the selected strikes are correct
 # ============================================================================
 
-def validate_delta_monotonicity(df: pd.DataFrame, option_type: str) -> Dict[str, Any]:
+def validate_delta_monotonicity(df: pd.DataFrame, option_type: str,
+                                config: Optional[Delta16ValidationConfig] = None) -> Dict[str, Any]:
     """
     Verify that delta is strictly monotonic with strike price.
     
@@ -2600,7 +2611,8 @@ def validate_delta_monotonicity(df: pd.DataFrame, option_type: str) -> Dict[str,
         'violations': [],
         'violation_count': 0,
         'total_pairs': 0,
-        'message': ''
+        'message': '',
+        'violation_ratio': None,
     }
     
     # Filter for valid deltas and sort by strike
@@ -2639,14 +2651,33 @@ def validate_delta_monotonicity(df: pd.DataFrame, option_type: str) -> Dict[str,
     result['violations'] = violations
     result['violation_count'] = len(violations)
     result['total_pairs'] = total_pairs
-    result['is_valid'] = len(violations) == 0
     
-    if violations:
-        result['message'] = f"Delta monotonicity violated: {len(violations)}/{total_pairs} pairs have incorrect ordering"
+    # Determine strictness from config (default: any violation is a failure, preserving old behavior)
+    max_ratio = 0.0
+    if config is not None and hasattr(config, 'max_monotonicity_violation_ratio'):
+        max_ratio = max(0.0, float(config.max_monotonicity_violation_ratio))
+    
+    violation_ratio = len(violations) / total_pairs if total_pairs > 0 else 0.0
+    result['violation_ratio'] = violation_ratio
+    result['is_valid'] = violation_ratio <= max_ratio
+    
+    if violations and not result['is_valid']:
+        result['message'] = (
+            f"Delta monotonicity violated: {len(violations)}/{total_pairs} pairs "
+            f"({violation_ratio:.2%}) exceed allowed {max_ratio:.2%}"
+        )
         logger.warning(f"Delta monotonicity check ({option_type}s): {result['message']}")
     else:
-        result['message'] = f"Delta monotonicity OK: all {total_pairs} pairs correctly ordered"
-        logger.debug(f"Delta monotonicity check ({option_type}s): PASSED")
+        if violations:
+            # Violations present but within tolerance - log at debug level
+            result['message'] = (
+                f"Delta monotonicity has {len(violations)}/{total_pairs} violations "
+                f"({violation_ratio:.2%}) within allowed {max_ratio:.2%}"
+            )
+            logger.debug(f"Delta monotonicity check ({option_type}s): TOLERATED - {result['message']}")
+        else:
+            result['message'] = f"Delta monotonicity OK: all {total_pairs} pairs correctly ordered"
+            logger.debug(f"Delta monotonicity check ({option_type}s): PASSED")
     
     return result
 
@@ -2658,7 +2689,8 @@ def validate_delta_via_black_scholes(
     implied_vol: float,
     days_to_expiry: float,
     option_type: str,
-    risk_free_rate: float = 0.05
+    risk_free_rate: float = 0.05,
+    config: Optional[Delta16ValidationConfig] = None,
 ) -> Dict[str, Any]:
     """
     Verify reported delta against Black-Scholes theoretical delta.
@@ -2676,6 +2708,7 @@ def validate_delta_via_black_scholes(
         days_to_expiry: Days until expiration
         option_type: 'call' or 'put'
         risk_free_rate: Risk-free interest rate (default 5%)
+        config: Optional Delta16ValidationConfig for tolerance settings
         
     Returns:
         dict with 'is_valid', 'theoretical_delta', 'deviation', and 'message'
@@ -2715,8 +2748,15 @@ def validate_delta_via_black_scholes(
         target_magnitude = abs(reported_delta) if abs(reported_delta) > 0.01 else 0.16
         result['deviation_pct'] = result['deviation'] / target_magnitude
         
-        # Allow some tolerance (10% of delta magnitude) for market dynamics
-        tolerance = 0.10 * target_magnitude  # 10% relative tolerance
+        # Allow some tolerance for market dynamics (configurable, default 10% of delta magnitude)
+        rel_tol = 0.10
+        # Prefer config-based tolerance when available
+        if config is not None and hasattr(config, 'bs_relative_tolerance'):
+            try:
+                rel_tol = max(0.0, float(config.bs_relative_tolerance))
+            except Exception:
+                pass
+        tolerance = rel_tol * target_magnitude
         result['is_valid'] = result['deviation'] <= tolerance
         
         if result['is_valid']:
@@ -2747,7 +2787,8 @@ def validate_strike_distance_sanity(
     implied_vol: float,
     days_to_expiry: float,
     reported_delta: float,
-    option_type: str
+    option_type: str,
+    config: Optional[Delta16ValidationConfig] = None,
 ) -> Dict[str, Any]:
     """
     Verify strike distance using the 1 standard deviation sanity check.
@@ -2773,7 +2814,7 @@ def validate_strike_distance_sanity(
     result = {
         'is_valid': True,
         'sigma_distance': None,
-        'expected_sigma_range': (0.6, 1.4),  # Reasonable range for ~16 delta
+        'expected_sigma_range': None,  # Will be set from config
         'strike_pct_from_spot': None,
         'expected_pct_range': None,
         'message': ''
@@ -2799,11 +2840,21 @@ def validate_strike_distance_sanity(
         
         # Expected percentage distance: σ√τ * 100%
         expected_pct = implied_vol * sqrt_tau * 100
-        result['expected_pct_range'] = (expected_pct * 0.6, expected_pct * 1.4)
-        
-        # For delta ~0.16, we expect sigma_distance between 0.6 and 1.4
-        # This is because N^(-1)(0.16) ≈ -0.994, but market factors add some variance
-        min_sigma, max_sigma = result['expected_sigma_range']
+
+        # Get sigma distance bounds from config, falling back to historical defaults
+        min_sigma = 0.6
+        max_sigma = 1.4
+        if config is not None:
+            try:
+                if hasattr(config, 'sigma_distance_min'):
+                    min_sigma = float(config.sigma_distance_min)
+                if hasattr(config, 'sigma_distance_max'):
+                    max_sigma = float(config.sigma_distance_max)
+            except Exception:
+                pass
+
+        result['expected_sigma_range'] = (min_sigma, max_sigma)
+        result['expected_pct_range'] = (expected_pct * min_sigma, expected_pct * max_sigma)
         
         # Check direction is correct
         direction_ok = True
@@ -2858,7 +2909,8 @@ def run_delta_16_sanity_checks(
     calls_df: pd.DataFrame,
     puts_df: pd.DataFrame,
     spot_price: float,
-    days_to_expiry: float
+    days_to_expiry: float,
+    config: Optional[Delta16ValidationConfig] = None
 ) -> Dict[str, Any]:
     """
     Run all "check your work" sanity validations for delta-16 selection.
@@ -2892,8 +2944,8 @@ def run_delta_16_sanity_checks(
         # ===== Check 1: Delta Monotonicity =====
         logger.debug("Sanity Check 1: Delta Monotonicity")
         
-        calls_monotonicity = validate_delta_monotonicity(calls_df, 'call')
-        puts_monotonicity = validate_delta_monotonicity(puts_df, 'put')
+        calls_monotonicity = validate_delta_monotonicity(calls_df, 'call', config)
+        puts_monotonicity = validate_delta_monotonicity(puts_df, 'put', config)
         
         results['checks']['calls_monotonicity'] = calls_monotonicity
         results['checks']['puts_monotonicity'] = puts_monotonicity
@@ -2924,7 +2976,8 @@ def run_delta_16_sanity_checks(
                 reported_delta=call_delta,
                 implied_vol=call_iv,
                 days_to_expiry=days_to_expiry,
-                option_type='call'
+                option_type='call',
+                config=config
             )
             results['checks']['bs_call_validation'] = bs_call
             if not bs_call['is_valid']:
@@ -2946,7 +2999,8 @@ def run_delta_16_sanity_checks(
                 reported_delta=put_delta,
                 implied_vol=put_iv,
                 days_to_expiry=days_to_expiry,
-                option_type='put'
+                option_type='put',
+                config=config
             )
             results['checks']['bs_put_validation'] = bs_put
             if not bs_put['is_valid']:
@@ -2968,7 +3022,8 @@ def run_delta_16_sanity_checks(
                 implied_vol=call_iv,
                 days_to_expiry=days_to_expiry,
                 reported_delta=call_delta,
-                option_type='call'
+                option_type='call',
+                config=config
             )
             results['checks']['call_strike_distance'] = dist_call
             if not dist_call['is_valid']:
@@ -2991,7 +3046,8 @@ def run_delta_16_sanity_checks(
                 implied_vol=put_iv,
                 days_to_expiry=days_to_expiry,
                 reported_delta=put_delta,
-                option_type='put'
+                option_type='put',
+                config=config
             )
             results['checks']['put_strike_distance'] = dist_put
             if not dist_put['is_valid']:
@@ -3009,20 +3065,19 @@ def run_delta_16_sanity_checks(
         total_checks = len(results['checks'])
         # Count only checks that actually ran (is_valid is True or False, not None/skipped)
         run_checks = [c for c in results['checks'].values() if c.get('is_valid') is not None]
-        skipped_checks = total_checks - len(run_checks)
         passed_checks = sum(1 for c in run_checks if c.get('is_valid', False) is True)
         
         results['summary'] = {
             'total_checks': total_checks,
             'run_checks': len(run_checks),
-            'skipped_checks': skipped_checks,
+            'skipped_checks': total_checks - len(run_checks),
             'passed_checks': passed_checks,
             'warnings_count': len(results['warnings']),
             'errors_count': len(results['errors'])
         }
         
         logger.info(f"Sanity checks complete: {passed_checks}/{len(run_checks)} passed "
-                   f"({skipped_checks} skipped due to missing IV data), "
+                   f"({total_checks - len(run_checks)} skipped due to missing IV data), "
                    f"{len(results['warnings'])} warnings, {len(results['errors'])} errors")
         
         if results['errors']:
@@ -3371,8 +3426,11 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
         TARGET_PUT_DELTA = -0.16
         
         # HARD QUALITY THRESHOLD: Maximum acceptable deviation from target delta
-        # This is ALWAYS enforced regardless of validation_config to prevent obviously wrong selections
-        HARD_MAX_DELTA_DEVIATION = 0.10  # 10% absolute deviation (i.e., 0.06 to 0.26 acceptable range for calls)
+        # This is ALWAYS enforced regardless of validation_config.enabled to prevent obviously wrong selections
+        # Get from config if available, otherwise use default
+        HARD_MAX_DELTA_DEVIATION = 0.10  # Default fallback
+        if validation_config is not None and hasattr(validation_config, 'hard_max_delta_deviation'):
+            HARD_MAX_DELTA_DEVIATION = float(validation_config.hard_max_delta_deviation)
         
         # Find Delta 16+ (Call with delta closest to +0.16)
         call_delta_diffs = (valid_calls['delta'] - TARGET_CALL_DELTA).abs()
@@ -3425,6 +3483,8 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
         logger.info(f"Delta 16- match accuracy: {put_delta_diff:.4f} (target: {TARGET_PUT_DELTA}, found: {delta_16_minus_option['delta']:.4f})")
         
         # ===== "CHECK YOUR WORK" SANITY VALIDATIONS =====
+        # These are governed by the same validation toggle; if validation is disabled,
+        # we skip sanity checks entirely so they don't generate warnings or glyphs.
         # NO FALLBACKS - only run sanity checks if we have actual spot price and valid expiration
         estimated_spot = spot_price  # Use provided spot price only
         days_to_expiry = None
@@ -3438,15 +3498,16 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
             logger.warning(f"Could not parse expiration date for sanity check: {e}")
             days_to_expiry = None  # No fallback - will skip checks that need DTE
         
-        # Run sanity checks only if we have required data (no fallbacks)
-        if estimated_spot is not None and days_to_expiry is not None:
+        # Run sanity checks only if validation is enabled and we have required data (no fallbacks)
+        if validation_config.enabled and estimated_spot is not None and days_to_expiry is not None:
             sanity_results = run_delta_16_sanity_checks(
                 delta_16_plus_option=delta_16_plus_option,
                 delta_16_minus_option=delta_16_minus_option,
                 calls_df=calls_df,
                 puts_df=puts_df,
                 spot_price=estimated_spot,
-                days_to_expiry=days_to_expiry
+                days_to_expiry=days_to_expiry,
+                config=validation_config
             )
             
             # Log sanity check summary
@@ -3460,13 +3521,15 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
                 logger.warning(f"⚠️ Sanity checks found issues: {summary.get('errors_count', 0)} errors, "
                               f"{summary.get('warnings_count', 0)} warnings, {skipped} skipped")
         else:
-            # Skip sanity checks entirely if missing required data - NO FALLBACKS
+            # Skip sanity checks entirely if validation is disabled or data missing
             missing = []
+            if not validation_config.enabled:
+                missing.append("validation disabled")
             if estimated_spot is None:
                 missing.append("spot_price")
             if days_to_expiry is None:
                 missing.append("days_to_expiry (could not parse expiration)")
-            logger.info(f"⏭️ Sanity checks SKIPPED: missing required data ({', '.join(missing)}) - no fallbacks used")
+            logger.info(f"⏭️ Sanity checks SKIPPED: {', '.join(missing)}")
             sanity_results = {
                 'overall_valid': None,  # None = not run, distinct from True/False
                 'checks': {},
@@ -3480,16 +3543,49 @@ def calculate_delta_16_values(option_chain_dict: Dict[str, pd.DataFrame], expira
                     'warnings_count': 0,
                     'errors_count': 0
                 },
-                'skipped_reason': f"Missing required data: {', '.join(missing)}"
+                'skipped_reason': f"Skipped: {', '.join(missing)}"
             }
         
         # Calculate mid prices for the delta 16 options
         delta_16_plus_price = (float(delta_16_plus_option['bid']) + float(delta_16_plus_option['ask'])) / 2
         delta_16_minus_price = (float(delta_16_minus_option['bid']) + float(delta_16_minus_option['ask'])) / 2
         
-        # Extract expiration from selected options (if available) for verification
-        call_expiration = delta_16_plus_option.get('expiration', '')
-        put_expiration = delta_16_minus_option.get('expiration', '')
+        # Helper to normalize expiration values:
+        # - If we get a UNIX epoch (int/float or digit string), convert to YYYY-MM-DD
+        # - Otherwise, keep as string
+        def _normalize_expiration_value(exp_val: Any) -> str:
+            """
+            Normalize various provider expiration representations to 'YYYY-MM-DD'.
+            
+            Handles:
+            - Date-like strings with '-' (returned as-is)
+            - Numeric / epoch-like values (int, float, numpy scalars, or digit strings)
+            - Falls back to plain string representation when conversion fails.
+            """
+            if exp_val is None:
+                return ''
+            # Already a date-like string (contains '-'): keep as-is
+            if isinstance(exp_val, str) and '-' in exp_val:
+                return exp_val
+            # Try to interpret anything else as a UNIX timestamp (many providers use this)
+            try:
+                # For strings that are pure digits, parse directly
+                if isinstance(exp_val, str) and exp_val.isdigit():
+                    ts = float(exp_val)
+                else:
+                    # This will also handle numpy scalar types (int64, float64, etc.)
+                    ts = float(exp_val)
+                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                return dt.strftime('%Y-%m-%d')
+            except Exception:
+                # Last resort: string representation
+                return str(exp_val)
+
+        # Extract and normalize expiration from selected options (if available) for verification
+        call_expiration_raw = delta_16_plus_option.get('expiration', '')
+        put_expiration_raw = delta_16_minus_option.get('expiration', '')
+        call_expiration = _normalize_expiration_value(call_expiration_raw)
+        put_expiration = _normalize_expiration_value(put_expiration_raw)
         
         # Verify expirations match the expected date
         if call_expiration and call_expiration != expiration_date:
@@ -3773,6 +3869,18 @@ def main():
             help="Enable quality checks for Delta 16+/- calculations to ensure accurate results"
         )
         
+        # Hard guardrail (always enforced, even when validation is disabled)
+        hard_max_delta_deviation = threshold_defaults.get('hard_max_delta_deviation', 0.10)
+        hard_max_delta_deviation = st.slider(
+            "Hard Max Delta Deviation (Guardrail)",
+            min_value=0.05,
+            max_value=0.25,
+            value=hard_max_delta_deviation,
+            step=0.01,
+            format="%.2f",
+            help="HARD GUARDRAIL: Maximum absolute deviation from target delta (0.16/-0.16) that is ALWAYS enforced, even when validation is disabled. This prevents obviously wrong option selections (e.g., selecting a 0.06 delta option when looking for 0.16). Lower = stricter (tighter guardrail), higher = more lenient. This threshold triggers the '!' warning glyph in the UI."
+        )
+        
         # Set default values for validation parameters from settings
         max_delta_deviation = threshold_defaults.get('max_delta_deviation', 0.03)
         min_strike_count = threshold_defaults.get('min_strike_count', 5)
@@ -3780,6 +3888,11 @@ def main():
         min_days_to_expiry = threshold_defaults.get('min_days_to_expiry', 1)
         min_delta_std = threshold_defaults.get('min_delta_std', 0.05)
         max_bid_ask_spread = threshold_defaults.get('max_bid_ask_spread_pct', 0.10)
+        # Sanity-check strictness defaults
+        max_monotonicity_violation_ratio = threshold_defaults.get('max_monotonicity_violation_ratio', 0.0)
+        bs_relative_tolerance = threshold_defaults.get('bs_relative_tolerance', 0.10)
+        sigma_distance_min = threshold_defaults.get('sigma_distance_min', 0.6)
+        sigma_distance_max = threshold_defaults.get('sigma_distance_max', 1.4)
         
         # Advanced validation settings (only show if validation is enabled)
         if validation_enabled:
@@ -3793,7 +3906,7 @@ def main():
                     value=max_delta_deviation,
                     step=0.01,
                     format="%.2f",
-                    help="Maximum allowed deviation from target delta (0.16/-0.16)"
+                    help="Maximum allowed deviation from target delta (0.16/-0.16). Lower = stricter (needs closer to 0.16), higher = more lenient."
                 )
                 
                 min_strike_count = st.slider(
@@ -3802,7 +3915,7 @@ def main():
                     max_value=20,
                     value=min_strike_count,
                     step=1,
-                    help="Minimum number of option strikes required"
+                    help="Minimum number of option strikes required. Higher = stricter (requires richer chain), lower = more lenient."
                 )
                 
                 max_strike_interval = st.slider(
@@ -3812,7 +3925,7 @@ def main():
                     value=max_strike_interval,
                     step=1.0,
                     format="%.1f",
-                    help="Maximum average strike price interval"
+                    help="Maximum average distance between strikes. Lower = stricter (tighter grid), higher = more lenient."
                 )
                 
                 min_days_to_expiry = st.slider(
@@ -3821,7 +3934,7 @@ def main():
                     max_value=7,
                     value=min_days_to_expiry,
                     step=1,
-                    help="Minimum days until expiration (0 = allow same day)"
+                    help="Minimum days until expiration (0 = allow same day). Higher = stricter (avoids near-expiry), lower = more lenient."
                 )
                 
                 min_delta_std = st.slider(
@@ -3831,18 +3944,61 @@ def main():
                     value=min_delta_std,
                     step=0.01,
                     format="%.2f",
-                    help="Minimum delta standard deviation for good distribution"
+                    help="Minimum standard deviation of deltas for a 'healthy' distribution. Higher = stricter, lower = more lenient."
                 )
                 
                 max_bid_ask_spread = st.slider(
-                    "Max Bid-Ask Spread %",
+                    "Max Bid-Ask Spread (fraction of mid, e.g. 0.10 = 10%)",
                     min_value=0.05,
                     max_value=0.50,
                     value=max_bid_ask_spread,
                     step=0.01,
                     format="%.2f",
-                    help="Maximum bid-ask spread as percentage of mid price"
+                    help="Maximum bid-ask spread as a FRACTION of mid price (0.10 = 10%, 0.20 = 20%). Lower = stricter (tighter spreads), higher = more lenient."
                 )
+                
+                # Sanity-check strictness controls
+                max_monotonicity_violation_ratio = st.slider(
+                    "Max Monotonicity Violations (fraction of pairs)",
+                    min_value=0.0,
+                    max_value=0.50,
+                    value=max_monotonicity_violation_ratio,
+                    step=0.01,
+                    format="%.2f",
+                    help="Maximum fraction of neighboring strike pairs allowed to violate delta monotonicity. Lower = stricter (fewer violations allowed), higher = more lenient."
+                )
+                
+                bs_relative_tolerance = st.slider(
+                    "Black-Scholes Relative Tolerance",
+                    min_value=0.05,
+                    max_value=0.50,
+                    value=bs_relative_tolerance,
+                    step=0.01,
+                    format="%.2f",
+                    help="Maximum relative deviation between theoretical and reported delta (e.g., 0.10 = 10%). Lower = stricter, higher = more lenient."
+                )
+                
+                col_sigma_min, col_sigma_max = st.columns(2)
+                with col_sigma_min:
+                    sigma_distance_min = st.slider(
+                        "Min σ Distance",
+                        min_value=0.2,
+                        max_value=1.0,
+                        value=sigma_distance_min,
+                        step=0.05,
+                        format="%.2f",
+                        help="Minimum standard deviation distance from spot for ~16-delta options. Higher = stricter (farther OTM required), lower = more lenient."
+                    )
+                with col_sigma_max:
+                    sigma_distance_max = st.slider(
+                        "Max σ Distance",
+                        min_value=0.8,
+                        max_value=2.0,
+                        value=sigma_distance_max,
+                        step=0.05,
+                        format="%.2f",
+                        help="Maximum standard deviation distance from spot for ~16-delta options. Lower = stricter (tighter band), higher = more lenient."
+                    )
         
         # Create and store validation config in session state
         if validation_enabled:
@@ -3854,8 +4010,15 @@ def main():
             validation_config.min_days_to_expiry = min_days_to_expiry
             validation_config.min_delta_std = min_delta_std
             validation_config.max_bid_ask_spread_pct = max_bid_ask_spread
+            validation_config.hard_max_delta_deviation = hard_max_delta_deviation
+            validation_config.max_monotonicity_violation_ratio = max_monotonicity_violation_ratio
+            validation_config.bs_relative_tolerance = bs_relative_tolerance
+            validation_config.sigma_distance_min = sigma_distance_min
+            validation_config.sigma_distance_max = sigma_distance_max
         else:
             validation_config = Delta16ValidationConfig()
+            # Even when validation is disabled, we still respect the hard guardrail setting
+            validation_config.hard_max_delta_deviation = hard_max_delta_deviation
             validation_config.enabled = False
         
         # Store in session state for use in calculations
@@ -4340,10 +4503,18 @@ def main():
         if layout == 'vertical':
             default_metrics.insert(0, 'symbol')
         
+        persisted_metrics = st.session_state.get('wem_selected_metrics')
+        if persisted_metrics is None:
+            persisted_metrics = list(default_metrics)
+        
+        # In horizontal layout, 'symbol' is not selectable (it becomes column headers)
+        widget_default_metrics = [m for m in persisted_metrics if m in display_metrics]
+        
         selected_metrics = st.multiselect(
             "Metrics to Display",
             options=display_metrics,
-            default=default_metrics,
+            default=widget_default_metrics,
+            key=f"wem_metrics_multiselect_{layout}",
             help="Select which metrics to display in the table. You can reorder metrics by selecting/deselecting them."
         )
         
@@ -4351,7 +4522,9 @@ def main():
         
         # For vertical layout, ensure symbol is always included
         if layout == 'vertical' and 'symbol' not in selected_metrics:
-            selected_metrics.insert(0, 'symbol')
+            selected_metrics = ['symbol'] + list(selected_metrics)
+        
+        st.session_state.wem_selected_metrics = list(selected_metrics)
         
         # Export options
         st.subheader("Export Options")
@@ -4875,6 +5048,51 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
     with pd.ExcelWriter(excel_path, engine='xlsxwriter') as writer:
         workbook = writer.book
         
+        def _cell_text_len(value: Any) -> int:
+            try:
+                if value is None:
+                    return 0
+                s = str(value)
+                if not s:
+                    return 0
+                return max(len(part) for part in s.split('\n'))
+            except Exception:
+                return 0
+
+        def _update_col_width(col_widths: Dict[int, int], col_idx: int, value: Any) -> None:
+            vlen = _cell_text_len(value)
+            if vlen <= 0:
+                return
+            prev = col_widths.get(col_idx, 0)
+            if vlen > prev:
+                col_widths[col_idx] = vlen
+
+        def _apply_autofit_columns(worksheet, col_widths: Dict[int, int], min_width: int = 8, max_width: int = 120) -> None:
+            if not col_widths:
+                return
+            pad = 2
+            for col_idx in sorted(col_widths.keys()):
+                width = col_widths.get(col_idx, 0) + pad
+                width = max(min_width, width)
+                width = min(max_width, width)
+                worksheet.set_column(col_idx, col_idx, width)
+
+        def _format_mmddyy(value: Any) -> Any:
+            if value is None:
+                return value
+            if isinstance(value, str) and value in ('', '—'):
+                return value
+            try:
+                if isinstance(value, datetime):
+                    dt = value
+                elif isinstance(value, pd.Timestamp):
+                    dt = value.to_pydatetime()
+                else:
+                    dt = datetime.fromisoformat(str(value))
+                return dt.strftime('%m/%d/%y')
+            except Exception:
+                return value
+        
         # Define subtle alternating colors for better readability
         alt_color_1 = '#FFFFFF'  # White
         alt_color_2 = '#F8F9FA'  # Very light gray
@@ -4906,11 +5124,11 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
             'border_color': '#D3D3D3'
         })
         
-        # Data cell format - right aligned (xl69 equivalent)
+        # Data cell format - center aligned
         data_format = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
-            'align': 'right',
+            'align': 'center',
             'font_color': 'black',
             'bg_color': 'white',
             'border': 1,
@@ -4921,7 +5139,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
         data_format_alt = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
-            'align': 'right',
+            'align': 'center',
             'font_color': 'black',
             'bg_color': alt_color_2,
             'border': 1,
@@ -4932,7 +5150,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
         number_format = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
-            'align': 'right',
+            'align': 'center',
             'font_color': 'black',
             'bg_color': 'white',
             'border': 1,
@@ -4943,7 +5161,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
         number_format_alt = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
-            'align': 'right',
+            'align': 'center',
             'font_color': 'black',
             'bg_color': alt_color_2,
             'border': 1,
@@ -4955,7 +5173,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
         percent_format = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
-            'align': 'right',
+            'align': 'center',
             'font_color': 'black',
             'bg_color': 'white',
             'border': 1,
@@ -4966,7 +5184,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
         percent_format_alt = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
-            'align': 'right',
+            'align': 'center',
             'font_color': 'black',
             'bg_color': alt_color_2,
             'border': 1,
@@ -4978,7 +5196,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
         percent_3dec_format = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
-            'align': 'right',
+            'align': 'center',
             'font_color': 'black',
             'bg_color': 'white',
             'border': 1,
@@ -4989,7 +5207,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
         percent_3dec_format_alt = workbook.add_format({
             'font_name': 'Aptos Narrow',
             'font_size': 11,
-            'align': 'right',
+            'align': 'center',
             'font_color': 'black',
             'bg_color': alt_color_2,
             'border': 1,
@@ -5058,12 +5276,8 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
         worksheet = writer.sheets.get('WEM Data')
         if worksheet is None:
             worksheet = workbook.add_worksheet('WEM Data')
-        
 
-        # Set column widths matching template
-        worksheet.set_column(0, 0, 13)  # First column (labels) - wider
-        for i in range(1, len(symbols) + 1):
-            worksheet.set_column(i, i, 8)  # Stock symbol columns
+        col_widths: Dict[int, int] = {}
         
         # Get the actual ATM date being used for calculations
         try:
@@ -5095,6 +5309,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                     # Alternate column colors
                     header_fmt = header_format_alt if col_idx % 2 == 1 else header_format
                     worksheet.write(0, col_idx + 1, symbol, header_fmt)
+                    _update_col_width(col_widths, col_idx + 1, symbol)
             
             # Define the metric order and their formatting
             metric_formats = {
@@ -5135,6 +5350,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                     
                     # Write row label
                     worksheet.write(row_idx, 0, metric_display_name, row_label_format)
+                    _update_col_width(col_widths, 0, metric_display_name)
                     
                     # Write data for each symbol with alternating column colors
                     for col_idx, symbol in enumerate(symbols):
@@ -5145,21 +5361,15 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                                 if isinstance(value, str) and value == '—':
                                     cell_format = center_format_alt if col_idx % 2 == 1 else center_format
                                     worksheet.write(row_idx, col_idx + 1, value, cell_format)
+                                    _update_col_width(col_widths, col_idx + 1, value)
                                 else:
                                     # Apply appropriate formatting with alternating colors
                                     base_format, alt_format = metric_formats[metric_display_name]
                                     cell_format = alt_format if col_idx % 2 == 1 else base_format
                                     
                                     # Special handling for Earnings Date: format as MM/DD/YY in Excel
-                                    if metric_display_name == 'Earnings Date' and isinstance(value, str) and value not in ('', '—'):
-                                        try:
-                                            # value is normalized as YYYY-MM-DD; handle full ISO as well
-                                            dt = datetime.fromisoformat(value)
-                                            value = dt.strftime('%m/%d/%y')
-                                        except Exception:
-                                            # Fallback to original string on parse error
-                                            pass
-
+                                    if metric_display_name == 'Earnings Date':
+                                        value = _format_mmddyy(value)
                                     # Extract warning suffix and clean value for Excel formatting
                                     warning_suffix = ""
                                     clean_value = value
@@ -5182,12 +5392,16 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                                             # If there's a warning suffix, write as text with suffix to preserve it
                                             if warning_suffix:
                                                 worksheet.write(row_idx, col_idx + 1, f"{clean_value}{warning_suffix}", cell_format)
+                                                _update_col_width(col_widths, col_idx + 1, f"{clean_value}{warning_suffix}")
                                             else:
                                                 worksheet.write(row_idx, col_idx + 1, numeric_value, cell_format)
+                                                _update_col_width(col_widths, col_idx + 1, f"{percentage_text}%")
                                         except:
                                             worksheet.write(row_idx, col_idx + 1, value, cell_format)
+                                            _update_col_width(col_widths, col_idx + 1, value)
                                     else:
                                         worksheet.write(row_idx, col_idx + 1, value, cell_format)
+                                        _update_col_width(col_widths, col_idx + 1, value)
 
                                     # Highlight flagged cells (warnings/errors) in pale yellow
                                     try:
@@ -5200,7 +5414,9 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                                     except Exception:
                                         pass
                 
-                row_idx += 1
+                # Only advance the worksheet row if we actually wrote a metric row.
+                if matching_rows:
+                    row_idx += 1
         
         else:  # Vertical layout
             # Write column headers with alternating colors
@@ -5211,6 +5427,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                 if 'ATM (' in header_name and header_name != atm_label:
                     header_name = atm_label
                 worksheet.write(0, col_idx, header_name, header_fmt)
+                _update_col_width(col_widths, col_idx, header_name)
             
             # Write data rows with alternating row colors
             for row_idx, (_, row) in enumerate(df.iterrows()):
@@ -5225,25 +5442,23 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                             if isinstance(value, str) and value == '—':
                                 cell_format = center_format_alt if is_alt_row else center_format
                                 worksheet.write(row_idx + 1, col_idx, value, cell_format)
+                                _update_col_width(col_widths, col_idx, value)
                             else:
                                 # Determine format based on field type with alternating colors
                                 if field in ['wem_points']:
                                     cell_format = number_format_alt if is_alt_row else number_format
                                 elif field in ['wem_spread']:
                                     cell_format = percent_format_alt if is_alt_row else percent_format
+                                elif field in ['upcoming_earnings_date']:
+                                    cell_format = center_format_alt if is_alt_row else center_format
                                 elif field in ['delta_range_pct']:
                                     cell_format = percent_3dec_format_alt if is_alt_row else percent_3dec_format
                                 else:
                                     cell_format = data_format_alt if is_alt_row else data_format
                                 
                                 # Special handling for upcoming_earnings_date: format as MM/DD/YY in Excel
-                                if field == 'upcoming_earnings_date' and isinstance(value, str) and value not in ('', '—'):
-                                    try:
-                                        dt = datetime.fromisoformat(value)
-                                        value = dt.strftime('%m/%d/%y')
-                                    except Exception:
-                                        # Fallback to original string on parse error
-                                        pass
+                                if field == 'upcoming_earnings_date':
+                                    value = _format_mmddyy(value)
                                     
                                 # Extract warning suffix and clean value for Excel formatting
                                 warning_suffix = ""
@@ -5267,12 +5482,16 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                                         # If there's a warning suffix, write as text with suffix to preserve it
                                         if warning_suffix:
                                             worksheet.write(row_idx + 1, col_idx, f"{clean_value}{warning_suffix}", cell_format)
+                                            _update_col_width(col_widths, col_idx, f"{clean_value}{warning_suffix}")
                                         else:
                                             worksheet.write(row_idx + 1, col_idx, numeric_value, cell_format)
+                                            _update_col_width(col_widths, col_idx, f"{percentage_text}%")
                                     except:
                                         worksheet.write(row_idx + 1, col_idx, value, cell_format)
+                                        _update_col_width(col_widths, col_idx, value)
                                 else:
                                     worksheet.write(row_idx + 1, col_idx, value, cell_format)
+                                    _update_col_width(col_widths, col_idx, value)
 
                                 # Highlight flagged cells (warnings/errors) in pale yellow
                                 try:
@@ -5346,6 +5565,8 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
         
         # Set row heights
         worksheet.set_default_row(15)  # 15pt row height matching template
+
+        _apply_autofit_columns(worksheet, col_widths)
         
         # Create category sheets if requested
         if selected_categories:
@@ -5367,11 +5588,8 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                 # Create worksheet for this category with a clean name
                 sheet_name = category_name[:31]  # Excel has 31 char limit for sheet names
                 category_worksheet = workbook.add_worksheet(sheet_name)
-                
-                # Set column widths matching template
-                category_worksheet.set_column(0, 0, 13)  # First column (labels) - wider
-                for i in range(1, len(available_category_symbols) + 1):
-                    category_worksheet.set_column(i, i, 8)  # Stock symbol columns
+
+                category_col_widths: Dict[int, int] = {}
                 
                 # Determine if we're working with horizontal or vertical layout
                 is_horizontal_cat = isinstance(df.index, pd.Index) and not df.index.name == 'symbol'
@@ -5383,13 +5601,14 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                             # Alternate column colors
                             header_fmt = header_format_alt if col_idx % 2 == 1 else header_format
                             category_worksheet.write(0, col_idx + 1, symbol, header_fmt)
-                    
+                            _update_col_width(category_col_widths, col_idx + 1, symbol)
+
                     # Write row labels and data (same metrics as main sheet)
                     row_idx_cat = 1
                     for metric_display_name in metric_formats.keys():
                         # Find the corresponding row in the dataframe
                         matching_rows = []
-                        
+
                         # Try exact match first
                         if metric_display_name in df.index:
                             matching_rows = [metric_display_name]
@@ -5400,52 +5619,78 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                                    str(idx).replace('ATM (6/13/25)', 'ATM').replace('ATM (dd/mm/yy)', 'ATM') in metric_display_name:
                                     matching_rows = [idx]
                                     break
-                        
-                        if matching_rows:
-                            row_data = df.loc[matching_rows[0]]
-                            
-                            # Write row label
-                            category_worksheet.write(row_idx_cat, 0, metric_display_name, row_label_format)
-                            
-                            # Write data for each symbol with alternating column colors
-                            for col_idx, symbol in enumerate(available_category_symbols):
-                                if symbol in row_data.index:
-                                    value = row_data[symbol]
-                                    if pd.notna(value):
-                                        # Check if value is an em-dash (missing data) - use center format
-                                        if isinstance(value, str) and value == '—':
-                                            cell_format = center_format_alt if col_idx % 2 == 1 else center_format
-                                            category_worksheet.write(row_idx_cat, col_idx + 1, value, cell_format)
-                                        else:
-                                            # Apply appropriate formatting with alternating colors
-                                            base_format, alt_format = metric_formats[metric_display_name]
-                                            cell_format = alt_format if col_idx % 2 == 1 else base_format
-                                            
-                                            # Convert percentage strings to numbers for Excel's built-in percentage formats
-                                            if isinstance(value, str) and '%' in value:
-                                                try:
-                                                    percentage_text = value.replace('%', '').strip()
-                                                    # Use Decimal for exact arithmetic to avoid floating point errors
-                                                    percentage_decimal = Decimal(percentage_text)
-                                                    numeric_value = float(percentage_decimal / Decimal('100'))
+
+                        if not matching_rows:
+                            continue
+
+                        row_data = df.loc[matching_rows[0]]
+
+                        # Write row label
+                        category_worksheet.write(row_idx_cat, 0, metric_display_name, row_label_format)
+                        _update_col_width(category_col_widths, 0, metric_display_name)
+
+                        # Write data for each symbol with alternating column colors
+                        for col_idx, symbol in enumerate(available_category_symbols):
+                            if symbol in row_data.index:
+                                value = row_data[symbol]
+                                if pd.notna(value):
+                                    # Check if value is an em-dash (missing data) - use center format
+                                    if isinstance(value, str) and value == '—':
+                                        cell_format = center_format_alt if col_idx % 2 == 1 else center_format
+                                        category_worksheet.write(row_idx_cat, col_idx + 1, value, cell_format)
+                                        _update_col_width(category_col_widths, col_idx + 1, value)
+                                    else:
+                                        # Apply appropriate formatting with alternating colors
+                                        base_format, alt_format = metric_formats[metric_display_name]
+                                        cell_format = alt_format if col_idx % 2 == 1 else base_format
+
+                                        # Special handling for Earnings Date: format as MM/DD/YY in Excel
+                                        if metric_display_name == 'Earnings Date':
+                                            value = _format_mmddyy(value)
+
+                                        # Extract warning suffix and clean value for Excel formatting
+                                        warning_suffix = ""
+                                        clean_value = value
+                                        if isinstance(value, str):
+                                            if ' (?)' in value:
+                                                warning_suffix = ' (?)'
+                                                clean_value = value.replace(' (?)', '')
+                                            elif ' (!)' in value:
+                                                warning_suffix = ' (!)'
+                                                clean_value = value.replace(' (!)', '')
+
+                                        # Convert percentage strings to numbers for Excel's built-in percentage formats
+                                        if isinstance(clean_value, str) and '%' in clean_value:
+                                            try:
+                                                percentage_text = clean_value.replace('%', '').strip()
+                                                percentage_decimal = Decimal(percentage_text)
+                                                numeric_value = float(percentage_decimal / Decimal('100'))
+                                                if warning_suffix:
+                                                    category_worksheet.write(row_idx_cat, col_idx + 1, f"{clean_value}{warning_suffix}", cell_format)
+                                                    _update_col_width(category_col_widths, col_idx + 1, f"{clean_value}{warning_suffix}")
+                                                else:
                                                     category_worksheet.write(row_idx_cat, col_idx + 1, numeric_value, cell_format)
-                                                except:
-                                                    category_worksheet.write(row_idx_cat, col_idx + 1, value, cell_format)
-                                            else:
+                                                    _update_col_width(category_col_widths, col_idx + 1, f"{percentage_text}%")
+                                            except Exception:
                                                 category_worksheet.write(row_idx_cat, col_idx + 1, value, cell_format)
-                        
+                                                _update_col_width(category_col_widths, col_idx + 1, value)
+                                        else:
+                                            category_worksheet.write(row_idx_cat, col_idx + 1, value, cell_format)
+                                            _update_col_width(category_col_widths, col_idx + 1, value)
+
+                        # Advance row only when we wrote a metric row
                         row_idx_cat += 1
-                    
+
                     # Add category notes
                     notes_row_cat = row_idx_cat + 2
                     num_cols_cat = len(available_category_symbols) + 1
                     category_worksheet.merge_range(notes_row_cat, 1, notes_row_cat, num_cols_cat - 1, 'Notes', notes_header_format)
-                    
+
                     notes_content_cat = f"Category: {category_name} - {category_info['description']}\n" + \
                                        f"Generated by Goldflipper WEM Module on {current_date} at {current_time}."
-                    category_worksheet.merge_range(notes_row_cat + 1, 1, notes_row_cat + 5, num_cols_cat - 1, 
+                    category_worksheet.merge_range(notes_row_cat + 1, 1, notes_row_cat + 5, num_cols_cat - 1,
                                                    notes_content_cat, notes_content_format)
-                    
+
                     # Freeze panes for category sheet
                     category_worksheet.freeze_panes(1, 1)
                     
@@ -5464,6 +5709,7 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                         if 'ATM (' in header_name and header_name != atm_label:
                             header_name = atm_label
                         category_worksheet.write(0, col_idx, header_name, header_fmt)
+                        _update_col_width(category_col_widths, col_idx, header_name)
                     
                     # Write data rows with alternating row colors
                     for row_idx_cat, (_, row) in enumerate(category_df.iterrows()):
@@ -5477,17 +5723,24 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                                     if isinstance(value, str) and value == '—':
                                         cell_format = center_format_alt if is_alt_row else center_format
                                         category_worksheet.write(row_idx_cat + 1, col_idx, value, cell_format)
+                                        _update_col_width(category_col_widths, col_idx, value)
                                     else:
                                         # Determine format based on field type with alternating colors
                                         if field in ['wem_points']:
                                             cell_format = number_format_alt if is_alt_row else number_format
                                         elif field in ['wem_spread']:
                                             cell_format = percent_format_alt if is_alt_row else percent_format
+                                        elif field in ['upcoming_earnings_date']:
+                                            cell_format = center_format_alt if is_alt_row else center_format
                                         elif field in ['delta_range_pct']:
                                             cell_format = percent_3dec_format_alt if is_alt_row else percent_3dec_format
                                         else:
                                             cell_format = data_format_alt if is_alt_row else data_format
                                         
+                                        # Special handling for upcoming_earnings_date: format as MM/DD/YY in Excel
+                                        if field == 'upcoming_earnings_date':
+                                            value = _format_mmddyy(value)
+
                                         # Convert percentage strings to numbers
                                         if isinstance(value, str) and '%' in value:
                                             try:
@@ -5495,10 +5748,13 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                                                 percentage_decimal = Decimal(percentage_text)
                                                 numeric_value = float(percentage_decimal / Decimal('100'))
                                                 category_worksheet.write(row_idx_cat + 1, col_idx, numeric_value, cell_format)
+                                                _update_col_width(category_col_widths, col_idx, f"{percentage_text}%")
                                             except:
                                                 category_worksheet.write(row_idx_cat + 1, col_idx, value, cell_format)
+                                                _update_col_width(category_col_widths, col_idx, value)
                                         else:
                                             category_worksheet.write(row_idx_cat + 1, col_idx, value, cell_format)
+                                            _update_col_width(category_col_widths, col_idx, value)
                     
                     # Add category notes for vertical layout
                     notes_row_cat = len(category_df) + 2
@@ -5515,8 +5771,10 @@ def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_
                 
                 # Set row heights for category sheet
                 category_worksheet.set_default_row(15)
+
+                _apply_autofit_columns(category_worksheet, category_col_widths)
                 
                 logger.info(f"Created category sheet '{sheet_name}' with {len(available_category_symbols)} symbols")
 
 if __name__ == "__main__":
-    main() 
+    main()
