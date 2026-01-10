@@ -2,7 +2,6 @@
 
 import os
 import sys
-import yaml
 import subprocess
 from pathlib import Path
 import traceback
@@ -34,8 +33,8 @@ def main():
             f.write(f"Starting launch_web.py at {datetime.now()}\n")
             
 
-            # Default to hidden console
-            show_console = False
+            # Default to visible console
+            show_console = True
             script_dir = Path(__file__).parent
             
             # Ensure uv is available
@@ -52,10 +51,10 @@ def main():
                     f.write(f"Error installing uv: {str(e)}\n")
                     return
 
-            # Install dependencies using uv
-            f.write("Installing dependencies with uv...\n")
+            # Install dependencies using uv (run from project root where pyproject.toml is)
+            f.write(f"Installing dependencies with uv from {project_root}...\n")
             try:
-                subprocess.run(['uv', 'sync'], check=True)
+                subprocess.run(['uv', 'sync'], check=True, cwd=str(project_root))
                 f.write("Dependencies installed successfully\n")
             except subprocess.CalledProcessError as e:
                 f.write(f"Error installing dependencies: {str(e)}\n")
@@ -68,10 +67,10 @@ def main():
             try:
                 if show_console:
                     # For visible console, let Streamlit output directly
-                    subprocess.Popen(['uv', 'run', 'streamlit', 'run', str(script_dir / 'app.py')], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen(['uv', 'run', 'streamlit', 'run', str(script_dir / 'app.py')], cwd=str(project_root), creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
                     # For hidden console, use Popen with CREATE_NO_WINDOW
-                    subprocess.Popen(['uv', 'run', 'streamlit', 'run', str(script_dir / 'app.py')], creationflags=subprocess.CREATE_NO_WINDOW)
+                    subprocess.Popen(['uv', 'run', 'streamlit', 'run', str(script_dir / 'app.py')], cwd=str(project_root), creationflags=subprocess.CREATE_NO_WINDOW)
                 
                 f.write("Streamlit app launched successfully\n")
             except Exception as e:
