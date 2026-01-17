@@ -4,6 +4,8 @@ from .base import IndicatorCalculator, MarketData
 from .rsi import RSICalculator
 from .ema import EMACalculator
 from .macd import MACDCalculator
+from .fibonacci import FibonacciCalculator
+from .gaps import GapDetector, Gap
 
 __all__ = [
     'IndicatorCalculator',
@@ -11,4 +13,7 @@ __all__ = [
     'RSICalculator',
     'EMACalculator',
     'MACDCalculator',
+    'FibonacciCalculator',
+    'GapDetector',
+    'Gap',
 ]

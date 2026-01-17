@@ -2198,7 +2198,7 @@ def create_wem_table(stocks, layout="horizontal", metrics=None, sig_figs=4, max_
     default_metrics = [
         'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread', 
         'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-        'delta_range', 'delta_range_pct', 'rsi', 'upcoming_earnings_date'
+        'delta_range', 'delta_range_pct', 'upcoming_earnings_date'
     ]
     
     if metrics is None:
@@ -4061,36 +4061,6 @@ def main():
                     else:
                         st.error(f"❌ Unexpected result: {friday_date}")
         
-        # Add a button to update WEM data - MOVED AFTER validation config setup
-        if st.button("Update WEM Data", help="Fetch latest options data and calculate WEM"):
-            with st.spinner("Updating WEM data..."):
-                try:
-                    # Set up logging for this WEM session
-                    session_logger = setup_wem_logging()
-                    data_source_text = "Friday Close" if use_friday_close else "Most Recent"
-                    pricing_mode_text = "regular hours" if regular_hours_only else "extended hours"
-                    session_logger.info(f"Starting WEM data update using {data_source_text} data with {pricing_mode_text} pricing...")
-                    
-                    # Use the database session within a context manager
-                    with get_db_connection() as db_session:
-                        update_all_wem_stocks(db_session, regular_hours_only, use_friday_close, session_logger)
-                    
-                    session_logger.info(f"WEM data update completed using {data_source_text} data with {pricing_mode_text} pricing")
-                    
-                    # Log session end
-                    session_logger.info("=" * 80)
-                    session_logger.info(f"WEM CALCULATION SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                    session_logger.info("=" * 80)
-                    
-                    st.success(f"WEM data updated successfully using {data_source_text} data with {pricing_mode_text} pricing!")
-                    # Rerun the app to show updated data
-                    time.sleep(1)  # Small delay to ensure UI updates
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Failed to update WEM data: {str(e)}")
-                    if 'session_logger' in locals():
-                        session_logger.exception("WEM update error")
-
         # Stock management section
         st.subheader("Stock Management")
         
@@ -4495,10 +4465,11 @@ def main():
         # Default selected metrics matching exact user requirements:
         # ATM (6/13/25), Straddle Level, Strangle Level, WEM Points, WEM Spread, 
         # Delta 16 (+), S2, S1, Delta 16 (-), Delta Range, Delta Range %
+        # Note: RSI is available but NOT enabled by default; to add, append 'rsi' below
         default_metrics = [
             'atm_price', 'straddle', 'strangle', 'wem_points', 'wem_spread', 
             'delta_16_plus', 'straddle_2', 'straddle_1', 'delta_16_minus',
-            'delta_range', 'delta_range_pct', 'rsi', 'upcoming_earnings_date'
+            'delta_range', 'delta_range_pct', 'upcoming_earnings_date'
         ]
         if layout == 'vertical':
             default_metrics.insert(0, 'symbol')
@@ -4625,10 +4596,81 @@ def main():
             else:
                 st.caption("ℹ️ No categories selected - only main sheet will be exported")
         
+        # Run WEM button - primary action after config
+        st.divider()
+        st.subheader("🔄 Update Data")
+        if st.button("Run WEM", type="primary", help="Fetch latest options data and calculate WEM"):
+            with st.spinner("Updating WEM data..."):
+                try:
+                    session_logger = setup_wem_logging()
+                    data_source_text = "Friday Close" if st.session_state.get('use_friday_close', True) else "Most Recent"
+                    pricing_mode_text = "regular hours" if st.session_state.get('regular_hours_only', True) else "extended hours"
+                    session_logger.info(f"Starting WEM data update using {data_source_text} data with {pricing_mode_text} pricing...")
+                    
+                    with get_db_connection() as db_session:
+                        update_all_wem_stocks(db_session, st.session_state.get('regular_hours_only', True), 
+                                             st.session_state.get('use_friday_close', True), session_logger)
+                    
+                    session_logger.info(f"WEM data update completed using {data_source_text} data with {pricing_mode_text} pricing")
+                    session_logger.info("=" * 80)
+                    session_logger.info(f"WEM CALCULATION SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    session_logger.info("=" * 80)
+                    
+                    st.success(f"WEM data updated successfully using {data_source_text} data with {pricing_mode_text} pricing!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to update WEM data: {str(e)}")
+                    if 'session_logger' in locals():
+                        session_logger.exception("WEM update error")
+
         # Export button (will be handled after data is loaded)
         export_data_requested = st.button("Export Data", help="Export WEM data to file")
         if export_data_requested:
             st.session_state.export_requested = True
+
+        # Update Defaults button - only show when DB differs from default_tickers.txt
+        def _get_default_tickers_diff():
+            """Compare DB tickers with default_tickers.txt and return diff info."""
+            try:
+                defaults_file = project_root / 'web' / 'wem_template' / 'default_tickers.txt'
+                if not defaults_file.exists():
+                    return None, None, None
+                file_tickers = set(s.strip().upper() for s in defaults_file.read_text(encoding='utf-8').splitlines() if s.strip())
+                with get_db_connection() as db_session:
+                    db_tickers = set(stock.symbol for stock in db_session.query(WEMStock).all())
+                new_tickers = file_tickers - db_tickers
+                removed_tickers = db_tickers - file_tickers
+                return new_tickers, removed_tickers, file_tickers
+            except Exception:
+                return None, None, None
+        
+        new_tickers, removed_tickers, file_tickers = _get_default_tickers_diff()
+        if new_tickers or removed_tickers:
+            st.divider()
+            diff_msg = []
+            if new_tickers:
+                diff_msg.append(f"+{len(new_tickers)} new")
+            if removed_tickers:
+                diff_msg.append(f"-{len(removed_tickers)} removed")
+            st.caption(f"📋 Default tickers changed: {', '.join(diff_msg)}")
+            if st.button("Update Defaults", help="Sync WEM stocks with default_tickers.txt"):
+                try:
+                    with get_db_connection() as db_session:
+                        # Add new tickers
+                        for sym in new_tickers:
+                            if not db_session.query(WEMStock).filter_by(symbol=sym).first():
+                                db_session.add(WEMStock(symbol=sym, is_default=True))
+                        # Remove old tickers
+                        for sym in removed_tickers:
+                            stock = db_session.query(WEMStock).filter_by(symbol=sym).first()
+                            if stock:
+                                db_session.delete(stock)
+                    st.success(f"Updated defaults: +{len(new_tickers)} added, -{len(removed_tickers)} removed")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to update defaults: {e}")
 
         # Maintenance tools at bottom of sidebar
         st.subheader("Maintenance")
@@ -4715,6 +4757,9 @@ def main():
                 
                 # Create WEM table
                 wem_df = create_wem_table(stocks_data, layout=layout, metrics=selected_metrics, sig_figs=sig_figs, max_digits=max_digits)
+                
+                # Store stocks_data for visualization (outside the db context)
+                st.session_state.wem_stocks_data = stocks_data
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
         logger.exception("Error getting WEM data")
@@ -5029,6 +5074,22 @@ def main():
                         with col4:
                             if 'n/a' in status_counts:
                                 st.info(f"➖ {status_counts['n/a']} N/A")
+
+            # WEM Visualization Section (imported from separate module)
+            from web.components.wem_visualizations import (
+                render_wem_visualizations,
+                render_wem_market_chart,
+                render_wem_comparison_chart
+            )
+            
+            # Market chart with WEM levels overlaid on candlestick
+            render_wem_market_chart()
+            
+            # Multi-symbol comparison chart
+            render_wem_comparison_chart()
+            
+            # Original table-based visualizations
+            render_wem_visualizations()
 
 def export_wem_excel_formatted(wem_df, excel_path, symbols, timestamp, selected_categories=None):
     """
