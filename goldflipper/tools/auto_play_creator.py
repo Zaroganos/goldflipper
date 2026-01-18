@@ -28,9 +28,10 @@ class StrategyType(Enum):
 
 class MomentumPlaybook(Enum):
     """Available playbooks for momentum strategy."""
-    GAP_MOVE = "gap_move"     # Trade with the gap direction
-    GAP_FADE = "gap_fade"     # Trade against the gap
-    MANUAL = "manual"         # No auto-entry conditions
+    GAP_MOVE = "gap_move"           # Trade with the gap direction
+    GAP_FADE = "gap_fade"           # Trade against the gap
+    GOLDFLIPPER_GAP_MOVE = "goldflipper_gap_move"  # Goldflipper Gap Move: straddle + OI confirmation
+    MANUAL = "manual"               # No auto-entry conditions
 
 
 class AutoPlayCreator:
@@ -119,6 +120,7 @@ class AutoPlayCreator:
         names = {
             MomentumPlaybook.GAP_MOVE: "Gap Move (trade with gap)",
             MomentumPlaybook.GAP_FADE: "Gap Fade (trade against gap)",
+            MomentumPlaybook.GOLDFLIPPER_GAP_MOVE: "⭐ Goldflipper Gap Move (straddle + OI)",
             MomentumPlaybook.MANUAL: "Manual Entry"
         }
         return names.get(playbook, playbook.value)
@@ -205,6 +207,81 @@ class AutoPlayCreator:
         else:  # fade_gap
             # Trade against the gap direction
             return "PUT" if gap_type == "up" else "CALL"
+    
+    def calculate_goldflipper_gap_data(
+        self,
+        symbol: str,
+        current_price: float,
+        calls_df,
+        puts_df
+    ) -> Dict[str, Any]:
+        """
+        Calculate Goldflipper Gap Move-specific data: ATM straddle price and open interest.
+        
+        Args:
+            symbol: Stock symbol
+            current_price: Current stock price
+            calls_df: DataFrame of call options
+            puts_df: DataFrame of put options
+            
+        Returns:
+            Dict with straddle_price, call_open_interest, put_open_interest
+        """
+        result = {
+            "straddle_price": None,
+            "stock_price_at_detection": current_price,
+            "call_open_interest": None,
+            "put_open_interest": None,
+            "atm_strike": None
+        }
+        
+        try:
+            if calls_df is None or puts_df is None:
+                return result
+            if calls_df.empty or puts_df.empty:
+                return result
+            
+            # Find ATM strike (closest to current price)
+            call_strikes = calls_df['strike'].values
+            atm_strike = min(call_strikes, key=lambda x: abs(x - current_price))
+            result["atm_strike"] = atm_strike
+            
+            # Get ATM call data
+            atm_call = calls_df[calls_df['strike'] == atm_strike]
+            if not atm_call.empty:
+                atm_call_row = atm_call.iloc[0]
+                call_bid = float(atm_call_row.get('bid', 0) or 0)
+                call_ask = float(atm_call_row.get('ask', 0) or 0)
+                call_mid = (call_bid + call_ask) / 2 if call_bid and call_ask else 0
+                result["call_open_interest"] = int(atm_call_row.get('openInterest', 0) or 0)
+            else:
+                call_mid = 0
+            
+            # Get ATM put data
+            atm_put = puts_df[puts_df['strike'] == atm_strike]
+            if not atm_put.empty:
+                atm_put_row = atm_put.iloc[0]
+                put_bid = float(atm_put_row.get('bid', 0) or 0)
+                put_ask = float(atm_put_row.get('ask', 0) or 0)
+                put_mid = (put_bid + put_ask) / 2 if put_bid and put_ask else 0
+                result["put_open_interest"] = int(atm_put_row.get('openInterest', 0) or 0)
+            else:
+                put_mid = 0
+            
+            # Calculate straddle price (ATM call + ATM put)
+            if call_mid > 0 and put_mid > 0:
+                result["straddle_price"] = round(call_mid + put_mid, 2)
+            
+            logging.info(
+                f"[{symbol}] Goldflipper Gap Move data: ATM strike={atm_strike}, "
+                f"straddle=${result['straddle_price']}, "
+                f"call_OI={result['call_open_interest']}, put_OI={result['put_open_interest']}"
+            )
+            
+        except Exception as e:
+            logging.warning(f"Error calculating Goldflipper Gap Move data for {symbol}: {e}")
+        
+        return result
     
     # =========================================================================
     # Template Loading
@@ -569,6 +646,8 @@ class AutoPlayCreator:
         # Set trade direction based on playbook
         if self.current_playbook == MomentumPlaybook.GAP_MOVE:
             gap_info['trade_direction'] = 'with_gap'
+        elif self.current_playbook == MomentumPlaybook.GOLDFLIPPER_GAP_MOVE:
+            gap_info['trade_direction'] = 'with_gap'  # Goldflipper Gap Move also trades with gap
         elif self.current_playbook == MomentumPlaybook.GAP_FADE:
             gap_info['trade_direction'] = 'fade_gap'
         else:
@@ -634,15 +713,58 @@ class AutoPlayCreator:
         }
         
         # Time management
+        if self.current_playbook == MomentumPlaybook.GOLDFLIPPER_GAP_MOVE:
+            max_hold = 3  # Goldflipper Gap Move: shorter hold
+        elif self.current_playbook == MomentumPlaybook.GAP_MOVE:
+            max_hold = 5
+        else:
+            max_hold = 1  # Gap fade: same day
+            
         time_management = {
             "same_day_exit": self.current_playbook == MomentumPlaybook.GAP_FADE,
-            "max_hold_days": 5 if self.current_playbook == MomentumPlaybook.GAP_MOVE else 1,
+            "max_hold_days": max_hold,
             "exit_before_close": True,
             "exit_minutes_before_close": 15
         }
         
+        # Determine momentum type for config
+        if self.current_playbook == MomentumPlaybook.GOLDFLIPPER_GAP_MOVE:
+            momentum_type = "goldflipper_gap"
+        elif self.current_playbook in (MomentumPlaybook.GAP_MOVE, MomentumPlaybook.GAP_FADE):
+            momentum_type = "gap"
+        else:
+            momentum_type = "manual"
+        
+        # Build momentum config
+        momentum_config = {
+            "momentum_type": momentum_type,
+            "wait_for_confirmation": True,
+            "confirmation_period_minutes": 60 if self.current_playbook == MomentumPlaybook.GOLDFLIPPER_GAP_MOVE else 15,
+            "lunch_break_restriction": True,
+            "lunch_break_start_hour": 12,
+            "lunch_break_start_minute": 0,
+            "lunch_break_end_hour": 13,
+            "lunch_break_end_minute": 0,
+            "first_hour_restriction": self.current_playbook == MomentumPlaybook.GOLDFLIPPER_GAP_MOVE
+        }
+        
+        # Add Goldflipper Gap Move-specific config
+        if self.current_playbook == MomentumPlaybook.GOLDFLIPPER_GAP_MOVE:
+            momentum_config["straddle_config"] = {
+                "enabled": True,
+                "min_gap_vs_straddle_ratio": 1.0
+            }
+            momentum_config["open_interest_config"] = {
+                "enabled": True,
+                "min_directional_oi": 500,
+                "min_oi_ratio": 1.0
+            }
+        
+        # Play name prefix
+        play_prefix = "GFGM" if self.current_playbook == MomentumPlaybook.GOLDFLIPPER_GAP_MOVE else "GAP"
+        
         play = {
-            "play_name": self.generate_play_name(option_symbol, prefix="GAP"),
+            "play_name": self.generate_play_name(option_symbol, prefix=play_prefix),
             "symbol": symbol,
             "strategy": "momentum",
             "playbook": self.current_playbook.value if self.current_playbook else "manual",
@@ -655,6 +777,7 @@ class AutoPlayCreator:
             "play_expiration_date": expiration_date.strftime('%m/%d/%Y'),
             "entry_point": entry_point,
             "gap_info": gap_info,
+            "momentum_config": momentum_config,
             "take_profit": take_profit,
             "stop_loss": stop_loss,
             "time_management": time_management,
@@ -692,6 +815,17 @@ class AutoPlayCreator:
             },
             "creator": "auto"
         }
+        
+        # Add Goldflipper Gap Move-specific runtime data section with actual straddle/OI data
+        if self.current_playbook == MomentumPlaybook.GOLDFLIPPER_GAP_MOVE:
+            # Calculate actual straddle price and OI from option chain
+            goldflipper_gap_data = self.calculate_goldflipper_gap_data(
+                symbol=symbol,
+                current_price=current_price,
+                calls_df=market_data.get('calls'),
+                puts_df=market_data.get('puts')
+            )
+            play["goldflipper_gap_info"] = goldflipper_gap_data
         
         return play
     

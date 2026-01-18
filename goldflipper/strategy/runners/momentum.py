@@ -223,6 +223,8 @@ class MomentumStrategy(BaseStrategy):
         """
         if momentum_type == "gap":
             return self._evaluate_gap_entry(play)
+        elif momentum_type == "goldflipper_gap":
+            return self._evaluate_goldflipper_gap_entry(play)
         elif momentum_type == "squeeze":
             return self._evaluate_squeeze_entry(play)
         elif momentum_type == "ema_cross":
@@ -285,6 +287,265 @@ class MomentumStrategy(BaseStrategy):
             return True, details
         
         return False, {}
+    
+    # =========================================================================
+    # Goldflipper Gap Move Momentum Type Evaluation
+    # =========================================================================
+    
+    def _evaluate_goldflipper_gap_entry(
+        self, 
+        play: Dict[str, Any]
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Evaluate entry conditions for Goldflipper Gap Move momentum type.
+        
+        Goldflipper Gap Move-specific checks:
+        1. Gap information is valid
+        2. First hour restriction (no entries 9:30-10:30 AM)
+        3. Lunch break restriction (no entries 12:00-1:00 PM)
+        4. Gap exceeds straddle-implied move (if enabled)
+        5. Open interest confirms direction (if enabled)
+        6. Stock price near entry target
+        
+        Args:
+            play: Play dictionary with gap_info section
+            
+        Returns:
+            Tuple of (should_enter, details_dict)
+        """
+        symbol = play.get('symbol', '')
+        gap_info = play.get('gap_info', {})
+        now = datetime.now()
+        
+        # Validate gap information (basic gap checks)
+        if not self._validate_gap_info(play, gap_info):
+            self.logger.debug(f"[{symbol}] Goldflipper Gap Move: Gap info validation failed")
+            return False, {}
+        
+        # Check first hour restriction (9:30-10:30 AM)
+        first_hour_enabled = self.get_playbook_setting(
+            play, 'momentum_config.first_hour_restriction', True
+        )
+        if first_hour_enabled:
+            first_hour_mins = self.get_playbook_setting(
+                play, 'momentum_config.first_hour_end_minutes', 60
+            )
+            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+            first_hour_end = market_open + timedelta(minutes=first_hour_mins)
+            
+            if now < first_hour_end:
+                self.logger.debug(
+                    f"[{symbol}] Goldflipper Gap Move: First hour restriction active until "
+                    f"{first_hour_end.strftime('%H:%M')} (current: {now.strftime('%H:%M')})"
+                )
+                return False, {}
+        
+        # Check lunch break restriction (standard)
+        if self._is_in_restricted_entry_period(play, now):
+            self.logger.debug(f"[{symbol}] Goldflipper Gap Move: In lunch break restriction")
+            return False, {}
+        
+        # Check straddle level condition
+        straddle_ok, straddle_details = self._check_straddle_condition(play, gap_info)
+        if not straddle_ok:
+            self.logger.debug(f"[{symbol}] Goldflipper Gap Move: Straddle condition not met")
+            return False, {}
+        
+        # Check open interest condition
+        oi_ok, oi_details = self._check_open_interest_condition(play, gap_info)
+        if not oi_ok:
+            self.logger.debug(f"[{symbol}] Goldflipper Gap Move: Open interest condition not met")
+            return False, {}
+        
+        # Evaluate stock price entry conditions
+        should_enter = self._evaluate_entry_conditions(play)
+        
+        if should_enter:
+            details = {
+                'gap_type': gap_info.get('gap_type', 'unknown'),
+                'gap_pct': gap_info.get('gap_pct', 0),
+                'trade_direction': gap_info.get('trade_direction', 'with_gap'),
+                'goldflipper_gap_mode': True,
+                **straddle_details,
+                **oi_details
+            }
+            self.logger.info(
+                f"[{symbol}] Goldflipper Gap Move entry signal: gap={details['gap_pct']:.2f}%, "
+                f"straddle_ratio={straddle_details.get('gap_vs_straddle_ratio', 'N/A')}, "
+                f"oi_ratio={oi_details.get('oi_ratio', 'N/A')}"
+            )
+            return True, details
+        
+        return False, {}
+    
+    def _check_straddle_condition(
+        self,
+        play: Dict[str, Any],
+        gap_info: Dict[str, Any]
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Check if gap exceeds straddle-implied move.
+        
+        The straddle price represents the market's expected move.
+        For Goldflipper Gap Move, we want the gap to exceed this expected move.
+        
+        Args:
+            play: Play dictionary
+            gap_info: Gap information
+            
+        Returns:
+            Tuple of (condition_met, details_dict)
+        """
+        symbol = play.get('symbol', '')
+        
+        # Check if straddle condition is enabled
+        straddle_enabled = self.get_playbook_setting(
+            play, 'momentum_config.straddle_config.enabled', True
+        )
+        
+        if not straddle_enabled:
+            return True, {'straddle_check': 'disabled'}
+        
+        # Get straddle price from play's goldflipper_gap_info or calculate
+        goldflipper_gap_info = play.get('goldflipper_gap_info', {})
+        straddle_price = goldflipper_gap_info.get('straddle_price')
+        stock_price = goldflipper_gap_info.get('stock_price_at_detection') or gap_info.get('gap_open', 0)
+        
+        if not straddle_price or straddle_price <= 0:
+            # If no straddle data available, log warning but allow entry
+            self.logger.warning(
+                f"[{symbol}] Goldflipper Gap Move: No straddle price available, skipping straddle check"
+            )
+            return True, {'straddle_check': 'no_data'}
+        
+        if stock_price <= 0:
+            self.logger.warning(f"[{symbol}] Goldflipper Gap Move: Invalid stock price for straddle check")
+            return False, {'straddle_check': 'invalid_price'}
+        
+        # Calculate straddle-implied move as percentage
+        straddle_implied_pct = (straddle_price / stock_price) * 100
+        
+        # Get actual gap percentage
+        gap_pct = abs(gap_info.get('gap_pct', 0))
+        
+        # Calculate ratio of gap to straddle-implied move
+        gap_vs_straddle_ratio = gap_pct / straddle_implied_pct if straddle_implied_pct > 0 else 0
+        
+        # Get minimum ratio from playbook
+        min_ratio = self.get_playbook_setting(
+            play, 'momentum_config.straddle_config.min_gap_vs_straddle_ratio', 1.0
+        )
+        
+        condition_met = gap_vs_straddle_ratio >= min_ratio
+        
+        details = {
+            'straddle_check': 'passed' if condition_met else 'failed',
+            'straddle_price': straddle_price,
+            'straddle_implied_pct': round(straddle_implied_pct, 2),
+            'gap_vs_straddle_ratio': round(gap_vs_straddle_ratio, 2),
+            'min_ratio_required': min_ratio
+        }
+        
+        if not condition_met:
+            self.logger.debug(
+                f"[{symbol}] Goldflipper Gap Move: Gap {gap_pct:.2f}% < straddle-implied {straddle_implied_pct:.2f}% "
+                f"(ratio {gap_vs_straddle_ratio:.2f} < {min_ratio})"
+            )
+        
+        return condition_met, details
+    
+    def _check_open_interest_condition(
+        self,
+        play: Dict[str, Any],
+        gap_info: Dict[str, Any]
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Check if open interest confirms directional bias.
+        
+        For calls (gap up): Want higher call OI relative to puts
+        For puts (gap down): Want higher put OI relative to calls
+        
+        Args:
+            play: Play dictionary
+            gap_info: Gap information
+            
+        Returns:
+            Tuple of (condition_met, details_dict)
+        """
+        symbol = play.get('symbol', '')
+        
+        # Check if OI condition is enabled
+        oi_enabled = self.get_playbook_setting(
+            play, 'momentum_config.open_interest_config.enabled', True
+        )
+        
+        if not oi_enabled:
+            return True, {'oi_check': 'disabled'}
+        
+        # Get OI data from play's goldflipper_gap_info
+        goldflipper_gap_info = play.get('goldflipper_gap_info', {})
+        call_oi = goldflipper_gap_info.get('call_open_interest', 0)
+        put_oi = goldflipper_gap_info.get('put_open_interest', 0)
+        
+        if call_oi == 0 and put_oi == 0:
+            self.logger.warning(
+                f"[{symbol}] Goldflipper Gap Move: No OI data available, skipping OI check"
+            )
+            return True, {'oi_check': 'no_data'}
+        
+        # Determine trade direction
+        gap_type = gap_info.get('gap_type', '').lower()
+        trade_direction = gap_info.get('trade_direction', 'with_gap')
+        
+        # Determine which side we're trading
+        if trade_direction == 'with_gap':
+            trading_calls = gap_type == 'up'
+        else:  # fade_gap
+            trading_calls = gap_type == 'down'
+        
+        # Calculate OI ratio based on direction
+        if trading_calls:
+            oi_ratio = call_oi / put_oi if put_oi > 0 else float('inf')
+            directional_oi = call_oi
+        else:
+            oi_ratio = put_oi / call_oi if call_oi > 0 else float('inf')
+            directional_oi = put_oi
+        
+        # Get minimum requirements from playbook
+        min_directional_oi = self.get_playbook_setting(
+            play, 'momentum_config.open_interest_config.min_directional_oi', 500
+        )
+        min_oi_ratio = self.get_playbook_setting(
+            play, 'momentum_config.open_interest_config.min_oi_ratio', 1.0
+        )
+        
+        # Check conditions
+        oi_sufficient = directional_oi >= min_directional_oi
+        ratio_sufficient = oi_ratio >= min_oi_ratio
+        condition_met = oi_sufficient and ratio_sufficient
+        
+        details = {
+            'oi_check': 'passed' if condition_met else 'failed',
+            'call_oi': call_oi,
+            'put_oi': put_oi,
+            'oi_ratio': round(oi_ratio, 2) if oi_ratio != float('inf') else 'inf',
+            'directional_oi': directional_oi,
+            'trading_side': 'CALL' if trading_calls else 'PUT',
+            'min_directional_oi': min_directional_oi,
+            'min_oi_ratio': min_oi_ratio
+        }
+        
+        if not condition_met:
+            reason = []
+            if not oi_sufficient:
+                reason.append(f"OI {directional_oi} < min {min_directional_oi}")
+            if not ratio_sufficient:
+                reason.append(f"ratio {oi_ratio:.2f} < min {min_oi_ratio}")
+            self.logger.debug(
+                f"[{symbol}] Goldflipper Gap Move: OI check failed - {', '.join(reason)}"
+            )
+        
+        return condition_met, details
     
     # =========================================================================
     # Squeeze Momentum Type Evaluation (FUTURE)
@@ -412,15 +673,26 @@ class MomentumStrategy(BaseStrategy):
         Check if confirmation period has passed (if required).
         
         Some playbooks wait for price confirmation before entry
-        to avoid false breakouts.
+        to avoid false breakouts. Also checks for restricted entry
+        periods like lunch break.
         
         Args:
             play: Play dictionary
             gap_info: Gap information
             
         Returns:
-            True if confirmation period satisfied or not required
+            True if confirmation period satisfied and not in restricted period
         """
+        now = datetime.now()
+        symbol = play.get('symbol', '')
+        
+        # Check if we're in a restricted entry period (e.g., lunch break)
+        if self._is_in_restricted_entry_period(play, now):
+            self.logger.debug(
+                f"[{symbol}] In restricted entry period (lunch break), skipping entry"
+            )
+            return False
+        
         wait_for_confirmation = self.get_playbook_setting(
             play, 'momentum_config.wait_for_confirmation', False
         )
@@ -433,7 +705,6 @@ class MomentumStrategy(BaseStrategy):
         )
         
         # Get market open time (9:30 AM ET)
-        now = datetime.now()
         market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
         
         # Check if we've passed the confirmation period
@@ -441,7 +712,7 @@ class MomentumStrategy(BaseStrategy):
         
         if now < confirmation_time:
             self.logger.debug(
-                f"Waiting for confirmation: {confirmation_minutes} mins after open "
+                f"[{symbol}] Waiting for confirmation: {confirmation_minutes} mins after open "
                 f"(current: {now.strftime('%H:%M')}, target: {confirmation_time.strftime('%H:%M')})"
             )
             return False
@@ -457,6 +728,65 @@ class MomentumStrategy(BaseStrategy):
                 pass
         
         return True
+    
+    def _is_in_restricted_entry_period(
+        self,
+        play: Dict[str, Any],
+        now: Optional[datetime] = None
+    ) -> bool:
+        """
+        Check if current time is in a restricted entry period.
+        
+        Restricted periods (like lunch break) prevent new position entries
+        but do NOT prevent position exits - existing positions can still
+        close if TP/SL conditions are met.
+        
+        Args:
+            play: Play dictionary
+            now: Current datetime (defaults to datetime.now())
+            
+        Returns:
+            True if in a restricted entry period
+        """
+        if now is None:
+            now = datetime.now()
+        
+        # Check lunch break restriction
+        lunch_break_enabled = self.get_playbook_setting(
+            play, 'momentum_config.lunch_break_restriction', True  # Default ON
+        )
+        
+        if lunch_break_enabled:
+            # Get lunch break times from playbook (defaults: 12:00 - 13:00 ET)
+            lunch_start_hour = self.get_playbook_setting(
+                play, 'momentum_config.lunch_break_start_hour', 12
+            )
+            lunch_start_minute = self.get_playbook_setting(
+                play, 'momentum_config.lunch_break_start_minute', 0
+            )
+            lunch_end_hour = self.get_playbook_setting(
+                play, 'momentum_config.lunch_break_end_hour', 13
+            )
+            lunch_end_minute = self.get_playbook_setting(
+                play, 'momentum_config.lunch_break_end_minute', 0
+            )
+            
+            lunch_start = now.replace(
+                hour=lunch_start_hour, minute=lunch_start_minute, 
+                second=0, microsecond=0
+            )
+            lunch_end = now.replace(
+                hour=lunch_end_hour, minute=lunch_end_minute,
+                second=0, microsecond=0
+            )
+            
+            if lunch_start <= now < lunch_end:
+                return True
+        
+        # Future: Add other restricted periods here (e.g., first 5 mins, last 30 mins)
+        # These can be controlled via playbook settings
+        
+        return False
     
     def _evaluate_entry_conditions(self, play: Dict[str, Any]) -> bool:
         """

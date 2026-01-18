@@ -14,7 +14,8 @@ authors = [
 ]
 dependencies = [
     "alpaca-py>=0.43.2",
-    "yfinance>=0.2.66",
+    "yfinance>=1.0",
+    "marketdata-sdk-py[pandas]>=1.1.0",
     "pandas>=2.3.3",
     "numpy>=2.0,<3.0",
     "matplotlib>=3.10.0",

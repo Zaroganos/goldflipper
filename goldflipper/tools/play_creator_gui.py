@@ -59,6 +59,7 @@ class PlaybookType(Enum):
     # Momentum
     MOMENTUM_GAP_MOVE = "gap_move"
     MOMENTUM_GAP_FADE = "gap_fade"
+    MOMENTUM_GOLDFLIPPER_GAP = "goldflipper_gap_move"
     MOMENTUM_MANUAL = "manual"
     
     # Sell Puts
@@ -66,22 +67,30 @@ class PlaybookType(Enum):
     SELL_PUTS_TASTY_30 = "tasty_30_delta"
 
 
+# Custom (dialed-in) playbooks vs basic templates
+# Custom playbooks have been specifically tuned and tested
+CUSTOM_PLAYBOOKS = {
+    "goldflipper_gap_move",  # Goldflipper Gap Move - straddle + OI confirmation
+    # Future: "goldflipper_option_swing" when implemented
+}
+
 STRATEGY_PLAYBOOKS = {
     StrategyType.OPTION_SWINGS: [
-        ("Default", "default"),
-        ("Playbook v3 (Short Swing)", "pb_v3"),
-        ("Playbook v3 (Long Swing)", "pb_v3_long"),
+        ("Default", "default", "template"),
+        ("Playbook v3 (Short Swing)", "pb_v3", "template"),
+        ("Playbook v3 (Long Swing)", "pb_v3_long", "template"),
     ],
     StrategyType.MOMENTUM: [
-        ("Gap Move (with gap)", "gap_move"),
-        ("Gap Fade (against gap)", "gap_fade"),
-        ("Manual Entry", "manual")
+        ("Gap Move (with gap)", "gap_move", "template"),
+        ("Gap Fade (against gap)", "gap_fade", "template"),
+        ("⭐ Goldflipper Gap Move", "goldflipper_gap_move", "custom"),
+        ("Manual Entry", "manual", "template")
     ],
     StrategyType.SELL_PUTS: [
-        ("Default (30-delta)", "default"),
-        ("Tasty 30-Delta", "tasty_30_delta")
+        ("Default (30-delta)", "default", "template"),
+        ("Tasty 30-Delta", "tasty_30_delta", "template")
     ],
-    StrategyType.SPREADS: [("Default", "default")]
+    StrategyType.SPREADS: [("Default", "default", "template")]
 }
 
 STRATEGY_DESCRIPTIONS = {
@@ -200,6 +209,21 @@ class PlayCreatorGUI:
         self.gap_type = tk.StringVar(value="--")
         self.previous_close = tk.StringVar(value="--")
         
+        # Momentum-specific configuration (simplified: confirmation_minutes controls entry delay)
+        self.momentum_confirmation_minutes = tk.IntVar(value=15)  # 0=immediate, 60=full first hour
+        self.momentum_lunch_break_enabled = tk.BooleanVar(value=True)
+        self.momentum_lunch_start_hour = tk.IntVar(value=12)
+        self.momentum_lunch_start_minute = tk.IntVar(value=0)
+        self.momentum_lunch_end_hour = tk.IntVar(value=13)
+        self.momentum_lunch_end_minute = tk.IntVar(value=0)
+        
+        # Goldflipper Gap Move custom configuration
+        self.goldflipper_gap_straddle_enabled = tk.BooleanVar(value=True)
+        self.goldflipper_gap_min_straddle_ratio = tk.DoubleVar(value=1.0)
+        self.goldflipper_gap_oi_enabled = tk.BooleanVar(value=True)
+        self.goldflipper_gap_min_directional_oi = tk.IntVar(value=500)
+        self.goldflipper_gap_min_oi_ratio = tk.DoubleVar(value=1.0)
+        
         # Option chain data
         self.option_chain_data = None
         self.expirations_list = []
@@ -217,19 +241,23 @@ class PlayCreatorGUI:
         self.root.rowconfigure(0, weight=1)
         
         # Main container with scrollbar
-        main_canvas = tk.Canvas(self.root)
-        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=main_canvas.yview)
-        self.main_frame = ttk.Frame(main_canvas, padding="10")
+        self.main_canvas = tk.Canvas(self.root)
+        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.main_canvas.yview)
+        self.main_frame = ttk.Frame(self.main_canvas, padding="10")
         
         self.main_frame.bind(
             "<Configure>",
-            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+            lambda e: self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all"))
         )
         
-        main_canvas.create_window((0, 0), window=self.main_frame, anchor="nw")
-        main_canvas.configure(yscrollcommand=scrollbar.set)
+        # Create window and store the ID for resizing
+        self.canvas_window = self.main_canvas.create_window((0, 0), window=self.main_frame, anchor="nw")
+        self.main_canvas.configure(yscrollcommand=scrollbar.set)
         
-        main_canvas.grid(row=0, column=0, sticky="nsew")
+        # Bind canvas resize to stretch main_frame horizontally
+        self.main_canvas.bind("<Configure>", self._on_canvas_configure)
+        
+        self.main_canvas.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
         
         # Configure main frame grid - 3 columns
@@ -337,16 +365,29 @@ class PlayCreatorGUI:
         strategy_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
         strategy_combo.bind("<<ComboboxSelected>>", self._on_strategy_changed)
         
-        # Playbook dropdown
+        # Playbook dropdown with type indicator
         ttk.Label(frame, text="Playbook:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        playbook_frame = ttk.Frame(frame)
+        playbook_frame.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+        
         self.playbook_combo = ttk.Combobox(
-            frame,
+            playbook_frame,
             textvariable=self.current_playbook,
             state="readonly",
             width=25
         )
-        self.playbook_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+        self.playbook_combo.pack(side=tk.LEFT)
         self.playbook_combo.bind("<<ComboboxSelected>>", self._on_playbook_changed)
+        
+        # Playbook type indicator label (CUSTOM vs TEMPLATE)
+        self.playbook_type_label = tk.Label(
+            playbook_frame,
+            text="TEMPLATE",
+            font=('Helvetica', 8, 'bold'),
+            fg="gray",
+            padx=5
+        )
+        self.playbook_type_label.pack(side=tk.LEFT, padx=(5, 0))
         
         # Strategy description
         self.strategy_desc_label = ttk.Label(
@@ -379,9 +420,24 @@ class PlayCreatorGUI:
         ttk.Label(gap_inner, text="Prev Close:").pack(side=tk.LEFT, padx=(20, 5))
         ttk.Label(gap_inner, textvariable=self.previous_close).pack(side=tk.LEFT)
         
-        # Initially hide gap frame (only show for momentum)
-        self._update_gap_visibility()
+        # Momentum Config Panel (only visible for momentum)
+        self._create_momentum_config_panel(parent)
         
+        # Initially hide gap/momentum frames (only show for momentum)
+        self._update_gap_visibility()
+    
+    def _create_momentum_config_panel(self, parent):
+        """Create Momentum-specific configuration panel - placeholder, actual UI in Other Options."""
+        # Create a hidden frame as placeholder for compatibility
+        self.momentum_config_frame = ttk.Frame(parent)
+        self.momentum_config_frame.grid(row=1, column=0, sticky="ew", pady=0)
+        self.momentum_config_frame.grid_remove()
+        
+        # Goldflipper Gap config frame - placeholder for compatibility  
+        self.goldflipper_gap_config_frame = ttk.Frame(parent)
+        self.goldflipper_gap_config_frame.grid(row=2, column=0, sticky="ew", pady=0)
+        self.goldflipper_gap_config_frame.grid_remove()
+    
     def _create_config_panel(self, parent):
         """Create the play configuration panel."""
         frame = ttk.LabelFrame(parent, text="Play Configuration", padding="10")
@@ -1556,26 +1612,116 @@ class PlayCreatorGUI:
             return {'take_profit_pct': 50.0, 'stop_loss_pct': 30.0, 'entry_buffer': 0.05}
     
     def _create_other_options_panel(self, parent):
-        """Create the other options panel."""
-        frame = ttk.LabelFrame(parent, text="Other Options", padding="10")
-        frame.grid(row=4, column=0, sticky="ew", pady=5)  # row 4 now since action buttons is row 2, conditionals is row 3
-        frame.columnconfigure(0, weight=1)
+        """Create the other options panel with strategy-specific config."""
+        self.other_options_frame = ttk.LabelFrame(parent, text="Other Options", padding="10")
+        self.other_options_frame.grid(row=4, column=0, sticky="nsew", pady=5)
+        self.other_options_frame.columnconfigure(0, weight=1)
         
-        # Note: Play Class is now inferred from conditional orders, not selectable
-        # SIMPLE = no parent, OTO = has parent (waiting to be triggered)
-        
-        # Future placeholder for additional options
-        placeholder = ttk.Label(
-            frame,
-            text="Additional options may be added here in future updates.",
-            foreground="gray",
-            font=('Helvetica', 8)
+        # === Momentum Timing Config (shown only for momentum strategy) ===
+        self.momentum_options_frame = ttk.LabelFrame(
+            self.other_options_frame, text="Momentum Timing", padding="5"
         )
-        placeholder.pack(anchor="w")
+        self.momentum_options_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Row 1: No Entry Until X:XX AM (consolidates wait for confirmation + first hour)
+        entry_time_frame = ttk.Frame(self.momentum_options_frame)
+        entry_time_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Label(entry_time_frame, text="No Entry Until:").pack(side=tk.LEFT, padx=5)
+        ttk.Spinbox(
+            entry_time_frame,
+            textvariable=self.momentum_confirmation_minutes,
+            from_=0, to=120, width=4
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(entry_time_frame, text="mins after 9:30 AM", foreground="gray").pack(side=tk.LEFT, padx=2)
+        
+        # Row 2: Lunch Break Restriction
+        lunch_frame = ttk.Frame(self.momentum_options_frame)
+        lunch_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Checkbutton(
+            lunch_frame, text="Lunch Break:",
+            variable=self.momentum_lunch_break_enabled
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Spinbox(lunch_frame, textvariable=self.momentum_lunch_start_hour, from_=9, to=15, width=3).pack(side=tk.LEFT)
+        ttk.Label(lunch_frame, text=":").pack(side=tk.LEFT)
+        ttk.Spinbox(lunch_frame, textvariable=self.momentum_lunch_start_minute, from_=0, to=59, width=3).pack(side=tk.LEFT)
+        ttk.Label(lunch_frame, text="-").pack(side=tk.LEFT, padx=3)
+        ttk.Spinbox(lunch_frame, textvariable=self.momentum_lunch_end_hour, from_=10, to=16, width=3).pack(side=tk.LEFT)
+        ttk.Label(lunch_frame, text=":").pack(side=tk.LEFT)
+        ttk.Spinbox(lunch_frame, textvariable=self.momentum_lunch_end_minute, from_=0, to=59, width=3).pack(side=tk.LEFT)
+        ttk.Label(lunch_frame, text="ET", foreground="gray").pack(side=tk.LEFT, padx=3)
+        
+        # Initially hide momentum options
+        self.momentum_options_frame.pack_forget()
+        
+        # === Goldflipper Gap Move Config (shown only for that playbook) ===
+        self.goldflipper_options_frame = ttk.LabelFrame(
+            self.other_options_frame, text="⭐ Goldflipper Gap Move", padding="5"
+        )
+        self.goldflipper_options_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Straddle check row
+        straddle_frame = ttk.Frame(self.goldflipper_options_frame)
+        straddle_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Checkbutton(
+            straddle_frame, text="Straddle Check:",
+            variable=self.goldflipper_gap_straddle_enabled
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Label(straddle_frame, text="Min Ratio:").pack(side=tk.LEFT, padx=(5, 2))
+        ttk.Spinbox(
+            straddle_frame, textvariable=self.goldflipper_gap_min_straddle_ratio,
+            from_=0.5, to=3.0, increment=0.1, width=5
+        ).pack(side=tk.LEFT)
+        
+        # OI check row
+        oi_frame = ttk.Frame(self.goldflipper_options_frame)
+        oi_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Checkbutton(
+            oi_frame, text="Open Interest:",
+            variable=self.goldflipper_gap_oi_enabled
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Label(oi_frame, text="Min OI:").pack(side=tk.LEFT, padx=(5, 2))
+        ttk.Spinbox(
+            oi_frame, textvariable=self.goldflipper_gap_min_directional_oi,
+            from_=100, to=5000, increment=100, width=6
+        ).pack(side=tk.LEFT)
+        ttk.Label(oi_frame, text="Ratio:").pack(side=tk.LEFT, padx=(5, 2))
+        ttk.Spinbox(
+            oi_frame, textvariable=self.goldflipper_gap_min_oi_ratio,
+            from_=0.5, to=3.0, increment=0.1, width=5
+        ).pack(side=tk.LEFT)
+        
+        # Auto contract selection info
+        auto_info = ttk.Label(
+            self.goldflipper_options_frame,
+            text="Auto-selects ATM contract ≤14 DTE based on gap direction",
+            foreground="#DAA520", font=('Helvetica', 8)
+        )
+        auto_info.pack(fill=tk.X, padx=5, pady=(2, 0))
+        
+        # Initially hide goldflipper options
+        self.goldflipper_options_frame.pack_forget()
+        
+        # Placeholder when no strategy-specific options
+        self.no_options_label = ttk.Label(
+            self.other_options_frame,
+            text="No additional options for this strategy/playbook.",
+            foreground="gray", font=('Helvetica', 8)
+        )
+        self.no_options_label.pack(anchor="w")
         
     # =========================================================================
     # Event Handlers
     # =========================================================================
+    
+    def _on_canvas_configure(self, event):
+        """Handle canvas resize - stretch main_frame to fill available width."""
+        # Update the width of the canvas window to match canvas width
+        self.main_canvas.itemconfig(self.canvas_window, width=event.width)
     
     def _bind_events(self):
         """Bind keyboard and other events."""
@@ -1607,16 +1753,97 @@ class PlayCreatorGUI:
         # Update preview
         self._update_preview()
         
+    def _get_playbook_value_from_display(self, display_name: str) -> str:
+        """Map playbook display name to internal value."""
+        try:
+            strategy = StrategyType(self.current_strategy.get())
+            playbooks = STRATEGY_PLAYBOOKS.get(strategy, [])
+            for pb in playbooks:
+                if pb[0] == display_name:  # pb[0] is display name, pb[1] is value
+                    return pb[1]
+        except (ValueError, KeyError):
+            pass
+        return display_name  # Fallback to display name if not found
+    
     def _on_playbook_changed(self, event=None):
         """Handle playbook selection change."""
-        playbook = self.current_playbook.get()
+        # Map display name to internal value (Combobox textvariable stores display text)
+        display_name = self.current_playbook.get()
+        playbook = self._get_playbook_value_from_display(display_name)
         strategy_str = self.current_strategy.get()
         
         # Load playbook defaults
         self._load_playbook_defaults(strategy_str, playbook)
         
+        # Update playbook type indicator (CUSTOM vs TEMPLATE)
+        self._update_playbook_type_indicator(playbook)
+        
+        # Update visibility of strategy-specific panels (e.g., Goldflipper Gap Move config)
+        self._update_gap_visibility()
+        
+        # Auto-select contract for Goldflipper Gap Move (user can still change it)
+        if playbook == "goldflipper_gap_move":
+            self._auto_select_goldflipper_contract()
+        
         # Update preview
         self._update_preview()
+    
+    def _auto_select_goldflipper_contract(self):
+        """Auto-select contract for Goldflipper Gap Move based on gap direction and ATM strike.
+        
+        Called when playbook changes to goldflipper_gap_move OR after market data is fetched.
+        - Trade type: set from gap direction (UP→CALL, DOWN→PUT)
+        - Expiration: first available ≤14 DTE
+        - Strike: ATM (select row in treeview and populate all fields)
+        """
+        # Set trade type based on gap direction (if gap data available)
+        gap_type = self.gap_type.get().upper()
+        if gap_type == "UP":
+            self.trade_type.set("CALL")
+        elif gap_type == "DOWN":
+            self.trade_type.set("PUT")
+        
+        # Auto-select expiration ≤14 DTE (without triggering chain refresh here)
+        if self.expirations_list:
+            today = datetime.now()
+            for exp in self.expirations_list:
+                try:
+                    exp_date = datetime.strptime(exp, '%Y-%m-%d')
+                    dte = (exp_date - today).days
+                    if 0 < dte <= 14:
+                        self.expiration.set(exp)
+                        break
+                except ValueError:
+                    continue
+        
+        # Auto-select ATM strike in the treeview
+        try:
+            current_price = float(self.current_price.get().replace('$', '').replace('--', '0'))
+            if current_price > 0 and self.chain_tree.get_children():
+                # Find ATM strike row
+                best_item = None
+                best_diff = float('inf')
+                for item_id in self.chain_tree.get_children():
+                    item_values = self.chain_tree.item(item_id, 'values')
+                    if item_values:
+                        try:
+                            strike = float(item_values[0])
+                            diff = abs(strike - current_price)
+                            if diff < best_diff:
+                                best_diff = diff
+                                best_item = item_id
+                        except (ValueError, IndexError):
+                            continue
+                
+                if best_item:
+                    # Select the row, scroll to it, and trigger double-click to populate fields
+                    self.chain_tree.selection_set(best_item)
+                    self.chain_tree.see(best_item)
+                    self._on_chain_double_click()  # Populates strike, entry price, greeks, updates preview
+        except (ValueError, TypeError):
+            pass
+        
+        self._update_contract_preview()
         
     def _on_expiration_changed(self, event=None):
         """Handle expiration selection change."""
@@ -1891,6 +2118,11 @@ class PlayCreatorGUI:
             # Refresh option chain
             self._refresh_option_chain()
             
+            # For Goldflipper Gap Move: ensure contract is auto-selected after chain loads
+            playbook_value = self._get_playbook_value_from_display(self.current_playbook.get())
+            if playbook_value == "goldflipper_gap_move":
+                self._auto_select_goldflipper_contract()
+            
             # Update contract preview in header
             self._update_contract_preview()
             
@@ -1931,10 +2163,10 @@ class PlayCreatorGUI:
             
     def _auto_select_trade_type(self, gap_pct: float):
         """Auto-select trade type based on gap and playbook."""
-        playbook = self.current_playbook.get()
+        playbook = self._get_playbook_value_from_display(self.current_playbook.get())
         gap_up = gap_pct > 0
         
-        if playbook == "gap_move":
+        if playbook == "gap_move" or playbook == "goldflipper_gap_move":
             # Trade with gap: gap up = CALL, gap down = PUT
             self.trade_type.set("CALL" if gap_up else "PUT")
         elif playbook == "gap_fade":
@@ -2022,10 +2254,23 @@ class PlayCreatorGUI:
             # Update strike combo
             self.strike_combo['values'] = [f"{s:.2f}" for s in sorted(strikes_added)]
             
-            # Auto-select ATM strike if none selected
-            if not self.strike_price.get() and current_price > 0 and strikes_added:
+            # Auto-select ATM strike if none selected, or always for Goldflipper Gap Move
+            is_goldflipper = self._get_playbook_value_from_display(self.current_playbook.get()) == "goldflipper_gap_move"
+            if current_price > 0 and strikes_added and (is_goldflipper or not self.strike_price.get()):
                 nearest_strike = min(strikes_added, key=lambda x: abs(x - current_price))
                 self.strike_price.set(f"{nearest_strike:.2f}")
+                
+                # For Goldflipper: select the row in treeview and populate all fields
+                if is_goldflipper:
+                    # Find and select the matching row in the chain_tree
+                    for item_id in self.chain_tree.get_children():
+                        item_values = self.chain_tree.item(item_id, 'values')
+                        if item_values and abs(float(item_values[0]) - nearest_strike) < 0.01:
+                            self.chain_tree.selection_set(item_id)
+                            self.chain_tree.see(item_id)  # Scroll to make visible
+                            # Trigger double-click handler to populate all fields
+                            self._on_chain_double_click()
+                            break
                 
             self._set_status(f"Loaded {len(strikes_added)} options", "green")
             
@@ -2057,21 +2302,56 @@ class PlayCreatorGUI:
             strategy = StrategyType(self.current_strategy.get())
             playbooks = STRATEGY_PLAYBOOKS.get(strategy, [])
             
+            # Extract display names (first element of each tuple)
             self.playbook_combo['values'] = [pb[0] for pb in playbooks]
             
             if playbooks:
                 self.current_playbook.set(playbooks[0][1])
                 self.playbook_combo.current(0)
+                # Update type indicator for the first playbook
+                self._update_playbook_type_indicator(playbooks[0][1])
+                # Load defaults for the first playbook
+                self._load_playbook_defaults(self.current_strategy.get(), playbooks[0][1])
                 
         except ValueError:
             pass
+    
+    def _update_playbook_type_indicator(self, playbook_value: str):
+        """Update the playbook type indicator label (CUSTOM vs TEMPLATE)."""
+        if playbook_value in CUSTOM_PLAYBOOKS:
+            self.playbook_type_label.config(text="CUSTOM", fg="#DAA520")  # Gold color
+        else:
+            self.playbook_type_label.config(text="TEMPLATE", fg="gray")
         
     def _update_gap_visibility(self):
-        """Show/hide gap frame based on strategy."""
-        if self.current_strategy.get() == StrategyType.MOMENTUM.value:
-            self.gap_frame.grid()
+        """Show/hide gap frame and strategy-specific options in Other Options panel."""
+        is_momentum = self.current_strategy.get() == StrategyType.MOMENTUM.value
+        playbook_value = self._get_playbook_value_from_display(self.current_playbook.get()) if hasattr(self, '_get_playbook_value_from_display') else self.current_playbook.get()
+        is_goldflipper_gap = playbook_value == "goldflipper_gap_move"
+        
+        # Show/hide gap frame (left column)
+        if hasattr(self, 'gap_frame'):
+            if is_momentum:
+                self.gap_frame.grid()
+            else:
+                self.gap_frame.grid_remove()
+        
+        # Show/hide strategy-specific options in Other Options panel (middle column)
+        # These are created in _create_other_options_panel which runs after _create_strategy_panel
+        if not hasattr(self, 'momentum_options_frame'):
+            return
+            
+        if is_momentum:
+            self.momentum_options_frame.pack(fill=tk.X, pady=(0, 5))
+            self.no_options_label.pack_forget()
+            if is_goldflipper_gap:
+                self.goldflipper_options_frame.pack(fill=tk.X, pady=(0, 5))
+            else:
+                self.goldflipper_options_frame.pack_forget()
         else:
-            self.gap_frame.grid_remove()
+            self.momentum_options_frame.pack_forget()
+            self.goldflipper_options_frame.pack_forget()
+            self.no_options_label.pack(anchor="w")
     
     def _update_contract_preview(self):
         """Update the option contract preview in the header."""
@@ -2246,7 +2526,7 @@ class PlayCreatorGUI:
             return None
         
         strategy = self.current_strategy.get()
-        playbook = self.current_playbook.get()
+        playbook = self._get_playbook_value_from_display(self.current_playbook.get())
         trade_type = self.trade_type.get()
         contracts = self.contracts.get()
         
@@ -2457,8 +2737,42 @@ class PlayCreatorGUI:
                 "gap_pct": gap_pct_val,
                 "previous_close": float(self.previous_close.get().replace('$', '').replace('--', '0')),
                 "gap_open": current_price,
-                "trade_direction": "with_gap" if playbook == "gap_move" else "fade_gap" if playbook == "gap_fade" else "manual"
+                "trade_direction": "with_gap" if playbook in ("gap_move", "goldflipper_gap_move") else "fade_gap" if playbook == "gap_fade" else "manual"
             }
+            
+            # Add momentum timing configuration
+            # "No Entry Until X mins after open" replaces separate wait_for_confirmation and first_hour_restriction
+            confirmation_mins = self.momentum_confirmation_minutes.get()
+            play["momentum_config"] = {
+                "momentum_type": "goldflipper_gap" if playbook == "goldflipper_gap_move" else "gap" if playbook in ("gap_move", "gap_fade") else "manual",
+                "wait_for_confirmation": confirmation_mins > 0,
+                "confirmation_period_minutes": confirmation_mins,
+                "lunch_break_restriction": self.momentum_lunch_break_enabled.get(),
+                "lunch_break_start_hour": self.momentum_lunch_start_hour.get(),
+                "lunch_break_start_minute": self.momentum_lunch_start_minute.get(),
+                "lunch_break_end_hour": self.momentum_lunch_end_hour.get(),
+                "lunch_break_end_minute": self.momentum_lunch_end_minute.get(),
+                "first_hour_restriction": confirmation_mins >= 60  # 60 mins = full first hour
+            }
+            
+            # Add Goldflipper Gap Move-specific config
+            if playbook == "goldflipper_gap_move":
+                play["momentum_config"]["straddle_config"] = {
+                    "enabled": self.goldflipper_gap_straddle_enabled.get(),
+                    "min_gap_vs_straddle_ratio": self.goldflipper_gap_min_straddle_ratio.get()
+                }
+                play["momentum_config"]["open_interest_config"] = {
+                    "enabled": self.goldflipper_gap_oi_enabled.get(),
+                    "min_directional_oi": self.goldflipper_gap_min_directional_oi.get(),
+                    "min_oi_ratio": self.goldflipper_gap_min_oi_ratio.get()
+                }
+                # Goldflipper Gap Move uses goldflipper_gap_info for straddle/OI data
+                play["goldflipper_gap_info"] = {
+                    "straddle_price": None,  # To be populated by auto_play_creator or market data
+                    "stock_price_at_detection": current_price,
+                    "call_open_interest": None,
+                    "put_open_interest": None
+                }
         
         # Add sell_puts-specific fields
         if strategy == StrategyType.SELL_PUTS.value:
@@ -2563,6 +2877,7 @@ class PlayCreatorGUI:
             ("option_swings", "pb_v3_long"): {"tp_pct": 50.0, "sl_pct": 35.0},  # Same as pb_v3
             ("momentum", "gap_move"): {"tp_pct": 50.0, "sl_pct": 30.0},
             ("momentum", "gap_fade"): {"tp_pct": 25.0, "sl_pct": 20.0},
+            ("momentum", "goldflipper_gap_move"): {"tp_pct": 40.0, "sl_pct": 25.0},
             ("momentum", "manual"): {"tp_pct": 50.0, "sl_pct": 30.0},
             ("sell_puts", "default"): {"tp_pct": 50.0, "sl_pct": 200.0},
             ("sell_puts", "tasty_30_delta"): {"tp_pct": 50.0, "sl_pct": 200.0},
@@ -2572,6 +2887,41 @@ class PlayCreatorGUI:
         if key in defaults:
             self.tp_pct.set(defaults[key]["tp_pct"])
             self.sl_pct.set(defaults[key]["sl_pct"])
+        
+        # Load momentum-specific config defaults based on playbook
+        if strategy == StrategyType.MOMENTUM.value:
+            momentum_defaults = {
+                # Simplified: confirmation_minutes controls "no entry until X mins after open"
+                # 0 = immediate entry, 15 = 15 mins after open, 60 = full first hour
+                "gap_move": {
+                    "confirmation_minutes": 15,
+                    "lunch_break": True, "lunch_start_h": 12, "lunch_start_m": 0,
+                    "lunch_end_h": 13, "lunch_end_m": 0
+                },
+                "gap_fade": {
+                    "confirmation_minutes": 30,
+                    "lunch_break": True, "lunch_start_h": 12, "lunch_start_m": 0,
+                    "lunch_end_h": 13, "lunch_end_m": 0
+                },
+                "goldflipper_gap_move": {
+                    "confirmation_minutes": 60,  # Full first hour - no entries until 10:30 AM
+                    "lunch_break": True, "lunch_start_h": 12, "lunch_start_m": 0,
+                    "lunch_end_h": 13, "lunch_end_m": 0
+                },
+                "manual": {
+                    "confirmation_minutes": 0,  # Immediate entry allowed
+                    "lunch_break": True, "lunch_start_h": 12, "lunch_start_m": 0,
+                    "lunch_end_h": 13, "lunch_end_m": 0
+                }
+            }
+            if playbook in momentum_defaults:
+                cfg = momentum_defaults[playbook]
+                self.momentum_confirmation_minutes.set(cfg["confirmation_minutes"])
+                self.momentum_lunch_break_enabled.set(cfg["lunch_break"])
+                self.momentum_lunch_start_hour.set(cfg["lunch_start_h"])
+                self.momentum_lunch_start_minute.set(cfg["lunch_start_m"])
+                self.momentum_lunch_end_hour.set(cfg["lunch_end_h"])
+                self.momentum_lunch_end_minute.set(cfg["lunch_end_m"])
             
     # =========================================================================
     # Actions
