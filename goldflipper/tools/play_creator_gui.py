@@ -224,6 +224,25 @@ class PlayCreatorGUI:
         self.goldflipper_gap_min_directional_oi = tk.IntVar(value=500)
         self.goldflipper_gap_min_oi_ratio = tk.DoubleVar(value=1.0)
         
+        # Advanced Momentum Parameters (displayed in Advanced Settings panel)
+        # Gap filtering (only for "default" playbook where gap direction is manual)
+        self.adv_min_gap_pct = tk.DoubleVar(value=1.0)
+        self.adv_max_gap_pct = tk.DoubleVar(value=10.0)
+        self.adv_max_gap_pct_enabled = tk.BooleanVar(value=False)
+        
+        # Time-based exit controls
+        self.adv_same_day_exit = tk.BooleanVar(value=False)
+        self.adv_max_hold_days_enabled = tk.BooleanVar(value=True)
+        self.adv_max_hold_days = tk.IntVar(value=5)
+        
+        # Entry timing
+        self.adv_avoid_first_minutes = tk.IntVar(value=5)
+        self.adv_avoid_last_minutes = tk.IntVar(value=60)
+        
+        # Option selection DTE range
+        self.adv_dte_min = tk.IntVar(value=7)
+        self.adv_dte_max = tk.IntVar(value=21)
+        
         # Option chain data
         self.option_chain_data = None
         self.expirations_list = []
@@ -307,14 +326,18 @@ class PlayCreatorGUI:
         # Other Options Panel
         self._create_other_options_panel(middle_frame)
         
-        # Right column - Play Preview (full height)
+        # Right column - Play Preview + Advanced Settings
         right_frame = ttk.Frame(self.main_frame)
         right_frame.grid(row=1, column=2, sticky="nsew", padx=5, pady=5)
         right_frame.columnconfigure(0, weight=1)
-        right_frame.rowconfigure(0, weight=1)  # Preview takes full height
+        right_frame.rowconfigure(0, weight=1)  # Preview takes most height
+        right_frame.rowconfigure(1, weight=0)  # Advanced settings fixed height
         
         # Validation & Preview Panel
         self._create_preview_panel(right_frame)
+        
+        # Advanced Settings Panel (below preview, for momentum strategy)
+        self._create_advanced_settings_panel(right_frame)
         
     def _create_header(self):
         """Create the header with title and option contract preview."""
@@ -1435,14 +1458,14 @@ class PlayCreatorGUI:
         self.selected_option_label.pack(side=tk.RIGHT, padx=10)
         
     def _create_preview_panel(self, parent):
-        """Create the validation and preview panel (full right column)."""
+        """Create the validation and preview panel (upper right column)."""
         frame = ttk.LabelFrame(parent, text="Play Preview", padding="10")
-        frame.grid(row=0, column=0, sticky="nsew", pady=5)  # row=0 since it's alone in right column
+        frame.grid(row=0, column=0, sticky="nsew", pady=5)
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
         
-        # JSON preview text - taller since it takes full column height
-        self.preview_text = tk.Text(frame, height=40, width=45, wrap=tk.WORD)
+        # JSON preview text - reduced height to make room for advanced settings
+        self.preview_text = tk.Text(frame, height=28, width=45, wrap=tk.WORD)
         self.preview_text.grid(row=0, column=0, sticky="nsew")
         
         preview_scroll = ttk.Scrollbar(frame, orient="vertical", command=self.preview_text.yview)
@@ -1465,6 +1488,102 @@ class PlayCreatorGUI:
             text="Update Preview",
             command=self._update_preview
         ).pack(side=tk.RIGHT, padx=5)
+    
+    def _create_advanced_settings_panel(self, parent):
+        """Create the advanced settings panel for momentum strategy (below preview)."""
+        self.advanced_settings_frame = ttk.LabelFrame(
+            parent, text="Advanced Settings (Momentum)", padding="10"
+        )
+        self.advanced_settings_frame.grid(row=1, column=0, sticky="nsew", pady=5)
+        self.advanced_settings_frame.columnconfigure(0, weight=1)
+        self.advanced_settings_frame.columnconfigure(1, weight=1)
+        
+        # === Row 0: Gap Size Filtering ===
+        gap_filter_frame = ttk.Frame(self.advanced_settings_frame)
+        gap_filter_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=2)
+        
+        ttk.Label(gap_filter_frame, text="Gap Size:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(gap_filter_frame, text="Min:").pack(side=tk.LEFT)
+        ttk.Spinbox(
+            gap_filter_frame, textvariable=self.adv_min_gap_pct,
+            from_=0.5, to=10.0, increment=0.5, width=5
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(gap_filter_frame, text="%").pack(side=tk.LEFT)
+        
+        ttk.Checkbutton(
+            gap_filter_frame, text="Max:",
+            variable=self.adv_max_gap_pct_enabled
+        ).pack(side=tk.LEFT, padx=(15, 0))
+        self.adv_max_gap_spinbox = ttk.Spinbox(
+            gap_filter_frame, textvariable=self.adv_max_gap_pct,
+            from_=2.0, to=20.0, increment=0.5, width=5
+        )
+        self.adv_max_gap_spinbox.pack(side=tk.LEFT, padx=2)
+        ttk.Label(gap_filter_frame, text="%").pack(side=tk.LEFT)
+        
+        # === Row 1: Time-Based Exit Controls ===
+        time_exit_frame = ttk.Frame(self.advanced_settings_frame)
+        time_exit_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=2)
+        
+        ttk.Checkbutton(
+            time_exit_frame, text="Same-Day Exit",
+            variable=self.adv_same_day_exit
+        ).pack(side=tk.LEFT, padx=(0, 15))
+        
+        ttk.Checkbutton(
+            time_exit_frame, text="Max Hold Days:",
+            variable=self.adv_max_hold_days_enabled
+        ).pack(side=tk.LEFT)
+        ttk.Spinbox(
+            time_exit_frame, textvariable=self.adv_max_hold_days,
+            from_=1, to=30, increment=1, width=4
+        ).pack(side=tk.LEFT, padx=2)
+        
+        # === Row 2: Entry Timing ===
+        entry_timing_frame = ttk.Frame(self.advanced_settings_frame)
+        entry_timing_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=2)
+        
+        ttk.Label(entry_timing_frame, text="Avoid Entry:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(entry_timing_frame, text="First").pack(side=tk.LEFT)
+        ttk.Spinbox(
+            entry_timing_frame, textvariable=self.adv_avoid_first_minutes,
+            from_=0, to=60, increment=5, width=4
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(entry_timing_frame, text="min").pack(side=tk.LEFT)
+        
+        ttk.Label(entry_timing_frame, text="Last").pack(side=tk.LEFT, padx=(15, 0))
+        ttk.Spinbox(
+            entry_timing_frame, textvariable=self.adv_avoid_last_minutes,
+            from_=0, to=120, increment=15, width=4
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(entry_timing_frame, text="min").pack(side=tk.LEFT)
+        
+        # === Row 3: DTE Range ===
+        dte_frame = ttk.Frame(self.advanced_settings_frame)
+        dte_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=2)
+        
+        ttk.Label(dte_frame, text="DTE Range:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Spinbox(
+            dte_frame, textvariable=self.adv_dte_min,
+            from_=1, to=60, increment=1, width=4
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(dte_frame, text="-").pack(side=tk.LEFT)
+        ttk.Spinbox(
+            dte_frame, textvariable=self.adv_dte_max,
+            from_=7, to=90, increment=1, width=4
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Label(dte_frame, text="days").pack(side=tk.LEFT)
+        
+        # Info label
+        info_label = ttk.Label(
+            self.advanced_settings_frame,
+            text="These settings override playbook defaults for this play.",
+            foreground="gray", font=('Helvetica', 8)
+        )
+        info_label.grid(row=4, column=0, columnspan=2, sticky="w", pady=(5, 0))
+        
+        # Initially hide (only show for momentum strategy)
+        self.advanced_settings_frame.grid_remove()
         
     def _create_risk_summary_panel(self, parent):
         """Create the risk summary panel (below option chain)."""
@@ -2352,6 +2471,13 @@ class PlayCreatorGUI:
             self.momentum_options_frame.pack_forget()
             self.goldflipper_options_frame.pack_forget()
             self.no_options_label.pack(anchor="w")
+        
+        # Show/hide Advanced Settings panel (right column, below preview)
+        if hasattr(self, 'advanced_settings_frame'):
+            if is_momentum:
+                self.advanced_settings_frame.grid()
+            else:
+                self.advanced_settings_frame.grid_remove()
     
     def _update_contract_preview(self):
         """Update the option contract preview in the header."""
@@ -2752,7 +2878,16 @@ class PlayCreatorGUI:
                 "lunch_break_start_minute": self.momentum_lunch_start_minute.get(),
                 "lunch_break_end_hour": self.momentum_lunch_end_hour.get(),
                 "lunch_break_end_minute": self.momentum_lunch_end_minute.get(),
-                "first_hour_restriction": confirmation_mins >= 60  # 60 mins = full first hour
+                "first_hour_restriction": confirmation_mins >= 60,  # 60 mins = full first hour
+                # Advanced settings (from Advanced Settings panel)
+                "min_gap_pct": self.adv_min_gap_pct.get(),
+                "max_gap_pct": self.adv_max_gap_pct.get() if self.adv_max_gap_pct_enabled.get() else None,
+                "same_day_exit": self.adv_same_day_exit.get(),
+                "max_hold_days": self.adv_max_hold_days.get() if self.adv_max_hold_days_enabled.get() else None,
+                "dte_min": self.adv_dte_min.get(),
+                "dte_max": self.adv_dte_max.get(),
+                "avoid_first_minutes": self.adv_avoid_first_minutes.get(),
+                "avoid_last_minutes": self.adv_avoid_last_minutes.get()
             }
             
             # Add Goldflipper Gap Move-specific config
@@ -2896,32 +3031,64 @@ class PlayCreatorGUI:
                 "gap_move": {
                     "confirmation_minutes": 15,
                     "lunch_break": True, "lunch_start_h": 12, "lunch_start_m": 0,
-                    "lunch_end_h": 13, "lunch_end_m": 0
+                    "lunch_end_h": 13, "lunch_end_m": 0,
+                    # Advanced settings
+                    "min_gap_pct": 1.0, "max_gap_pct": 10.0, "max_gap_enabled": False,
+                    "same_day_exit": False, "max_hold_days": 5, "max_hold_enabled": True,
+                    "avoid_first_min": 5, "avoid_last_min": 60,
+                    "dte_min": 7, "dte_max": 21
                 },
                 "gap_fade": {
                     "confirmation_minutes": 30,
                     "lunch_break": True, "lunch_start_h": 12, "lunch_start_m": 0,
-                    "lunch_end_h": 13, "lunch_end_m": 0
+                    "lunch_end_h": 13, "lunch_end_m": 0,
+                    # Advanced settings - gap fade uses mean reversion, shorter holds
+                    "min_gap_pct": 2.0, "max_gap_pct": 8.0, "max_gap_enabled": True,
+                    "same_day_exit": True, "max_hold_days": 2, "max_hold_enabled": True,
+                    "avoid_first_min": 15, "avoid_last_min": 30,
+                    "dte_min": 7, "dte_max": 14
                 },
                 "goldflipper_gap_move": {
                     "confirmation_minutes": 60,  # Full first hour - no entries until 10:30 AM
                     "lunch_break": True, "lunch_start_h": 12, "lunch_start_m": 0,
-                    "lunch_end_h": 13, "lunch_end_m": 0
+                    "lunch_end_h": 13, "lunch_end_m": 0,
+                    # Advanced settings - Goldflipper uses straddle-based gap sizing
+                    "min_gap_pct": 1.0, "max_gap_pct": 10.0, "max_gap_enabled": False,
+                    "same_day_exit": False, "max_hold_days": 3, "max_hold_enabled": True,
+                    "avoid_first_min": 5, "avoid_last_min": 60,
+                    "dte_min": 7, "dte_max": 14
                 },
                 "manual": {
                     "confirmation_minutes": 0,  # Immediate entry allowed
                     "lunch_break": True, "lunch_start_h": 12, "lunch_start_m": 0,
-                    "lunch_end_h": 13, "lunch_end_m": 0
+                    "lunch_end_h": 13, "lunch_end_m": 0,
+                    # Advanced settings - manual has relaxed defaults
+                    "min_gap_pct": 0.5, "max_gap_pct": 15.0, "max_gap_enabled": False,
+                    "same_day_exit": False, "max_hold_days": 5, "max_hold_enabled": True,
+                    "avoid_first_min": 5, "avoid_last_min": 60,
+                    "dte_min": 7, "dte_max": 21
                 }
             }
             if playbook in momentum_defaults:
                 cfg = momentum_defaults[playbook]
+                # Basic timing settings
                 self.momentum_confirmation_minutes.set(cfg["confirmation_minutes"])
                 self.momentum_lunch_break_enabled.set(cfg["lunch_break"])
                 self.momentum_lunch_start_hour.set(cfg["lunch_start_h"])
                 self.momentum_lunch_start_minute.set(cfg["lunch_start_m"])
                 self.momentum_lunch_end_hour.set(cfg["lunch_end_h"])
                 self.momentum_lunch_end_minute.set(cfg["lunch_end_m"])
+                # Advanced settings
+                self.adv_min_gap_pct.set(cfg["min_gap_pct"])
+                self.adv_max_gap_pct.set(cfg["max_gap_pct"])
+                self.adv_max_gap_pct_enabled.set(cfg["max_gap_enabled"])
+                self.adv_same_day_exit.set(cfg["same_day_exit"])
+                self.adv_max_hold_days.set(cfg["max_hold_days"])
+                self.adv_max_hold_days_enabled.set(cfg["max_hold_enabled"])
+                self.adv_avoid_first_minutes.set(cfg["avoid_first_min"])
+                self.adv_avoid_last_minutes.set(cfg["avoid_last_min"])
+                self.adv_dte_min.set(cfg["dte_min"])
+                self.adv_dte_max.set(cfg["dte_max"])
             
     # =========================================================================
     # Actions
@@ -3132,6 +3299,18 @@ class PlayCreatorGUI:
         self.oto_parent.set("")
         self.oto_trigger_condition.set("on_fill")
         self.oco_peer_set_numbers.set("")
+        
+        # Reset advanced momentum settings
+        self.adv_min_gap_pct.set(1.0)
+        self.adv_max_gap_pct.set(10.0)
+        self.adv_max_gap_pct_enabled.set(False)
+        self.adv_same_day_exit.set(False)
+        self.adv_max_hold_days_enabled.set(True)
+        self.adv_max_hold_days.set(5)
+        self.adv_avoid_first_minutes.set(5)
+        self.adv_avoid_last_minutes.set(60)
+        self.adv_dte_min.set(7)
+        self.adv_dte_max.set(21)
         
         # Clear TP levels UI
         self._clear_tp_levels_ui()

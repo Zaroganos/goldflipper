@@ -1,8 +1,9 @@
 import os
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
+import pandas_market_calendars as mcal
 from goldflipper.json_parser import load_play
 from goldflipper.alpaca_client import get_alpaca_client
 from goldflipper.config.config import config
@@ -1488,24 +1489,103 @@ def handle_execution_error(e, operation, retry_count=0):
         logging.error(f"Max retries ({MAX_RETRIES}) reached for {operation}")
         return False
 
-def is_market_holiday(date):
-    """Check if given date is a US market holiday.
-    - This is simplified.
-    - Early closing days are not listed.
-    - Holidays fall on different days each year. This is not reflected here.
-    - This should really be separated out into a separate file. """
-    holidays = [
-        (1, 1),    # New Year's Day
-        (1, 20),   # Martin Luther King Jr. Day (3rd Monday in January)
-        (2, 17),   # Presidents Day (3rd Monday in February)
-        (4, 18),   # Good Friday
-        (5, 26),   # Memorial Day (Last Monday in May)
-        (7, 4),    # Independence Day
-        (9, 1),    # Labor Day (1st Monday in September)
-        (11, 27),  # Thanksgiving Day (4th Thursday in November)
-        (12, 25),  # Christmas Day
-    ]
-    return (date.month, date.day) in holidays
+# NYSE calendar instance (cached for performance)
+_nyse_calendar = None
+
+def _get_nyse_calendar():
+    """Get cached NYSE calendar instance."""
+    global _nyse_calendar
+    if _nyse_calendar is None:
+        _nyse_calendar = mcal.get_calendar('NYSE')
+    return _nyse_calendar
+
+def is_market_holiday(check_date):
+    """
+    Check if given date is a US stock market holiday using pandas_market_calendars.
+    
+    This properly handles all NYSE holidays including floating holidays like:
+    - MLK Day (3rd Monday in January)
+    - Presidents Day (3rd Monday in February)
+    - Good Friday (varies based on Easter)
+    - Memorial Day (last Monday in May)
+    - Labor Day (1st Monday in September)
+    - Thanksgiving (4th Thursday in November)
+    
+    Args:
+        check_date: date object to check
+        
+    Returns:
+        True if the date is a market holiday, False otherwise
+    """
+    try:
+        nyse = _get_nyse_calendar()
+        
+        # Convert to date if datetime
+        if isinstance(check_date, datetime):
+            check_date = check_date.date()
+        
+        # Get schedule for just this date
+        # If the date is not in the schedule, it's either a weekend or holiday
+        schedule = nyse.schedule(start_date=check_date, end_date=check_date)
+        
+        # If schedule is empty, the market is closed (holiday or weekend)
+        # We only want to return True for holidays, not weekends
+        # (weekends are handled separately in validate_market_hours)
+        if schedule.empty:
+            # Check if it's a weekday - if so, it must be a holiday
+            if check_date.weekday() < 5:  # Monday=0, Friday=4
+                return True
+        
+        return False
+        
+    except Exception as e:
+        logging.warning(f"Error checking market holiday with pandas_market_calendars: {e}")
+        # Fall back to known fixed holidays only (very conservative)
+        fixed_holidays = [
+            (1, 1),    # New Year's Day (may be observed on adjacent day)
+            (7, 4),    # Independence Day (may be observed on adjacent day)
+            (12, 25),  # Christmas Day (may be observed on adjacent day)
+        ]
+        return (check_date.month, check_date.day) in fixed_holidays
+
+
+def is_early_close_day(check_date):
+    """
+    Check if given date is an early close day (market closes at 1:00 PM ET).
+    
+    Early close days include:
+    - Day before Independence Day (July 3rd, unless July 4th is on weekend)
+    - Day after Thanksgiving (Black Friday)
+    - Christmas Eve (December 24th, unless Christmas is on weekend)
+    
+    Args:
+        check_date: date object to check
+        
+    Returns:
+        Tuple of (is_early_close: bool, close_time: time or None)
+    """
+    try:
+        nyse = _get_nyse_calendar()
+        
+        # Convert to date if datetime
+        if isinstance(check_date, datetime):
+            check_date = check_date.date()
+        
+        schedule = nyse.schedule(start_date=check_date, end_date=check_date)
+        
+        if not schedule.empty:
+            # Get the close time for this day
+            close_time = schedule.iloc[0]['market_close']
+            # NYSE normal close is 4:00 PM (20:00 UTC during EST, 16:00 ET)
+            # Early close is 1:00 PM ET (13:00 ET = 18:00 UTC during EST)
+            if close_time.hour < 20:  # UTC hour less than normal close
+                return True, close_time.time()
+        
+        return False, None
+        
+    except Exception as e:
+        logging.warning(f"Error checking early close with pandas_market_calendars: {e}")
+        return False, None
 
 # ==================================================
 # 8. ANCILLARY FUNCTIONS
