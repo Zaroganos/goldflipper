@@ -134,4 +134,4 @@ Test files are in `tests/` with fixtures in `conftest.py`.
 - Use `NUITKA_INCLUDE_PACKAGES` for Python modules, not `--include-data-dir`
 - Console mode forced for Textual TUI compatibility
 - All play file writes use `atomic_write_json()` to prevent corruption
-- The Windows filesystem on beQuiet is not used for dev building for this project
+- Nuitka is an optional dev dependency; run `uv sync --extra dev` before building

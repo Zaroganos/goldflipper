@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run python:*)",
+      "Bash(/c/Python314/python.exe -m nuitka:*)",
+      "Bash(/c/Python313/python.exe -m nuitka:*)",
+      "Bash(pip3.12 show:*)",
+      "Bash(pip3.13 show:*)",
+      "Bash(pip show:*)",
+      "Bash(tasklist:*)",
+      "Bash(cmd /c:*)",
+      "Bash(wmic process where \"name=''python.exe''\" get ProcessId,CommandLine)"
+    ]
+  }
+}
