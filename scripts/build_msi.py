@@ -19,6 +19,7 @@ Prerequisites:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -61,20 +62,40 @@ def _read_version() -> str:
     return version
 
 
+def _find_wix() -> str | None:
+    """
+    Locate the wix CLI executable.
+
+    Checks PATH first, then the default .NET global tools directory
+    (%USERPROFILE%/.dotnet/tools) which may not be in PATH.
+    """
+    # 1. Check PATH
+    found = shutil.which("wix")
+    if found:
+        return found
+
+    # 2. Check default .NET global tools directory (Windows)
+    dotnet_tools = Path(os.path.expanduser("~")) / ".dotnet" / "tools"
+    for name in ("wix.exe", "wix"):
+        candidate = dotnet_tools / name
+        if candidate.is_file():
+            return str(candidate)
+
+    return None
+
+
 def _check_dotnet() -> bool:
     """Return True if the dotnet CLI is available."""
     return shutil.which("dotnet") is not None
 
 
-def _check_wix() -> bool:
-    """Return True if the wix CLI (.NET tool) is available."""
-    # 'wix' is installed as a dotnet global tool; check PATH first
-    if shutil.which("wix") is not None:
-        return True
-    # Fallback: try running it explicitly
+def _check_wix(wix_path: str | None) -> bool:
+    """Return True if the wix CLI is available at the given path."""
+    if wix_path is None:
+        return False
     try:
         result = subprocess.run(
-            ["wix", "--version"],
+            [wix_path, "--version"],
             capture_output=True, text=True, timeout=10,
         )
         return result.returncode == 0
@@ -82,11 +103,11 @@ def _check_wix() -> bool:
         return False
 
 
-def _check_wix_ui_extension() -> bool:
+def _check_wix_ui_extension(wix_path: str) -> bool:
     """Return True if WixToolset.UI.wixext is installed."""
     try:
         result = subprocess.run(
-            ["wix", "extension", "list"],
+            [wix_path, "extension", "list"],
             capture_output=True, text=True, timeout=10,
         )
         return "WixToolset.UI.wixext" in result.stdout
@@ -152,8 +173,11 @@ def build_msi(
     if not _check_dotnet():
         missing.append(".NET SDK (dotnet CLI)")
 
-    if not _check_wix():
+    wix_path = _find_wix()
+    if not _check_wix(wix_path):
         missing.append("WiX Toolset (wix CLI)")
+    else:
+        print(f"[INFO] WiX CLI: {wix_path}")
 
     if missing:
         print()
@@ -164,7 +188,7 @@ def build_msi(
 
     # Check WiX UI extension (non-fatal warning; build may still work
     # if user added it at a different scope)
-    if not _check_wix_ui_extension():
+    if not _check_wix_ui_extension(wix_path):  # type: ignore[arg-type]  # guarded by missing check above
         print("[WARN] WixToolset.UI.wixext not found in global extension list.")
         print("[WARN] If the build fails, run: wix extension add WixToolset.UI.wixext")
         print()
@@ -217,7 +241,7 @@ def build_msi(
     DIST_DIR.mkdir(parents=True, exist_ok=True)
 
     cmd = [
-        "wix", "build",
+        wix_path, "build",
         "-arch", arch,
         "-ext", "WixToolset.UI.wixext",
         "-d", f"ProductVersion={version}",

@@ -1,25 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <!--
-    Goldflipper MSI Installer - WiX v4+ Source
-    
-    Build with:
-        uv run python scripts/build_msi.py
-    
-    Or manually:
-        wix build -arch x64 ^
-            -ext WixToolset.UI.wixext ^
-            -d ProductVersion=0.2.3 ^
-            -d ProjectDir=. ^
-            -d DistDir=dist ^
-            -o dist\goldflipper-0.2.3.msi ^
-            installer\goldflipper.wxs
-    
-    Prerequisites:
-        - .NET 6+ SDK
-        - WiX v4+: dotnet tool install --global wix
-        - WiX UI extension: wix extension add WixToolset.UI.wixext
-        - Nuitka build completed (dist\goldflipper.exe must exist)
+    Goldflipper MSI Installer (WiX v4+ Source)
+
+    Build with:  uv run python scripts/build_msi.py
+    See docs/MSI_INSTALLER.md for prerequisites and manual build instructions.
 -->
 
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
