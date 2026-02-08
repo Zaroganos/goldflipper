@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+    Goldflipper MSI Installer - WiX v4+ Source
+    
+    Build with:
+        uv run python scripts/build_msi.py
+    
+    Or manually:
+        wix build -arch x64 ^
+            -ext WixToolset.UI.wixext ^
+            -d ProductVersion=0.2.3 ^
+            -d ProjectDir=. ^
+            -d DistDir=dist ^
+            -o dist\goldflipper-0.2.3.msi ^
+            installer\goldflipper.wxs
+    
+    Prerequisites:
+        - .NET 6+ SDK
+        - WiX v4+: dotnet tool install --global wix
+        - WiX UI extension: wix extension add WixToolset.UI.wixext
+        - Nuitka build completed (dist\goldflipper.exe must exist)
+-->
+
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+    <!-- ================================================================
+         Package Definition
+         ================================================================
+         UpgradeCode MUST remain constant across all versions.
+         Version is injected via -d ProductVersion=X.Y.Z at build time.
+    -->
+    <Package
+        Name="Goldflipper"
+        Manufacturer="Iliya Yaroshevskiy"
+        Version="$(var.ProductVersion)"
+        UpgradeCode="7B2A7F4E-3D1C-4A8B-9E5F-6C0D2B4A8E1F"
+        Scope="perMachine"
+        InstallerVersion="500"
+        Compressed="yes">
+
+        <!-- Major upgrade: seamlessly replace older versions, block downgrades -->
+        <MajorUpgrade
+            DowngradeErrorMessage="A newer version of [ProductName] is already installed. Please uninstall it first." />
+
+        <!-- Embed cabinet (single .msi file, no loose .cab) -->
+        <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+        <!-- Add/Remove Programs icon -->
+        <Icon Id="GoldflipperIcon" SourceFile="$(var.ProjectDir)\goldflipper.ico" />
+        <Property Id="ARPPRODUCTICON" Value="GoldflipperIcon" />
+
+        <!-- Add/Remove Programs URLs -->
+        <Property Id="ARPURLINFOABOUT" Value="https://github.com/Zaroganos/goldflipper" />
+        <Property Id="ARPHELPLINK" Value="https://github.com/Zaroganos/goldflipper/issues" />
+
+        <!-- WixUI install-directory dialog set (Welcome → License → Dir → Install) -->
+        <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+        <!-- License file shown during installation (RTF format required) -->
+        <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectDir)\installer\License.rtf" />
+
+        <!-- Banner and dialog background bitmaps (optional, use defaults if missing) -->
+        <!-- <WixVariable Id="WixUIBannerBmp" Value="$(var.ProjectDir)\installer\banner.bmp" /> -->
+        <!-- <WixVariable Id="WixUIDialogBmp" Value="$(var.ProjectDir)\installer\dialog.bmp" /> -->
+
+        <!-- ============================================================
+             Features
+             ============================================================ -->
+        <Feature Id="MainFeature" Title="Goldflipper Application" Level="1"
+                 Description="Core application files and Start Menu shortcut."
+                 AllowAbsent="no" Display="expand">
+            <ComponentGroupRef Id="ProductComponents" />
+            <ComponentGroupRef Id="StartMenuComponents" />
+        </Feature>
+
+        <Feature Id="DesktopShortcutFeature" Title="Desktop Shortcut" Level="1"
+                 Description="Create a shortcut on the Desktop.">
+            <ComponentGroupRef Id="DesktopShortcutComponents" />
+        </Feature>
+
+    </Package>
+
+    <!-- ================================================================
+         Installation Directory
+         ================================================================ -->
+    <Fragment>
+        <StandardDirectory Id="ProgramFiles6432Folder">
+            <Directory Id="INSTALLFOLDER" Name="Goldflipper" />
+        </StandardDirectory>
+    </Fragment>
+
+    <!-- ================================================================
+         Main Application Files
+         ================================================================ -->
+    <Fragment>
+        <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+
+            <!-- Primary executable (Nuitka onefile build) -->
+            <Component Id="MainExecutable" Guid="A1E5F8C2-9B3D-4F7A-8C6E-2D0B4A9F1E3C">
+                <File Id="GoldflipperExe"
+                      Source="$(var.DistDir)\goldflipper.exe"
+                      KeyPath="yes" />
+            </Component>
+
+            <!-- Application icon (used by shortcuts and as a standalone reference) -->
+            <Component Id="AppIcon" Guid="B2F6A9D3-0C4E-5A8B-9D7F-3E1C5B0A2F4D">
+                <File Id="GoldflipperIco"
+                      Source="$(var.ProjectDir)\goldflipper.ico"
+                      KeyPath="yes" />
+            </Component>
+
+        </ComponentGroup>
+    </Fragment>
+
+    <!-- ================================================================
+         Start Menu Shortcut
+         ================================================================ -->
+    <Fragment>
+        <StandardDirectory Id="ProgramMenuFolder">
+            <Directory Id="GoldflipperMenuDir" Name="Goldflipper" />
+        </StandardDirectory>
+
+        <ComponentGroup Id="StartMenuComponents" Directory="GoldflipperMenuDir">
+            <Component Id="StartMenuShortcut" Guid="C3A7B0E4-1D5F-6B9C-0E8A-4F2D6C1B3A5E">
+                <Shortcut Id="GoldflipperStartMenuShortcut"
+                          Name="Goldflipper"
+                          Description="Launch Goldflipper options trading system"
+                          Target="[INSTALLFOLDER]goldflipper.exe"
+                          WorkingDirectory="INSTALLFOLDER"
+                          Icon="GoldflipperIcon" />
+                <RemoveFolder Id="RemoveGoldflipperMenuDir" On="uninstall" />
+                <RegistryValue Root="HKCU"
+                               Key="Software\Goldflipper"
+                               Name="StartMenuShortcut"
+                               Type="integer" Value="1" KeyPath="yes" />
+            </Component>
+        </ComponentGroup>
+    </Fragment>
+
+    <!-- ================================================================
+         Desktop Shortcut (optional feature)
+         ================================================================ -->
+    <Fragment>
+        <StandardDirectory Id="DesktopFolder" />
+
+        <ComponentGroup Id="DesktopShortcutComponents" Directory="DesktopFolder">
+            <Component Id="DesktopShortcut" Guid="D4B8C1F5-2E6A-7C0D-1F9B-5A3E7D2C4B6F">
+                <Shortcut Id="GoldflipperDesktopShortcut"
+                          Name="Goldflipper"
+                          Description="Launch Goldflipper options trading system"
+                          Target="[INSTALLFOLDER]goldflipper.exe"
+                          WorkingDirectory="INSTALLFOLDER"
+                          Icon="GoldflipperIcon" />
+                <RegistryValue Root="HKCU"
+                               Key="Software\Goldflipper"
+                               Name="DesktopShortcut"
+                               Type="integer" Value="1" KeyPath="yes" />
+            </Component>
+        </ComponentGroup>
+    </Fragment>
+
+</Wix>

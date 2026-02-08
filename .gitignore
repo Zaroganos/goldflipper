@@ -96,6 +96,8 @@ coverage/
 build/
 dist/
 *.egg-info/
+*.wixobj
+*.wixpdb
 
 # Development Notes #
 dev-notes/
