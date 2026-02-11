@@ -371,4 +371,4 @@ goldflipper/
 
 ## License
 
-Copyright (c) 2024-2025 Iliya Yaroshevskiy. All Rights Reserved.
+Copyright (c) 2026 Iliya Yaroshevskiy. All Rights Reserved.
