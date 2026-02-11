@@ -31,6 +31,22 @@ Before you start, ensure you have the following:
 
 ### Installation
 
+#### Windows Installer (Recommended)
+
+For a professional installation experience with Windows integration:
+
+1. Download the latest `goldflipper-X.Y.Z-x64.msi` from the [Releases](https://github.com/Zaroganos/goldflipper/releases) page
+2. Run the installer and follow the wizard
+3. Launch Goldflipper from the Start Menu or desktop shortcut
+
+The MSI installer provides:
+- Program Files installation with proper Windows integration
+- Start Menu and Desktop shortcuts
+- Add/Remove Programs entry with uninstall support
+- Automatic upgrades for newer versions
+
+See [Windows Installer Documentation](docs/WINDOWS_INSTALLER.md) for details.
+
 #### One Command Bootstrap (Simple)
 
 The easiest way to install Goldflipper is to run the following command in PowerShell:
