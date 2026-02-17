@@ -56,6 +56,7 @@ setup(
         'rich>=13.0.0',                   # Enhanced terminal output
         'mplfinance>=0.12.10b0',          # Financial plotting (using beta as stable 0.12.0 doesn't exist)
         'XlsxWriter>=3.1.0',              # Excel file creation
+        'pandas_market_calendars>=4.6.0', # NYSE holiday calendar
     ],
 
     # Entry points to cli tools or scripts
