@@ -89,6 +89,14 @@
     "trail_history": []
   },
   
+  "dynamic_gtd": {
+    "enabled": false,
+    "methods": [],
+    "method_states": {},
+    "effective_date": null,
+    "last_evaluated": null
+  },
+
   "play_class": "SIMPLE",
   "creation_date": "MM/DD/YYYY",
   

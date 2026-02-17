@@ -9,7 +9,13 @@
       "Bash(pip show:*)",
       "Bash(tasklist:*)",
       "Bash(cmd /c:*)",
-      "Bash(wmic process where \"name=''python.exe''\" get ProcessId,CommandLine)"
+      "Bash(wmic process where \"name=''python.exe''\" get ProcessId,CommandLine)",
+      "WebSearch",
+      "WebFetch(domain:gofastmcp.com)",
+      "Bash(uv lock:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv tool run ruff check:*)",
+      "Bash(uv run pytest:*)"
     ]
   }
 }

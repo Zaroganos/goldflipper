@@ -669,7 +669,10 @@ class StrategyOrchestrator:
     def _handle_expired_plays(self, strategy: BaseStrategy, new_dir: str) -> None:
         """
         Handle expired plays in the new folder by moving them to expired.
-        
+
+        Checks both the static play_expiration_date and the dynamic GTD
+        effective_date (if enabled). The earliest of the two is used.
+
         Args:
             strategy: Strategy instance
             new_dir: Path to new plays directory
@@ -677,34 +680,57 @@ class StrategyOrchestrator:
         from datetime import datetime
         from goldflipper.json_parser import load_play
         from goldflipper.strategy.shared import move_play_to_expired
-        
+
         if not os.path.exists(new_dir):
             return
-        
+
         current_date = datetime.now().date()
-        
+
         try:
             for filename in os.listdir(new_dir):
                 if not filename.endswith('.json'):
                     continue
-                
+
                 filepath = os.path.join(new_dir, filename)
                 play = load_play(filepath)
-                
-                if play and 'play_expiration_date' in play:
+
+                if not play:
+                    continue
+
+                # Determine effective expiration: earliest of static and dynamic GTD
+                effective_exp_date = None
+
+                # Static play_expiration_date
+                if 'play_expiration_date' in play:
                     try:
-                        exp_date = datetime.strptime(
+                        effective_exp_date = datetime.strptime(
                             play['play_expiration_date'], "%m/%d/%Y"
                         ).date()
-                        if exp_date < current_date:
-                            move_play_to_expired(filepath)
-                            self.logger.info(
-                                f"Moved expired play to expired folder: {filepath}"
-                            )
                     except ValueError as e:
                         self.logger.warning(
                             f"Invalid expiration date format in {filepath}: {e}"
                         )
+
+                # Dynamic GTD effective_date (if enabled and set)
+                gtd_config = play.get('dynamic_gtd', {})
+                if gtd_config.get('enabled', False) and gtd_config.get('effective_date'):
+                    try:
+                        gtd_date = datetime.strptime(
+                            gtd_config['effective_date'], "%m/%d/%Y"
+                        ).date()
+                        # Use the earlier of static and dynamic dates
+                        if effective_exp_date is None or gtd_date < effective_exp_date:
+                            effective_exp_date = gtd_date
+                    except ValueError as e:
+                        self.logger.warning(
+                            f"Invalid dynamic GTD effective_date in {filepath}: {e}"
+                        )
+
+                if effective_exp_date is not None and effective_exp_date < current_date:
+                    move_play_to_expired(filepath)
+                    self.logger.info(
+                        f"Moved expired play to expired folder: {filepath}"
+                    )
         except Exception as e:
             self.logger.error(f"Error handling expired plays: {e}")
     

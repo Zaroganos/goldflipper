@@ -198,38 +198,58 @@ class OptionSwingsStrategy(BaseStrategy):
         return plays_to_open
     
     def evaluate_open_plays(
-        self, 
+        self,
         plays: List[Dict[str, Any]]
     ) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
         """
         Evaluate open positions for exit conditions (TP/SL).
-        
+
         For each play, checks:
+        0. Dynamic GTD methods (if enabled) — may trigger early close
         1. Take profit conditions (stock price, premium %, etc.)
         2. Stop loss conditions (primary and contingency)
         3. Trailing stop updates
-        
+
         Args:
             plays: List of play dictionaries from 'open' folder
-        
+
         Returns:
             List of tuples: (play, close_conditions) for plays that should close
-            
+
             close_conditions dict contains:
             - should_close: bool
             - is_profit: bool (take profit triggered)
             - is_primary_loss: bool (stop loss triggered)
             - is_contingency_loss: bool (backup SL triggered)
             - sl_type: str (STOP, LIMIT, CONTINGENCY)
+            - is_gtd_exit: bool (Dynamic GTD triggered close)
         """
         plays_to_close = []
-        
+
         for play in plays:
             play_file = play.get('_play_file', '')
             symbol = play.get('symbol', '')
-            
+
             try:
-                # Evaluate exit conditions using shared module
+                # === Dynamic GTD evaluation (before TP/SL) ===
+                gtd_result = self._evaluate_dynamic_gtd(play, play_file)
+                if gtd_result.get('should_close', False):
+                    close_conditions = {
+                        'should_close': True,
+                        'is_profit': False,
+                        'is_primary_loss': False,
+                        'is_contingency_loss': False,
+                        'sl_type': 'GTD',
+                        'is_gtd_exit': True,
+                        'reason': gtd_result.get('close_reason', 'Dynamic GTD exit'),
+                    }
+                    self.log_trade_action('EXIT_SIGNAL_GTD', play, {
+                        'reason': gtd_result.get('close_reason', '')
+                    })
+                    plays_to_close.append((play, close_conditions))
+                    continue  # Skip TP/SL evaluation — GTD already triggered close
+
+                # === Standard TP/SL evaluation ===
                 close_conditions = evaluate_closing_strategy(
                     symbol=symbol,
                     play=play,
@@ -238,25 +258,77 @@ class OptionSwingsStrategy(BaseStrategy):
                     get_option_data_fn=self._get_option_data,
                     save_play_fn=save_play_improved
                 )
-                
+
                 if close_conditions.get('should_close', False):
                     # Determine close type for logging
                     close_type = 'TP' if close_conditions.get('is_profit') else 'SL'
                     if close_conditions.get('is_contingency_loss'):
                         close_type = 'SL(CONTINGENCY)'
-                    
+
                     self.log_trade_action(f'EXIT_SIGNAL_{close_type}', play, {
                         'is_profit': close_conditions.get('is_profit'),
                         'sl_type': close_conditions.get('sl_type')
                     })
-                    
+
                     plays_to_close.append((play, close_conditions))
-                    
+
             except Exception as e:
                 self.logger.error(f"Error evaluating open play {symbol}: {e}")
                 continue
-        
+
         return plays_to_close
+
+    def _evaluate_dynamic_gtd(self, play: Dict[str, Any], play_file: str) -> Dict[str, Any]:
+        """
+        Evaluate Dynamic GTD methods for a play.
+
+        If should_close is True, the play should be closed immediately.
+        If effective_date_changed is True, the new date is persisted to the play JSON.
+
+        Args:
+            play: Play data dictionary
+            play_file: Path to play file (for persisting changes)
+
+        Returns:
+            GTD evaluation result dict
+        """
+        gtd_config = play.get('dynamic_gtd', {})
+        if not gtd_config.get('enabled', False):
+            return {'should_close': False}
+
+        try:
+            from goldflipper.strategy.gtd import GTDEvaluator
+
+            evaluator = GTDEvaluator(market_data=self.market_data)
+            result = evaluator.evaluate_play(play)
+
+            # Log method results
+            for mr in result.get('method_results', []):
+                self.logger.debug(
+                    f"[GTD] {mr['method']}: {mr.get('action', 'N/A')} - {mr.get('reason', '')}"
+                )
+
+            # Persist effective date change
+            if result.get('effective_date_changed', False) and result.get('effective_date'):
+                play['dynamic_gtd']['effective_date'] = result['effective_date']
+                try:
+                    save_play_improved(play, play_file)
+                    self.logger.info(
+                        f"[GTD] Updated effective date to {result['effective_date']} for {play.get('symbol', '')}"
+                    )
+                except Exception as e:
+                    self.logger.warning(f"[GTD] Failed to persist effective date: {e}")
+
+            if result.get('should_close', False):
+                self.logger.info(
+                    f"[GTD] CLOSE_NOW triggered for {play.get('symbol', '')}: {result.get('close_reason', '')}"
+                )
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"[GTD] Error in dynamic GTD evaluation: {e}")
+            return {'should_close': False}
     
     # =========================================================================
     # Optional Override Methods

@@ -65,6 +65,8 @@ from goldflipper.strategy.shared.evaluation import (
     # Price level calculations
     calculate_and_store_price_levels,
     calculate_and_store_premium_levels,
+    # Dynamic GTD convenience function
+    apply_dynamic_gtd,
 )
 
 # Order Executor exports
@@ -101,6 +103,7 @@ __all__ = [
     'evaluate_closing_strategy',
     'calculate_and_store_price_levels',
     'calculate_and_store_premium_levels',
+    'apply_dynamic_gtd',
     # Order Executor
     'OrderExecutor',
     'order_action_to_side',

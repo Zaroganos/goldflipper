@@ -194,6 +194,33 @@ class PlayCreatorGUI:
         
         # Dynamic TP/SL state (stub for future implementations)
         self.dynamic_tp_sl_enabled = tk.BooleanVar(value=False)
+
+        # Dynamic GTD state variables
+        self.dynamic_gtd_enabled = tk.BooleanVar(value=False)
+        self.gtd_max_hold_days_enabled = tk.BooleanVar(value=False)
+        self.gtd_max_hold_days = tk.IntVar(value=5)
+        self.gtd_dte_close_enabled = tk.BooleanVar(value=False)
+        self.gtd_dte_close_at = tk.IntVar(value=7)
+        self.gtd_theta_threshold_enabled = tk.BooleanVar(value=False)
+        self.gtd_theta_max_pct = tk.DoubleVar(value=2.0)
+        self.gtd_pl_time_stop_enabled = tk.BooleanVar(value=False)
+        self.gtd_pl_time_stop_days = tk.IntVar(value=3)
+        self.gtd_profit_extension_enabled = tk.BooleanVar(value=False)
+        self.gtd_profit_extension_min_pct = tk.DoubleVar(value=10.0)
+        self.gtd_profit_extension_days = tk.IntVar(value=3)
+        self.gtd_loss_shortening_enabled = tk.BooleanVar(value=False)
+        self.gtd_loss_threshold_pct = tk.DoubleVar(value=-10.0)
+        self.gtd_loss_shorten_days = tk.IntVar(value=2)
+        self.gtd_rolling_enabled = tk.BooleanVar(value=False)
+        self.gtd_rolling_extension_days = tk.IntVar(value=1)
+        self.gtd_earnings_enabled = tk.BooleanVar(value=False)
+        self.gtd_earnings_days_before = tk.IntVar(value=1)
+        self.gtd_weekend_theta_enabled = tk.BooleanVar(value=False)
+        self.gtd_weekend_min_dte = tk.IntVar(value=14)
+        self.gtd_iv_crush_enabled = tk.BooleanVar(value=False)
+        self.gtd_iv_crush_max_rank = tk.DoubleVar(value=80.0)
+        self.gtd_half_life_enabled = tk.BooleanVar(value=False)
+        self.gtd_half_life_fraction = tk.DoubleVar(value=0.5)
         
         # OCO/OTO relationship state
         self.oco_plays = tk.StringVar(value="")  # Comma-separated play names
@@ -529,7 +556,22 @@ class PlayCreatorGUI:
         self.play_exp_entry.pack(side=tk.LEFT)
         ttk.Label(play_exp_frame, text="MM/DD/YYYY (blank=contract exp)", foreground="gray", font=('Helvetica', 8)).pack(side=tk.LEFT, padx=5)
         row += 1
-        
+
+        # === DYNAMIC GTD SECTION ===
+        gtd_check = ttk.Checkbutton(
+            frame, text="Dynamic GTD (adjust play expiration dynamically)",
+            variable=self.dynamic_gtd_enabled, command=self._toggle_gtd_panel
+        )
+        gtd_check.grid(row=row, column=0, columnspan=2, sticky="w", padx=5, pady=3)
+        row += 1
+
+        # GTD methods panel (hidden by default)
+        self._gtd_frame = ttk.LabelFrame(frame, text="Dynamic GTD Methods", padding=5)
+        self._gtd_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=3)
+        self._gtd_frame.grid_remove()  # Hidden initially
+        self._build_gtd_methods_panel(self._gtd_frame)
+        row += 1
+
         # Separator before Entry section
         ttk.Separator(frame, orient="horizontal").grid(row=row, column=0, columnspan=2, sticky="ew", pady=8)
         row += 1
@@ -2629,9 +2671,103 @@ class PlayCreatorGUI:
         self.status_label.config(text=message, foreground=color)
         
     # =========================================================================
+    # Dynamic GTD GUI Helpers
+    # =========================================================================
+
+    def _toggle_gtd_panel(self):
+        """Show/hide the Dynamic GTD methods panel."""
+        if self.dynamic_gtd_enabled.get():
+            self._gtd_frame.grid()
+        else:
+            self._gtd_frame.grid_remove()
+
+    def _build_gtd_methods_panel(self, parent):
+        """Build the collapsible panel with GTD method checkboxes and params."""
+        methods = [
+            ("Max Hold Days", self.gtd_max_hold_days_enabled,
+             [("Max days:", self.gtd_max_hold_days, 1, 365)]),
+            ("DTE-Based Close", self.gtd_dte_close_enabled,
+             [("Close at DTE:", self.gtd_dte_close_at, 0, 90)]),
+            ("Theta Decay Threshold", self.gtd_theta_threshold_enabled,
+             [("Max theta %:", self.gtd_theta_max_pct, 0.1, 50.0)]),
+            ("P/L Time Stop", self.gtd_pl_time_stop_enabled,
+             [("Max days to TP:", self.gtd_pl_time_stop_days, 1, 90)]),
+            ("Profit Extension", self.gtd_profit_extension_enabled,
+             [("Min profit %:", self.gtd_profit_extension_min_pct, 0, 100),
+              ("Extension days:", self.gtd_profit_extension_days, 1, 30)]),
+            ("Loss Shortening", self.gtd_loss_shortening_enabled,
+             [("Loss threshold %:", self.gtd_loss_threshold_pct, -100, 0),
+              ("Shorten days:", self.gtd_loss_shorten_days, 1, 30)]),
+            ("Rolling GTD", self.gtd_rolling_enabled,
+             [("Extension days:", self.gtd_rolling_extension_days, 1, 7)]),
+            ("Earnings/Event Close", self.gtd_earnings_enabled,
+             [("Days before:", self.gtd_earnings_days_before, 0, 10)]),
+            ("Weekend Theta Avoidance", self.gtd_weekend_theta_enabled,
+             [("Min DTE concern:", self.gtd_weekend_min_dte, 1, 90)]),
+            ("IV Crush Prevention", self.gtd_iv_crush_enabled,
+             [("Max IV rank:", self.gtd_iv_crush_max_rank, 0, 100)]),
+            ("Half-Life", self.gtd_half_life_enabled,
+             [("Fraction:", self.gtd_half_life_fraction, 0.1, 0.9)]),
+        ]
+
+        for idx, (label, enabled_var, params) in enumerate(methods):
+            method_frame = ttk.Frame(parent)
+            method_frame.pack(fill=tk.X, pady=1)
+
+            ttk.Checkbutton(method_frame, text=label, variable=enabled_var).pack(side=tk.LEFT)
+
+            for param_label, param_var, param_min, param_max in params:
+                ttk.Label(method_frame, text=f"  {param_label}", foreground="gray",
+                          font=('Helvetica', 8)).pack(side=tk.LEFT, padx=(8, 0))
+                spin = ttk.Spinbox(
+                    method_frame, textvariable=param_var,
+                    from_=param_min, to=param_max, width=6,
+                    increment=1 if isinstance(param_var, tk.IntVar) else 0.5
+                )
+                spin.pack(side=tk.LEFT, padx=2)
+
+    def _build_dynamic_gtd_data(self) -> Dict[str, Any]:
+        """Build the dynamic_gtd section for play JSON from GUI state."""
+        if not self.dynamic_gtd_enabled.get():
+            return {"enabled": False, "methods": [], "method_states": {}, "effective_date": None, "last_evaluated": None}
+
+        methods = []
+
+        if self.gtd_max_hold_days_enabled.get():
+            methods.append({"method": "max_hold_days", "enabled": True, "params": {"max_days": self.gtd_max_hold_days.get()}})
+        if self.gtd_dte_close_enabled.get():
+            methods.append({"method": "dte_based_close", "enabled": True, "params": {"close_at_dte": self.gtd_dte_close_at.get()}})
+        if self.gtd_theta_threshold_enabled.get():
+            methods.append({"method": "theta_decay_threshold", "enabled": True, "params": {"max_theta_pct": self.gtd_theta_max_pct.get()}})
+        if self.gtd_pl_time_stop_enabled.get():
+            methods.append({"method": "pl_time_stop", "enabled": True, "params": {"max_days_to_tp": self.gtd_pl_time_stop_days.get()}})
+        if self.gtd_profit_extension_enabled.get():
+            methods.append({"method": "profit_conditional_extension", "enabled": True, "params": {"min_profit_pct": self.gtd_profit_extension_min_pct.get(), "extension_days": self.gtd_profit_extension_days.get()}})
+        if self.gtd_loss_shortening_enabled.get():
+            methods.append({"method": "loss_conditional_shortening", "enabled": True, "params": {"loss_threshold_pct": self.gtd_loss_threshold_pct.get(), "shorten_days": self.gtd_loss_shorten_days.get()}})
+        if self.gtd_rolling_enabled.get():
+            methods.append({"method": "rolling_gtd", "enabled": True, "params": {"extension_days": self.gtd_rolling_extension_days.get(), "breakeven_buffer_pct": 0.0}})
+        if self.gtd_earnings_enabled.get():
+            methods.append({"method": "earnings_event_based", "enabled": True, "params": {"close_days_before": self.gtd_earnings_days_before.get(), "event_types": ["earnings", "fomc"]}})
+        if self.gtd_weekend_theta_enabled.get():
+            methods.append({"method": "weekend_theta_avoidance", "enabled": True, "params": {"close_on_friday": True, "min_dte_for_concern": self.gtd_weekend_min_dte.get()}})
+        if self.gtd_iv_crush_enabled.get():
+            methods.append({"method": "iv_crush_prevention", "enabled": True, "params": {"max_iv_rank": self.gtd_iv_crush_max_rank.get(), "close_if_iv_dropping": False}})
+        if self.gtd_half_life_enabled.get():
+            methods.append({"method": "half_life_method", "enabled": True, "params": {"fraction": self.gtd_half_life_fraction.get()}})
+
+        return {
+            "enabled": True,
+            "methods": methods,
+            "method_states": {},
+            "effective_date": None,
+            "last_evaluated": None,
+        }
+
+    # =========================================================================
     # Play Building
     # =========================================================================
-    
+
     def _build_play_data(self) -> Optional[Dict[str, Any]]:
         """Build play data from current form values."""
         symbol = self.symbol.get().strip()
@@ -2817,6 +2953,7 @@ class PlayCreatorGUI:
             "option_contract_symbol": option_symbol,
             "contracts": contracts,
             "play_expiration_date": self.play_expiration.get() if self.play_expiration.get() else exp_dt.strftime('%m/%d/%Y'),
+            "dynamic_gtd": self._build_dynamic_gtd_data(),
             "entry_point": entry_point,
             "take_profit": take_profit,
             "stop_loss": stop_loss,

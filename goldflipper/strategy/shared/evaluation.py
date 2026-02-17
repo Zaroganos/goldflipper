@@ -41,6 +41,82 @@ from goldflipper.utils.display import TerminalDisplay as display
 # Dynamic TP/SL Calculations (Stub for Future Methods)
 # ==================================================
 
+def apply_dynamic_gtd(
+    play: Dict[str, Any],
+    market_data: Optional[Any] = None,
+    play_file: Optional[str] = None,
+    save_play_fn: Optional[callable] = None,
+) -> Dict[str, Any]:
+    """
+    Convenience function to evaluate Dynamic GTD methods for a play.
+
+    Wraps GTDEvaluator.evaluate_play() for use by any strategy or module.
+    If the effective date changes, it updates the play dict in-place and
+    optionally persists to disk.
+
+    Args:
+        play: Play data dictionary (may be modified in-place if effective date changes)
+        market_data: MarketDataManager instance (optional, some methods don't need it)
+        play_file: Path to play file for persistence (optional)
+        save_play_fn: Function to save the play (optional, defaults to save_play_improved)
+
+    Returns:
+        Dict with evaluation results:
+            - should_close (bool): Whether to close the position immediately
+            - close_reason (str): Reason for closing
+            - effective_date (str|None): New effective date in MM/DD/YYYY
+            - effective_date_changed (bool): Whether effective date was modified
+            - is_gtd_exit (bool): True if this is a GTD-triggered exit
+            - method_results (list): Individual method results
+
+    Example:
+        result = apply_dynamic_gtd(play, market_data=md, play_file=filepath)
+        if result['should_close']:
+            close_position(play, {'is_gtd_exit': True}, play_file)
+    """
+    gtd_config = play.get('dynamic_gtd', {})
+    if not gtd_config.get('enabled', False):
+        return {
+            'should_close': False,
+            'close_reason': '',
+            'effective_date': None,
+            'effective_date_changed': False,
+            'is_gtd_exit': False,
+            'method_results': [],
+        }
+
+    try:
+        from goldflipper.strategy.gtd import GTDEvaluator
+
+        evaluator = GTDEvaluator(market_data=market_data)
+        result = evaluator.evaluate_play(play)
+
+        # Persist effective date change
+        if result.get('effective_date_changed', False) and result.get('effective_date'):
+            play['dynamic_gtd']['effective_date'] = result['effective_date']
+            if play_file:
+                if save_play_fn is None:
+                    from goldflipper.strategy.shared.play_manager import save_play_improved
+                    save_play_fn = save_play_improved
+                try:
+                    save_play_fn(play, play_file)
+                except Exception as e:
+                    logging.warning(f"Failed to persist GTD effective date: {e}")
+
+        return result
+
+    except Exception as e:
+        logging.error(f"Error in apply_dynamic_gtd: {e}")
+        return {
+            'should_close': False,
+            'close_reason': '',
+            'effective_date': None,
+            'effective_date_changed': False,
+            'is_gtd_exit': False,
+            'method_results': [],
+        }
+
+
 def apply_dynamic_targets(play: Dict[str, Any]) -> bool:
     """
     Apply dynamic TP/SL target adjustments to a play.
