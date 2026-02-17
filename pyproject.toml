@@ -37,6 +37,7 @@ dependencies = [
     "rich>=14.0.0",
     "mplfinance>=0.12.10b0",
     "XlsxWriter>=3.2.0",
+    "fastmcp>=2.0,<4.0",
 ]
 
 [project.optional-dependencies]
@@ -49,6 +50,7 @@ dev = [
 
 [project.scripts]
 goldflipper = "goldflipper.run:main"
+goldflipper-mcp = "goldflipper.mcp_server.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/Zaroganos/goldflipper"
