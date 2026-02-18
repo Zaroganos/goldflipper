@@ -241,8 +241,12 @@ def get_config_dir() -> Path:
     if custom_data_dir:
         config_dir = custom_data_dir / "config"
     elif is_frozen():
-        # Config lives next to the exe for persistence
+        # Config lives next to the exe for persistence.
         # Use sys.argv[0] for actual exe location (NOT sys.executable which is python.exe in temp!)
+        # TODO (per-machine install): when installed to Program Files via the MSI "Everyone" option,
+        #   this path is read-only for non-admin users.  Proper fix: detect a per-machine install
+        #   (e.g. check if exe is under Program Files) and redirect to
+        #   %LOCALAPPDATA%\Goldflipper\ instead.  Same applies to get_plays_root() / get_logs_dir().
         exe_path = sys.argv[0] if sys.argv else sys.executable
         config_dir = Path(exe_path).resolve().parent / "config"
     else:

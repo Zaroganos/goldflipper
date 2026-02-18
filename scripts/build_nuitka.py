@@ -199,90 +199,113 @@ def build(debug: bool = False, persistent_extract: bool = False) -> None:
             print(f"Report: {OUTPUT_DIR / 'compilation-report.xml'}")
         print("=" * 60)
         
-        # TODO: Code signing (future implementation)
-        # sign_executable(exe_path)
+        # Code signing (Development Mode)
+        sign_executable(exe_path)
     else:
         raise SystemExit(result.returncode)
 
 
-# =============================================================================
-# CODE SIGNING (Future Implementation)
-# =============================================================================
-# 
-# To sign the executable with a self-signed certificate:
-#
-# 1. Generate a self-signed certificate (one-time setup):
-#    ```powershell
-#    # Create a self-signed code signing certificate
-#    $cert = New-SelfSignedCertificate -Type CodeSigningCert `
-#        -Subject "CN=Goldflipper Development" `
-#        -KeyUsage DigitalSignature `
-#        -CertStoreLocation Cert:\CurrentUser\My `
-#        -NotAfter (Get-Date).AddYears(5)
-#    
-#    # Export to PFX for backup (optional)
-#    $pwd = ConvertTo-SecureString -String "YourPassword" -Force -AsPlainText
-#    Export-PfxCertificate -Cert $cert -FilePath "goldflipper-dev.pfx" -Password $pwd
-#    ```
-#
-# 2. Sign the executable:
-#    ```powershell
-#    # Find the cert thumbprint
-#    Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert
-#    
-#    # Sign with signtool (from Windows SDK)
-#    signtool sign /sha1 <thumbprint> /fd SHA256 /t http://timestamp.digicert.com dist\goldflipper.exe
-#    ```
-#
-# For production, use a real code signing certificate from a CA like:
-# - DigiCert, Sectigo, GlobalSign, or similar
-# - Costs ~$200-500/year but eliminates "Unknown Publisher" warnings
-#
-# def sign_executable(exe_path: Path, cert_thumbprint: str = None) -> bool:
-#     """
-#     Sign the executable with a code signing certificate.
-#     
-#     Args:
-#         exe_path: Path to the executable to sign
-#         cert_thumbprint: Certificate thumbprint (auto-detect if None)
-#     
-#     Returns:
-#         True if signing succeeded, False otherwise
-#     """
-#     import subprocess
-#     
-#     # Auto-detect certificate if not provided
-#     if cert_thumbprint is None:
-#         # Try to find a code signing cert in the current user store
-#         result = subprocess.run(
-#             ["powershell", "-Command", 
-#              "(Get-ChildItem Cert:\\CurrentUser\\My -CodeSigningCert | Select-Object -First 1).Thumbprint"],
-#             capture_output=True, text=True
-#         )
-#         if result.returncode == 0 and result.stdout.strip():
-#             cert_thumbprint = result.stdout.strip()
-#         else:
-#             print("[WARN] No code signing certificate found. Skipping signing.")
-#             return False
-#     
-#     # Sign with signtool
-#     sign_cmd = [
-#         "signtool", "sign",
-#         "/sha1", cert_thumbprint,
-#         "/fd", "SHA256",
-#         "/t", "http://timestamp.digicert.com",
-#         str(exe_path)
-#     ]
-#     
-#     print(f"[INFO] Signing executable with certificate: {cert_thumbprint[:8]}...")
-#     result = subprocess.run(sign_cmd, capture_output=True, text=True)
-#     
-#     if result.returncode == 0:
-#         print("[INFO] Executable signed successfully!")
-#         return True
-#     else:
-#         print(f"[ERROR] Signing failed: {result.stderr}")
-#         return False
+def find_signtool() -> Path | None:
+    """
+    Locate signtool.exe in standard Windows Kits directories.
+    Prioritizes the latest version and x64 architecture.
+    """
+    import shutil
+    
+    # Check PATH first
+    if shutil.which("signtool"):
+        return Path(shutil.which("signtool"))
+        
+    # Standard location
+    kits_root = Path(r"C:\Program Files (x86)\Windows Kits\10\bin")
+    if not kits_root.exists():
+        return None
+        
+    # Find all versions (10.0.xxxxx.0)
+    versions = []
+    for entry in kits_root.iterdir():
+        if entry.is_dir() and entry.name.startswith("10."):
+            versions.append(entry)
+            
+    # Sort by version number (descending)
+    versions.sort(key=lambda p: [int(x) for x in p.name.split(".")], reverse=True)
+    
+    for version_dir in versions:
+        # Check x64 first, then x86
+        for arch in ["x64", "x86", "arm64"]:
+            candidate = version_dir / arch / "signtool.exe"
+            if candidate.exists():
+                return candidate
+                
+    return None
+
+
+def sign_executable(exe_path: Path) -> bool:
+    """
+    Sign the executable with a self-signed development certificate.
+    """
+    print("\n" + "-" * 60)
+    print("  CODE SIGNING (Development Mode)")
+    print("-" * 60)
+
+    signtool = find_signtool()
+    if not signtool:
+        print("[WARN] signtool.exe not found. Skipping code signing.")
+        print("       Install Windows SDK to enable signing.")
+        return False
+        
+    print(f"[INFO] Found signtool: {signtool}")
+
+    # Get or create certificate via PowerShell script
+    ps_script = PROJECT_ROOT / "scripts" / "setup_dev_cert.ps1"
+    if not ps_script.exists():
+        print(f"[ERROR] Certificate setup script missing: {ps_script}")
+        return False
+        
+    try:
+        # Run PS script to get thumbprint
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps_script)],
+            capture_output=True, text=True, check=True
+        )
+        
+        # Parse output for thumbprint
+        lines = result.stdout.strip().splitlines()
+        thumbprint = None
+        for line in lines:
+            if "Certificate found:" in line:
+                thumbprint = line.split(":")[-1].strip()
+                break
+                
+        if not thumbprint:
+            print("[WARN] Could not retrieve certificate thumbprint.")
+            return False
+            
+        print(f"[INFO] Using certificate: {thumbprint}")
+        
+        # Sign the executable
+        # /fd SHA256 is required for modern Windows
+        # /t is for timestamping (crucial for valid signatures after cert expiry)
+        cmd = [
+            str(signtool), "sign",
+            "/sha1", thumbprint,
+            "/fd", "SHA256",
+            "/t", "http://timestamp.digicert.com",
+            str(exe_path)
+        ]
+        
+        subprocess.run(cmd, check=True, capture_output=True)
+        print(f"[SUCCESS] Signed: {exe_path.name}")
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        print(f"[ERROR] Signing failed: {e}")
+        if e.stderr:
+            print(f"       {e.stderr.strip()}")
+        return False
+    except Exception as e:
+        print(f"[ERROR] Unexpected error during signing: {e}")
+        return False
 
 
 def main():

@@ -26,6 +26,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WXS_SOURCE = PROJECT_ROOT / "installer" / "goldflipper.wxs"
 DIST_DIR = PROJECT_ROOT / "dist"
@@ -33,10 +39,146 @@ EXE_PATH = DIST_DIR / "goldflipper.exe"
 ICON_PATH = PROJECT_ROOT / "goldflipper.ico"
 PYPROJECT_PATH = PROJECT_ROOT / "pyproject.toml"
 
+BANNER_PATH = PROJECT_ROOT / "installer" / "banner.bmp"
+DIALOG_PATH = PROJECT_ROOT / "installer" / "dialog.bmp"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _generate_gradient(width: int, height: int, start_color: tuple, end_color: tuple) -> Image.Image:
+    """Generate a vertical gradient image."""
+    base = Image.new('RGB', (width, height), start_color)
+    top = Image.new('RGB', (width, height), start_color)
+    bottom = Image.new('RGB', (width, height), end_color)
+    mask = Image.new('L', (width, height))
+    mask_data = []
+    for y in range(height):
+        mask_data.extend([int(255 * (y / height))] * width)
+    mask.putdata(mask_data)
+    base.paste(bottom, (0, 0), mask)
+    return base
+
+
+def _generate_installer_images() -> None:
+    """Generate installer banner and dialog bitmaps if missing."""
+    if not PIL_AVAILABLE:
+        print("[WARN] Pillow not installed. Skipping installer image generation.")
+        return
+
+    if BANNER_PATH.exists() and DIALOG_PATH.exists():
+        return
+
+    print("[INFO] Generating installer images...")
+    
+    # Goldflipper Brand Colors (Dark Blue/Gold theme)
+    # Dark Blue: #001f3f (0, 31, 63) -> #001122 (0, 17, 34)
+    start_color = (0, 31, 63)
+    end_color = (0, 10, 20)
+    text_color = (255, 215, 0) # Gold
+    
+    # 1. Top Banner (493 x 58)
+    if not BANNER_PATH.exists():
+        banner = _generate_gradient(493, 58, start_color, end_color)
+        draw = ImageDraw.Draw(banner)
+        # Simple text for now
+        try:
+            font = ImageFont.truetype("arial.ttf", 24)
+        except IOError:
+            font = None
+            
+        text = "Goldflipper Setup"
+        draw.text((20, 15), text, fill=text_color, font=font)
+        banner.save(BANNER_PATH)
+        print(f"[INFO] Created {BANNER_PATH}")
+
+    # 2. Dialog Background (493 x 312) - Left side is usually white in WixUI_InstallDir
+    # But WixUIDialogBmp covers the left panel of Welcome/Finish dialogs
+    if not DIALOG_PATH.exists():
+        dialog = _generate_gradient(493, 312, start_color, end_color)
+        draw = ImageDraw.Draw(dialog)
+        
+        # Draw some "tech" lines or simple decoration
+        for i in range(0, 493, 20):
+            draw.line([(i, 0), (0, i)], fill=(0, 40, 80), width=1)
+            
+        try:
+            font_large = ImageFont.truetype("arial.ttf", 36)
+            font_small = ImageFont.truetype("arial.ttf", 14)
+        except IOError:
+            font_large = None
+            font_small = None
+            
+        draw.text((30, 130), "Goldflipper", fill=text_color, font=font_large)
+        draw.text((30, 180), "Multi-Strategy Options Trading", fill=(200, 200, 200), font=font_small)
+        
+        dialog.save(DIALOG_PATH)
+        print(f"[INFO] Created {DIALOG_PATH}")
+
+
+def _find_signtool() -> Path | None:
+    """Locate signtool.exe (duplicated logic from build_nuitka.py)."""
+    if shutil.which("signtool"):
+        return Path(shutil.which("signtool"))
+        
+    kits_root = Path(r"C:\Program Files (x86)\Windows Kits\10\bin")
+    if not kits_root.exists():
+        return None
+        
+    versions = [e for e in kits_root.iterdir() if e.is_dir() and e.name.startswith("10.")]
+    versions.sort(key=lambda p: [int(x) for x in p.name.split(".")], reverse=True)
+    
+    for v in versions:
+        for arch in ["x64", "x86"]:
+            candidate = v / arch / "signtool.exe"
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def _sign_msi(msi_path: Path) -> None:
+    """Sign the generated MSI package."""
+    print("\n" + "-" * 60)
+    print("  MSI SIGNING")
+    print("-" * 60)
+    
+    signtool = _find_signtool()
+    if not signtool:
+        print("[WARN] signtool.exe not found. Skipping MSI signing.")
+        return
+
+    ps_script = PROJECT_ROOT / "scripts" / "setup_dev_cert.ps1"
+    if not ps_script.exists():
+        return
+
+    try:
+        # Reuse existing cert setup logic
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps_script)],
+            capture_output=True, text=True, check=True
+        )
+        lines = result.stdout.strip().splitlines()
+        thumbprint = next((l.split(":")[-1].strip() for l in lines if "Certificate found:" in l), None)
+        
+        if not thumbprint:
+            print("[WARN] No certificate thumbprint found.")
+            return
+
+        cmd = [
+            str(signtool), "sign",
+            "/sha1", thumbprint,
+            "/fd", "SHA256",
+            "/t", "http://timestamp.digicert.com",
+            str(msi_path)
+        ]
+        
+        subprocess.run(cmd, check=True, capture_output=True)
+        print(f"[SUCCESS] Signed MSI: {msi_path.name}")
+        
+    except Exception as e:
+        print(f"[ERROR] MSI signing failed: {e}")
+
 
 def _read_version() -> str:
     """
@@ -169,6 +311,14 @@ def build_msi(
     # 2. Check prerequisites
     # ------------------------------------------------------------------
     missing = []
+    
+    # Generate installer images if PIL is available
+    if PIL_AVAILABLE:
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            _generate_installer_images()
+        except ImportError:
+            pass
 
     if not _check_dotnet():
         missing.append(".NET SDK (dotnet CLI)")
@@ -281,6 +431,9 @@ def build_msi(
         print("  To uninstall silently:")
         print(f"    msiexec /x \"{msi_path}\" /qn")
         print("=" * 60)
+        
+        # Sign the MSI
+        _sign_msi(msi_path)
     else:
         print()
         print("[ERROR] MSI build failed!")

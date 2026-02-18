@@ -21,7 +21,7 @@
         Manufacturer="Iliya Yaroshevskiy"
         Version="$(var.ProductVersion)"
         UpgradeCode="7B2A7F4E-3D1C-4A8B-9E5F-6C0D2B4A8E1F"
-        Scope="perMachine"
+        Scope="perUserOrMachine"
         InstallerVersion="500"
         Compressed="yes">
 
@@ -40,15 +40,35 @@
         <Property Id="ARPURLINFOABOUT" Value="https://github.com/Zaroganos/goldflipper" />
         <Property Id="ARPHELPLINK" Value="https://github.com/Zaroganos/goldflipper/issues" />
 
-        <!-- WixUI install-directory dialog set (Welcome → License → Dir → Install) -->
-        <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+        <!--
+            WixUI_Advanced: shows a "Just me / Everyone" scope selection dialog.
+
+            Just me   (per-user):    Installs to %LOCALAPPDATA%\Apps\Goldflipper\
+                                     No elevation needed. App writes config/plays/logs
+                                     next to the exe, which is user-writable. FULLY SUPPORTED.
+
+            Everyone  (per-machine): Installs to Program Files\Goldflipper\
+                                     Requires elevation. SCAFFOLD — app still writes user
+                                     data next to the exe (Program Files), which requires
+                                     admin rights to run. Non-admin users will get
+                                     "Access Denied" on first launch.
+                                     TODO: update exe_utils.py to redirect user data to
+                                     %LOCALAPPDATA%\Goldflipper\ when installed per-machine.
+        -->
+        <ui:WixUI Id="WixUI_Advanced" />
+
+        <!-- Folder name used by WixUI_Advanced scope dialog to build install paths -->
+        <Property Id="ApplicationFolderName" Value="Goldflipper" />
+
+        <!-- Default to per-user install; user can switch to per-machine in the UI -->
+        <Property Id="MSIINSTALLPERUSER" Value="1" />
 
         <!-- License file shown during installation (RTF format required) -->
         <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectDir)\installer\License.rtf" />
 
-        <!-- Banner and dialog background bitmaps (optional, use defaults if missing) -->
-        <!-- <WixVariable Id="WixUIBannerBmp" Value="$(var.ProjectDir)\installer\banner.bmp" /> -->
-        <!-- <WixVariable Id="WixUIDialogBmp" Value="$(var.ProjectDir)\installer\dialog.bmp" /> -->
+        <!-- Banner and dialog background bitmaps -->
+        <WixVariable Id="WixUIBannerBmp" Value="$(var.ProjectDir)\installer\banner.bmp" />
+        <WixVariable Id="WixUIDialogBmp" Value="$(var.ProjectDir)\installer\dialog.bmp" />
 
         <!-- ============================================================
              Features
@@ -69,10 +89,14 @@
 
     <!-- ================================================================
          Installation Directory
+         WixUI_Advanced manages APPLICATIONFOLDER based on scope selection:
+           Just me   (per-user)    → %LOCALAPPDATA%\Apps\Goldflipper\
+           Everyone  (per-machine) → Program Files\Goldflipper\
+         The directory definition below anchors per-machine installs.
          ================================================================ -->
     <Fragment>
         <StandardDirectory Id="ProgramFiles6432Folder">
-            <Directory Id="INSTALLFOLDER" Name="Goldflipper" />
+            <Directory Id="APPLICATIONFOLDER" Name="Goldflipper" />
         </StandardDirectory>
     </Fragment>
 
@@ -80,7 +104,7 @@
          Main Application Files
          ================================================================ -->
     <Fragment>
-        <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+        <ComponentGroup Id="ProductComponents" Directory="APPLICATIONFOLDER">
 
             <!-- Primary executable (Nuitka onefile build) -->
             <Component Id="MainExecutable" Guid="A1E5F8C2-9B3D-4F7A-8C6E-2D0B4A9F1E3C">
@@ -112,8 +136,8 @@
                 <Shortcut Id="GoldflipperStartMenuShortcut"
                           Name="Goldflipper"
                           Description="Launch Goldflipper options trading system"
-                          Target="[INSTALLFOLDER]goldflipper.exe"
-                          WorkingDirectory="INSTALLFOLDER"
+                          Target="[APPLICATIONFOLDER]goldflipper.exe"
+                          WorkingDirectory="APPLICATIONFOLDER"
                           Icon="GoldflipperIcon" />
                 <RemoveFolder Id="RemoveGoldflipperMenuDir" On="uninstall" />
                 <RegistryValue Root="HKCU"
@@ -135,8 +159,8 @@
                 <Shortcut Id="GoldflipperDesktopShortcut"
                           Name="Goldflipper"
                           Description="Launch Goldflipper options trading system"
-                          Target="[INSTALLFOLDER]goldflipper.exe"
-                          WorkingDirectory="INSTALLFOLDER"
+                          Target="[APPLICATIONFOLDER]goldflipper.exe"
+                          WorkingDirectory="APPLICATIONFOLDER"
                           Icon="GoldflipperIcon" />
                 <RegistryValue Root="HKCU"
                                Key="Software\Goldflipper"
