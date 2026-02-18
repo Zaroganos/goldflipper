@@ -731,3 +731,17 @@ csv_ingestor:
   backup:
     keep_originals: true      # Keep original CSV files after processing
     backup_dir: "ingestor_backups"  # Directory to store CSV backups
+
+####################################################################################################
+# Update Checker
+####################################################################################################
+update_check:
+  # URL of the version.json manifest published by the release workflow.
+  # Set this to your Nextcloud public share download URL once the n8n publishing
+  # pipeline is configured.  Leave blank ("") to disable update checking.
+  # Example: https://nextcloud.example.com/index.php/s/SHARETOKEN/download
+  url: ""
+
+  # Seconds to wait for the server before giving up.  Keep this low — a slow
+  # or unreachable server should not delay the app startup experience.
+  timeout_seconds: 5

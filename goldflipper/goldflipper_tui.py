@@ -155,7 +155,7 @@ class WelcomeScreen(Screen):
         # Update the connection status (and update periodically every 60 seconds)
         await self.update_connection_status()
         self.set_interval(60, lambda: self.call_later(self.update_connection_status))
-        
+
         # Check if settings were just created using the global flag
         if settings_just_created:
             self.notify(
@@ -163,6 +163,44 @@ class WelcomeScreen(Screen):
                 title="New Configuration Created",
                 timeout=10,
                 severity="information"
+            )
+
+        # Schedule update check after a short delay so it never competes with startup
+        self.set_timer(6, self._check_for_updates)
+
+    async def _check_for_updates(self) -> None:
+        """Background update check — reads settings, hits version.json, notifies if newer."""
+        import asyncio
+        import yaml
+        from goldflipper.utils.exe_utils import get_settings_path
+        from goldflipper.utils.updater import check_for_update
+
+        try:
+            settings_path = get_settings_path()
+            with open(settings_path, encoding="utf-8") as f:
+                settings = yaml.safe_load(f) or {}
+            uc = settings.get("update_check", {})
+            url = str(uc.get("url", "")).strip()
+            timeout = float(uc.get("timeout_seconds", 5))
+        except Exception:
+            return  # Can't read settings — fail silently
+
+        if not url:
+            return  # Not configured yet
+
+        info = await asyncio.to_thread(check_for_update, url, timeout)
+
+        if info and info.is_newer:
+            lines = [f"Version {info.latest_version} is available (you have {info.current_version})."]
+            if info.notes:
+                lines.append(info.notes)
+            if info.download_url:
+                lines.append(f"Download: {info.download_url}")
+            self.notify(
+                "\n".join(lines),
+                title="Update Available",
+                timeout=30,
+                severity="warning",
             )
 
     async def update_connection_status(self) -> None:
