@@ -187,6 +187,12 @@ uv run pytest -v
 uv run pytest -x
 ```
 
+### Known Third-Party Warning Filter
+
+- `pyproject.toml` filters `DeprecationWarning` for `websockets.legacy is deprecated` from module `websockets.legacy`.
+- Reason: current `alpaca-py` imports `websockets.legacy` during module import in tests.
+- Remove this filter after `alpaca-py` migrates off `websockets.legacy`.
+
 ### Writing Tests
 
 Place tests in `tests/` directory:
