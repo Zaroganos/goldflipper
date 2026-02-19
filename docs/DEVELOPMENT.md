@@ -3,7 +3,7 @@
 ## Technology Stack
 
 ### Core
-- **Python 3.11-3.13**
+- **Python 3.12-3.14**
 - **Package Manager**: uv
 - **Build Backend**: hatchling (for Python packaging)
 - **Distribution**: Nuitka (for standalone executables)

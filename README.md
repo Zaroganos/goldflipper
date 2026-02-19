@@ -99,7 +99,7 @@ pip install -e . --pre
 ## Development Setup (Modern)
 
 ### Prerequisites
-- Python 3.11-3.13
+- Python 3.12-3.14
 - [uv](https://docs.astral.sh/uv/) package manager
 
 ### Quick Start

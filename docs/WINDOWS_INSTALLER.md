@@ -12,7 +12,7 @@ This document describes the complete Windows Installer (MSI) implementation for 
 ### Technologies Used
 - **WiX Toolset v4+** - Modern Windows Installer XML toolset
 - **.NET 6+ SDK** - Required for WiX CLI
-- **Python 3.11+** - Build orchestration script
+- **Python 3.12+** - Build orchestration script
 - **Nuitka** - For the compiled executable that the MSI packages
 
 ### Key Features Implemented
