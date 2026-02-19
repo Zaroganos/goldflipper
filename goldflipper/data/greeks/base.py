@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any, cast
 
 import numpy as np
 
@@ -26,7 +27,7 @@ class GreeksCalculator:
     def _validate_inputs(self):
         """Validate input parameters"""
         if not all(
-            isinstance(x, (int, float))
+            isinstance(cast(Any, x), (int, float))
             for x in [
                 self.data.underlying_price,
                 self.data.strike_price,

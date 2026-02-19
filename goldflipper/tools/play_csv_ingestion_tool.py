@@ -863,12 +863,12 @@ def main():
         print("\nProceeding with ingestion, but data may be misaligned.\n")
 
     strike_calls = find_strike_index(calls_headers)
-    if strike_calls is None:
-        strike_calls = 8  # Updated index for strike price
+    if not strike_calls:
+        strike_calls = [8]  # Updated index for strike price
         print("Warning: Falling back to default strike column index 8 for calls.")
     strike_puts = find_strike_index(puts_headers)
-    if strike_puts is None:
-        strike_puts = 8  # Updated index for strike price
+    if not strike_puts:
+        strike_puts = [8]  # Updated index for strike price
         print("Warning: Falling back to default strike column index 8 for puts.")
 
     # Get validation config (dates, earnings, etc.)
@@ -978,7 +978,7 @@ def main():
         if len(plays) > 1:
             # Create bidirectional OCO relationships across all plays in group
             for _section, play in plays:
-                other_plays = [p["play_name"] + ".json" for s, p in plays if p["play_name"] != play["play_name"]]
+                other_plays = [p["play_name"] + ".json" for _s, p in plays if p["play_name"] != play["play_name"]]
                 # Merge with existing OCO triggers if any
                 existing_oco = play["conditional_plays"].get("OCO_triggers", [])
                 play["conditional_plays"]["OCO_triggers"] = list(set(existing_oco + other_plays))
@@ -990,7 +990,7 @@ def main():
 
         # Each parent triggers all children in this OSO group
         for _parent_section, parent_play in parents:
-            child_filenames = [child["play_name"] + ".json" for child_section, child in children]
+            child_filenames = [child["play_name"] + ".json" for _child_section, child in children]
             if child_filenames:
                 # Merge with existing OTO triggers if any
                 existing_oto = parent_play["conditional_plays"].get("OTO_triggers", [])

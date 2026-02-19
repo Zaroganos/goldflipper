@@ -3,7 +3,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import pandas_market_calendars as mcal
@@ -69,6 +69,11 @@ from goldflipper.utils.display import TerminalDisplay as display
 # Functions to retrieve and validate data from the Alpaca brokerage API.
 
 
+def _get_alpaca_client() -> Any:
+    """Return Alpaca client as Any to tolerate dynamic SDK/stub mismatches."""
+    return cast(Any, get_alpaca_client())
+
+
 def get_order_info(order_id: str) -> dict[str, Any] | None:
     """
     Get detailed information about a specific order.
@@ -80,7 +85,7 @@ def get_order_info(order_id: str) -> dict[str, Any] | None:
         Optional[Dict]: Order information including status, filled quantity,
                        filled price, and other relevant details
     """
-    client = get_alpaca_client()
+    client = _get_alpaca_client()
     try:
         order = client.get_order_by_id(order_id)
         return {
@@ -116,7 +121,7 @@ def get_position_info(symbol: str) -> dict[str, Any] | None:
         Optional[Dict]: Position information including quantity,
                        current price, and other relevant details
     """
-    client = get_alpaca_client()
+    client = _get_alpaca_client()
     try:
         position = client.get_open_position(symbol)
         return {
@@ -146,7 +151,7 @@ def get_all_orders(status: str = "open") -> dict[str, dict[str, Any]] | None:
     Returns:
         Optional[Dict]: Dictionary of order IDs mapping to their information
     """
-    client = get_alpaca_client()
+    client = _get_alpaca_client()
     try:
         # The new API doesn't use status as a parameter
         # Instead, we should filter the results after getting them
@@ -179,7 +184,7 @@ def get_all_positions() -> dict[str, dict[str, Any]] | None:
     Returns:
         Optional[Dict]: Dictionary of symbols mapping to their position information
     """
-    client = get_alpaca_client()
+    client = _get_alpaca_client()
     try:
         positions = client.get_all_positions()
         return {
@@ -368,7 +373,7 @@ def evaluate_closing_strategy(symbol, play, play_file=None):
 
 
 def get_option_contract(play):
-    client = get_alpaca_client()
+    client = _get_alpaca_client()
     symbol = play["symbol"]
     expiration_date = datetime.strptime(play["expiration_date"], "%m/%d/%Y").date()
     strike_price = play["strike_price"]  # Strike price must be a string
@@ -395,7 +400,7 @@ def get_option_contract(play):
 
 
 def open_position(play, play_file):
-    client = get_alpaca_client()
+    client = _get_alpaca_client()
     contract = get_option_contract(play)
 
     if not contract:
@@ -459,8 +464,10 @@ def open_position(play, play_file):
     try:
         logging.debug("Capturing Greeks...")
         # NEW: Get Greeks directly from option data
-        delta = option_data["delta"]
-        theta = option_data["theta"]
+        delta_raw = option_data.get("delta")
+        theta_raw = option_data.get("theta")
+        delta: float | None = float(delta_raw) if delta_raw is not None else None
+        theta: float | None = float(theta_raw) if theta_raw is not None else None
 
         # Initialize logging section if it doesn't exist
         if "logging" not in play:
@@ -616,7 +623,7 @@ def open_position(play, play_file):
 
 def close_position(play, close_conditions, play_file):
     """Close position based on the triggered conditions."""
-    client = get_alpaca_client()
+    client = _get_alpaca_client()
     contract_symbol = play.get("option_contract_symbol")
 
     if not contract_symbol:
@@ -1007,7 +1014,7 @@ def monitor_and_manage_position(play, play_file):
                 # display.info("Position not yet established, skipping monitoring")
                 return True  # Return True to continue monitoring on next cycle
 
-        client = get_alpaca_client()
+        client = _get_alpaca_client()
 
         # Verify play status is appropriate for monitoring
         if play.get("status", {}).get("play_status") not in ["OPEN", "PENDING-CLOSING"]:
@@ -1029,8 +1036,6 @@ def monitor_and_manage_position(play, play_file):
             display.error("Play file is missing required symbols")
             return False
 
-        # Get current market data
-        market_data = None
         current_premium = None
 
         # Check if we need stock price monitoring
@@ -1662,7 +1667,7 @@ def verify_position_exists(play):
 
     for attempt in range(max_retries):
         try:
-            client = get_alpaca_client()
+            client = _get_alpaca_client()
             position = client.get_open_position(play.get("option_contract_symbol"))
             if position:
                 return True
@@ -1744,7 +1749,7 @@ def handle_conditional_plays(play, play_file):
                     move_play_to_temp(pending_opening_path)
                     continue
 
-                client = get_alpaca_client()
+                client = _get_alpaca_client()
                 try:
                     order = client.get_order_by_id(order_id)
                 except Exception as e:
@@ -2015,7 +2020,7 @@ def manage_pending_plays(plays_dir: str | None, single_play: tuple[dict[str, Any
 
         for play, play_file in plays_to_process:
             try:
-                client = get_alpaca_client()
+                client = _get_alpaca_client()
                 contract_symbol = play.get("option_contract_symbol")
 
                 # Handle pending-opening plays

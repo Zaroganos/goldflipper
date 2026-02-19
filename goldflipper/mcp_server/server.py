@@ -25,17 +25,9 @@ def _register_tools():
     # Phase 2: Orders & trading
     # Phase 3: Strategy development & config
     # Phase 4: Analytics
-    from goldflipper.mcp_server.tools import (
-        analytics,  # noqa: F401
-        config_tools,  # noqa: F401
-        market_data,  # noqa: F401
-        orders,  # noqa: F401
-        plays,  # noqa: F401
-        portfolio,  # noqa: F401
-        strategies,  # noqa: F401
-        strategy_dev,  # noqa: F401
-        system,  # noqa: F401
-    )
+    from goldflipper.mcp_server.tools import analytics, config_tools, market_data, orders, plays, portfolio, strategies, strategy_dev, system
+
+    _ = (analytics, config_tools, market_data, orders, plays, portfolio, strategies, strategy_dev, system)
 
 
 def create_server() -> FastMCP:

@@ -4,7 +4,7 @@ import random
 import sys
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -326,7 +326,7 @@ class AutoPlayCreator:
                 dated = [(e, to_dt(e)) for e in expirations]
                 valid = [t for t in dated if t[1] is not None]
                 if valid:
-                    chosen_expiry = min(valid, key=lambda t: abs(t[1] - target_dt))[0]
+                    chosen_expiry = min(valid, key=lambda t: abs(cast(datetime, t[1]) - target_dt))[0]
 
             # Build candidate expirations (chosen first, then others by closeness)
             def to_dt(s):
@@ -342,7 +342,7 @@ class AutoPlayCreator:
                 remaining = [e for e in expirations if e != chosen_expiry]
                 dated = [(e, to_dt(e)) for e in remaining]
                 valid = [t for t in dated if t[1] is not None]
-                candidate_exps.extend([e for e, _ in sorted(valid, key=lambda t: abs(t[1] - target_dt))])
+                candidate_exps.extend([e for e, _ in sorted(valid, key=lambda t: abs(cast(datetime, t[1]) - target_dt))])
 
             selected_calls = None
             selected_puts = None

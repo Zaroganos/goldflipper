@@ -1,6 +1,6 @@
 """Analytics and trade logging tools — summary stats, trade log queries, export."""
 
-from typing import Any
+from typing import Any, cast
 
 from goldflipper.mcp_server.server import mcp
 
@@ -60,7 +60,7 @@ def get_trade_log(limit: int = 50, strategy: str | None = None, symbol: str | No
 
     try:
         logger = _get_logger()
-        df = pd.read_csv(logger.csv_path)
+        df = cast(pd.DataFrame, pd.read_csv(logger.csv_path))
     except FileNotFoundError:
         return {"error": "Trade log file not found."}
     except Exception as e:
@@ -80,7 +80,11 @@ def get_trade_log(limit: int = 50, strategy: str | None = None, symbol: str | No
         trade = {}
         for col in df.columns:
             val = row[col]
-            if pd.isna(val):
+            try:
+                is_null = bool(pd.isna(val))
+            except Exception:
+                is_null = False
+            if is_null:
                 trade[col] = None
             else:
                 trade[col] = val

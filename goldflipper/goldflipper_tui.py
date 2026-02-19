@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import time
+from typing import Any, cast
 
 import yaml
 from textual.app import App, ComposeResult
@@ -216,14 +217,6 @@ class WelcomeScreen(Screen):
         """
         from goldflipper.tools.get_alpaca_info import test_alpaca_connection
 
-        # Try to import Option (with fallback).
-        try:
-            from textual.widgets.select import Option
-        except ImportError:
-            from collections import namedtuple
-
-            Option = namedtuple("Option", ["label", "value"])
-
         # Force a reset of the Alpaca client.
         try:
             from goldflipper.alpaca_client import reset_client
@@ -259,7 +252,7 @@ class WelcomeScreen(Screen):
 
         # Build the options list with updated connection status.
         accounts = config.get("alpaca", "accounts")
-        new_options = []
+        new_options: list[tuple[str, str]] = []
         for name, acc in accounts.items():
             account_nickname = acc.get("nickname", name.replace("_", " ").title())
             if name == active_account_config:
@@ -269,13 +262,13 @@ class WelcomeScreen(Screen):
                     display_label = f"[red]Not Connected:[/red] {account_nickname}"
             else:
                 display_label = account_nickname
-            new_options.append(Option(label=display_label, value=name))
+            new_options.append((display_label, name))
 
         # Determine the label for the currently selected account.
         selected_label = ""
-        for option in new_options:
-            if option.value == active_account_config:
-                selected_label = option.label
+        for label, value in new_options:
+            if value == active_account_config:
+                selected_label = label
                 break
 
         from textual.widgets import Select
@@ -292,7 +285,7 @@ class WelcomeScreen(Screen):
         new_select = Select(options=new_options, prompt=selected_label, id="account_selector")
         new_select.value = active_account_config
 
-        parent_container.mount(new_select)
+        cast(Any, parent_container).mount(new_select)
         await asyncio.sleep(0)
         new_select.refresh()
 
@@ -323,6 +316,8 @@ class WelcomeScreen(Screen):
         """Handle account selection changes"""
 
         selected_account = event.value
+        if not isinstance(selected_account, str):
+            return
         accounts = config.get("alpaca", "accounts")
         nickname = accounts[selected_account].get("nickname", selected_account.replace("_", " ").title())
 
@@ -572,7 +567,10 @@ class WelcomeScreen(Screen):
                     config_button.variant = "primary"
 
                     self.notify(
-                        "Configuration completed! You're ready to launch the trading system.", title="Setup Complete", timeout=5, severity="success"
+                        "Configuration completed! You're ready to launch the trading system.",
+                        title="Setup Complete",
+                        timeout=5,
+                        severity="information",
                     )
 
             # Always refresh the UI to show latest account information

@@ -447,8 +447,7 @@ def edit_play_field(play_data, field, filepath):
             return
 
         new_value = get_input("Enter number of contracts: ", int, validation=lambda x: x > 0, error_message="Please enter a positive number")
-        if new_value is not None:
-            play_data["contracts"] = new_value
+        play_data["contracts"] = new_value
 
     elif field == "conditional_plays":
         edit_conditional_plays(play_data, filepath)
@@ -536,13 +535,11 @@ def edit_play_field(play_data, field, filepath):
 
     elif field == "entry_point":
         new_value = get_input("Enter the entry price (stock price): ", float, error_message="Please enter a valid number for the entry price.")
-        if new_value is not None:
-            play_data["entry_point"]["stock_price"] = new_value
+        play_data["entry_point"]["stock_price"] = new_value
 
     elif field == "strike_price":
         new_value = get_input("Enter the strike price: ", float, error_message="Please enter a valid number for the strike price.")
-        if new_value is not None:
-            play_data["strike_price"] = str(new_value)  # Store as string like in creation tool
+        play_data["strike_price"] = str(new_value)  # Store as string like in creation tool
 
 
 #   else:
@@ -816,9 +813,9 @@ def update_play_class(play_data):
     current_filename = os.path.basename(play_data.get("filepath", ""))
 
     for play in all_plays:
-        play_data = load_play(play["filepath"])
-        if play_data and "conditional_plays" in play_data:
-            if play_data["conditional_plays"].get("OTO_trigger") == current_filename:
+        candidate_play = load_play(play["filepath"])
+        if candidate_play and "conditional_plays" in candidate_play:
+            if candidate_play["conditional_plays"].get("OTO_trigger") == current_filename:
                 is_oto_child = True
                 break
 

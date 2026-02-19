@@ -34,7 +34,7 @@ Usage:
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from alpaca.trading.enums import OrderSide, OrderType, TimeInForce
 from alpaca.trading.requests import ClosePositionRequest, LimitOrderRequest, MarketOrderRequest
@@ -263,8 +263,8 @@ class OrderExecutor:
             status=AssetStatus.ACTIVE,
         )
 
-        res = self.client.get_option_contracts(req)
-        contracts = res.option_contracts
+        res = cast(Any, self.client.get_option_contracts(req))
+        contracts = cast(list[Any], getattr(res, "option_contracts", []))
 
         if contracts:
             self.logger.info(f"Option contract found: {contracts[0]}")

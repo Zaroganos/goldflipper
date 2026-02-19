@@ -21,7 +21,6 @@ Starting up ...
 print(ascii_art)
 import argparse
 import logging
-import logging.handlers
 import time
 from datetime import datetime
 from typing import Any
@@ -149,7 +148,7 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
             self.running = True
 
             # Initialize system
-            success, self.state_manager, test_results = initialize_system()
+            success, self.state_manager, _test_results = initialize_system()
             if not success:
                 raise Exception("System initialization failed - critical test failures")
 
@@ -291,7 +290,7 @@ def run_trading_system(console_mode=False):
 
     try:
         # Run initialization and startup tests
-        success, state_manager, test_results = initialize_system()
+        success, _state_manager, test_results = initialize_system()
         if not success:
             display.error("System initialization failed. Check the logs for details.")
             # Keep window open if configured
@@ -340,7 +339,7 @@ def run_trading_system(console_mode=False):
         # Use exe_utils for Nuitka-compatible path
         state_dir = get_application_dir() / "state"
         state_dir.mkdir(exist_ok=True)
-        state_manager = StateManager(state_dir)
+        _state_manager = StateManager(state_dir)
 
         # Initialize orchestrator for multi-strategy mode
         orchestrator = _init_orchestrator(console_mode)

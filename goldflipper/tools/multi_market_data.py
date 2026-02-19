@@ -4,7 +4,8 @@ import os
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Any, cast
 
 import pandas as pd
 import yaml
@@ -21,6 +22,14 @@ from goldflipper.data.market.providers.alpaca_provider import AlpacaProvider
 from goldflipper.data.market.providers.base import MarketDataProvider
 from goldflipper.data.market.providers.marketdataapp_provider import MarketDataAppProvider
 from goldflipper.data.market.providers.yfinance_provider import YFinanceProvider
+
+
+def _is_scalar_notna(value: Any) -> bool:
+    """Safe scalar null-check that avoids pandas truthiness errors."""
+    try:
+        return bool(pd.notna(value))
+    except Exception:
+        return False
 
 
 class MarketDataComparator:
@@ -177,8 +186,8 @@ class MarketDataComparator:
             for col in ["bid", "ask", "last"]:
                 if col in data.columns:
                     grouped = data.groupby("strike")[col]
-                    max_diff_pct = grouped.apply(lambda x: (x.max() - x.min()) / x.min() if x.min() != 0 else 0)
-                    significant_diffs = max_diff_pct[max_diff_pct > self.settings["comparison"]["difference_threshold"]]
+                    max_diff_pct = cast(pd.Series, grouped.apply(lambda x: (x.max() - x.min()) / x.min() if x.min() != 0 else 0))
+                    significant_diffs = cast(pd.Series, max_diff_pct[max_diff_pct > self.settings["comparison"]["difference_threshold"]])
 
                     if not significant_diffs.empty:
                         logging.warning(
@@ -308,11 +317,13 @@ def display_stock_comparison(df: pd.DataFrame):
             if col_name in df.columns:
                 value = row[col_name]
                 # Format specific columns
-                if col_name == "Price" and pd.notnull(value):
+                if col_name == "Price" and _is_scalar_notna(value):
                     value = f"${value:.2f}"
                 elif col_name == "Timestamp":
-                    value = value.strftime("%Y-%m-%d %H:%M:%S")
-                row_values.append(str(value) if pd.notnull(value) else "")
+                    strftime_fn = getattr(value, "strftime", None)
+                    if callable(strftime_fn):
+                        value = strftime_fn("%Y-%m-%d %H:%M:%S")
+                row_values.append(str(value) if _is_scalar_notna(value) else "")
         table.add_row(*row_values)
 
     console.print(table)
@@ -389,7 +400,7 @@ def main():
                 display_stock_comparison(df)
 
             elif choice == "2":
-                symbol, expiry, option_type, strike, contract = get_option_input()
+                symbol, expiry, option_type, strike, _contract = get_option_input()
                 with console.status(f"Fetching option chains for {symbol}..."):
                     chains = asyncio.run(comparator.compare_option_chain(symbol, expiry))
 
@@ -408,7 +419,7 @@ def main():
                 days = int(days) if days else 7
 
                 end_date = datetime.now()
-                start_date = end_date - pd.Timedelta(days=days)
+                start_date = end_date - timedelta(days=days)
 
                 with console.status(f"Fetching historical data for {symbol}..."):
                     df = comparator.compare_historical_data(symbol, start_date, end_date)

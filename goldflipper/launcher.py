@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 # Import exe-aware path utilities
 from goldflipper.utils.exe_utils import (
@@ -382,7 +383,7 @@ def main(argv: list[str] | None = None) -> int:
     if settings_created:
         # Signal to the TUI that the onboarding workflow just completed so it
         # can highlight the configuration button and show notifications.
-        config_module.settings_just_created = True
+        cast(Any, config_module).settings_just_created = True
 
     if args.setup_only:
         LOGGER.info("Setup-only mode requested; exiting before launching TUI.")

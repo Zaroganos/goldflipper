@@ -9,6 +9,7 @@ sys.path.insert(0, project_root)
 import json
 import logging
 from datetime import datetime
+from typing import cast
 
 import pandas as pd
 import yaml
@@ -38,6 +39,15 @@ from goldflipper.data.indicators.macd import MACDCalculator
 from goldflipper.data.indicators.ttm_squeeze import TTMSqueezeCalculator
 from goldflipper.utils.display import TerminalDisplay as display
 from goldflipper.utils.exe_utils import get_settings_path
+
+
+def _as_series(data: pd.DataFrame, column: str) -> pd.Series:
+    """Extract a single Series from potentially ambiguous pandas indexing."""
+    values = data[column]
+    if isinstance(values, pd.DataFrame):
+        return cast(pd.Series, values.iloc[:, 0])
+    return cast(pd.Series, values)
+
 
 pd.set_option("display.max_rows", None)
 
@@ -435,7 +445,11 @@ def calculate_indicators(ticker: str, settings: dict) -> pd.DataFrame:
 
     # Prepare market data
     market_data = MarketData(
-        high=hist["High"], low=hist["Low"], close=hist["Close"], volume=hist["Volume"], period=settings["indicators"]["ttm_squeeze"]["period"]
+        high=_as_series(hist, "High"),
+        low=_as_series(hist, "Low"),
+        close=_as_series(hist, "Close"),
+        volume=_as_series(hist, "Volume"),
+        period=settings["indicators"]["ttm_squeeze"]["period"],
     )
 
     indicators_dict = {}

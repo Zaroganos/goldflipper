@@ -13,7 +13,7 @@ import os
 import sys
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 import requests
 import yfinance as yf
@@ -169,7 +169,7 @@ class StartupTestRunner:
 def test_alpaca_connection() -> tuple[bool, Any]:
     """Test Alpaca API connectivity and account status via SDK."""
     try:
-        client = get_alpaca_client()
+        client = cast(Any, get_alpaca_client())
         account = client.get_account()
 
         # Basic account validation

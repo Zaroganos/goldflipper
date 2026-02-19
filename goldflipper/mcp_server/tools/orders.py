@@ -1,5 +1,7 @@
 """Order management tools — place, cancel, status, history, preview."""
 
+from typing import Any, cast
+
 from goldflipper.mcp_server.context import ctx
 from goldflipper.mcp_server.server import mcp
 
@@ -15,7 +17,7 @@ def get_order_status(order_id: str) -> dict:
         Dict with order details including status, symbol, qty, type, and timestamps.
     """
     try:
-        client = ctx.alpaca_client
+        client: Any = ctx.alpaca_client
         order = client.get_order_by_id(order_id)
     except Exception as e:
         return {"error": f"Failed to get order: {e}"}
@@ -62,11 +64,11 @@ def get_order_history(limit: int = 20, status: str | None = None, symbol: str | 
     query_status = status_map.get((status or "all").lower(), QueryOrderStatus.ALL)
 
     try:
-        client = ctx.alpaca_client
+        client: Any = ctx.alpaca_client
         request_params = GetOrdersRequest(status=query_status, limit=limit)
         if symbol:
             request_params.symbols = [symbol.upper()]
-        orders = client.get_orders(request_params)
+        orders = cast(list[Any], client.get_orders(request_params))
     except Exception as e:
         return {"error": f"Failed to get orders: {e}"}
 
@@ -268,10 +270,10 @@ def trade_place_order(
         order_action.is_buy() if action in ("BTO", "STO") else not order_action.is_buy()
 
         if action in ("BTO", "STO"):
-            order_req, is_limit = executor.create_entry_order(contract_symbol, contracts, order_type, quote, action=order_action)
+            order_req, _is_limit = executor.create_entry_order(contract_symbol, contracts, order_type, quote, action=order_action)
         else:
             fallback_price = quote.get("last", 0.0)
-            order_req, is_limit = executor.create_exit_order(contract_symbol, contracts, order_type, quote, fallback_price, action=order_action)
+            order_req, _is_limit = executor.create_exit_order(contract_symbol, contracts, order_type, quote, fallback_price, action=order_action)
 
         if order_req is None:
             # Market exit — use close_position
@@ -283,7 +285,7 @@ def trade_place_order(
                 "contracts": contracts,
             }
 
-        order = ctx.alpaca_client.submit_order(order_req)
+        order: Any = ctx.alpaca_client.submit_order(order_req)
 
         return {
             "order_placed": True,
@@ -315,7 +317,7 @@ def trade_cancel_order(order_id: str, confirm: bool = False) -> dict:
     """
     # First get the order to show what we're cancelling
     try:
-        client = ctx.alpaca_client
+        client: Any = ctx.alpaca_client
         order = client.get_order_by_id(order_id)
     except Exception as e:
         return {"error": f"Failed to find order: {e}"}
@@ -355,7 +357,7 @@ def trade_close_position(symbol: str, qty: int | None = None, confirm: bool = Fa
         Preview or confirmation of position closure.
     """
     try:
-        client = ctx.alpaca_client
+        client: Any = ctx.alpaca_client
         # Get the position first
         position = client.get_open_position(symbol.upper())
     except Exception as e:
@@ -378,7 +380,7 @@ def trade_close_position(symbol: str, qty: int | None = None, confirm: bool = Fa
     try:
         from alpaca.trading.requests import ClosePositionRequest
 
-        result = client.close_position(
+        result: Any = client.close_position(
             symbol_or_asset_id=symbol.upper(),
             close_options=ClosePositionRequest(qty=str(close_qty)),
         )

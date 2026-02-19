@@ -1,3 +1,5 @@
+from typing import cast
+
 import numpy as np
 import pandas as pd
 
@@ -43,7 +45,7 @@ class TTMSqueezeCalculator(IndicatorCalculator):
         ranges = pd.concat([high_low, high_close, low_close], axis=1)
         true_range = ranges.max(axis=1)
 
-        return true_range.rolling(window=self.data.period).mean()
+        return cast(pd.Series, true_range.rolling(window=self.data.period).mean())
 
     def _calculate_momentum(self) -> pd.Series:
         """Calculate momentum for squeeze"""
@@ -53,7 +55,7 @@ class TTMSqueezeCalculator(IndicatorCalculator):
         momentum = self.data.close - ((highest_high + lowest_low) / 2)
         normalized_momentum = momentum / self.data.close * 100
 
-        return normalized_momentum
+        return cast(pd.Series, normalized_momentum)
 
     def calculate(self) -> dict[str, pd.Series]:
         """

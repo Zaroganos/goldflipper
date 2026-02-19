@@ -1,5 +1,7 @@
 """Portfolio and account query tools — positions, account info, active account."""
 
+from typing import Any, cast
+
 from goldflipper.mcp_server.context import ctx
 from goldflipper.mcp_server.server import mcp
 
@@ -15,8 +17,8 @@ def get_portfolio_positions() -> dict:
     from goldflipper.config.config import get_active_account_name
 
     try:
-        client = ctx.alpaca_client
-        positions = client.get_all_positions()
+        client: Any = ctx.alpaca_client
+        positions = cast(list[Any], client.get_all_positions())
     except Exception as e:
         return {"error": f"Failed to get positions: {e}"}
 
@@ -53,7 +55,7 @@ def get_account_info() -> dict:
     from goldflipper.config.config import get_active_account_name
 
     try:
-        client = ctx.alpaca_client
+        client: Any = ctx.alpaca_client
         account = client.get_account()
     except Exception as e:
         return {"error": f"Failed to get account info: {e}"}

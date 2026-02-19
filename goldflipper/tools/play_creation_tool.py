@@ -489,6 +489,8 @@ class PlayBuilder:
 
             # Handle contracts allocation for this TP level
             remaining_tps = total_tps - tp_number + 1
+            if total_contracts is None:
+                raise ValueError("total_contracts is required when configuring multiple take-profit levels")
             remaining_contracts = total_contracts - sum(tp["contracts"] for tp in self.tp_cache)
 
             while True:

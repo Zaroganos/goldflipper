@@ -3,7 +3,7 @@ import logging
 import os
 import shutil
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -88,8 +88,7 @@ class PlayLogger:
             "status": "object",  # String values like 'closed', 'expired'
         }
 
-        columns = list(dtype_dict.keys())
-        df = pd.DataFrame(columns=columns).astype(dtype_dict)
+        df = pd.DataFrame({column: pd.Series(dtype=dtype) for column, dtype in dtype_dict.items()})
         df.to_csv(self.csv_path, index=False)
 
     def reset_log(self):
@@ -410,7 +409,7 @@ class PlayLogger:
         }
 
         try:
-            df = pd.read_csv(self.csv_path, dtype=dtype_dict)
+            df = pd.read_csv(self.csv_path, dtype=cast(Any, dtype_dict))
         except (ValueError, TypeError):
             # Fallback: read without dtype specification if there are issues
             df = pd.read_csv(self.csv_path)

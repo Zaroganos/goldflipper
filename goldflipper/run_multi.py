@@ -285,7 +285,7 @@ def run_trading_system_multi(console_mode: bool = True):
 
     try:
         # Run initialization and startup tests
-        success, state_manager = initialize_system()
+        success, _state_manager = initialize_system()
         if not success:
             display.error("System initialization failed. Check the logs for details.")
             return

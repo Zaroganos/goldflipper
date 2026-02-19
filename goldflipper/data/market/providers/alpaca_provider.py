@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import pandas as pd
 import yaml
-from alpaca.data.enums import DataFeed
+from alpaca.data.enums import DataFeed, OptionsFeed
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.historical.option import OptionHistoricalDataClient
 from alpaca.data.live import StockDataStream
@@ -22,8 +22,9 @@ from alpaca.data.requests import (
     StockBarsRequest,
     StockLatestQuoteRequest,
 )
-from alpaca.data.timeframe import TimeFrame
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import AssetStatus
 
 from .base import MarketDataProvider
 
@@ -167,7 +168,7 @@ class AlpacaProvider(MarketDataProvider):
             self.rate_limiter = None
 
         # Initialize WebSocket for options
-        self.option_stream = OptionDataStream(api_key=self.api_key, secret_key=self.secret_key, feed=DataFeed.IEX)
+        self.option_stream = OptionDataStream(api_key=self.api_key, secret_key=self.secret_key, feed=OptionsFeed.INDICATIVE)
 
         # Store latest data from WebSocket
         self._latest_option_data = {}
@@ -192,7 +193,7 @@ class AlpacaProvider(MarketDataProvider):
                 # Initialize both stock and option streams
                 self.stream_client = StockDataStream(api_key=self.api_key, secret_key=self.secret_key, feed=DataFeed.SIP)
 
-                self.option_stream = OptionDataStream(api_key=self.api_key, secret_key=self.secret_key, feed=DataFeed.IEX)
+                self.option_stream = OptionDataStream(api_key=self.api_key, secret_key=self.secret_key, feed=OptionsFeed.INDICATIVE)
 
                 logging.debug("Setting up WebSocket handlers...")
 
@@ -468,8 +469,8 @@ class AlpacaProvider(MarketDataProvider):
         request = StockBarsRequest(symbol_or_symbols=symbol, timeframe=timeframe, start=start_date, end=end_date)
 
         try:
-            bars = self.stock_client.get_stock_bars(request)
-            df = bars.df
+            bars = cast(Any, self.stock_client.get_stock_bars(request))
+            df = cast(pd.DataFrame, bars.df if hasattr(bars, "df") else pd.DataFrame())
 
             # Cache the result
             self._cache[cache_key] = df
@@ -519,8 +520,8 @@ class AlpacaProvider(MarketDataProvider):
                 return self._get_option_chain_rest(symbol, expiration_date)
 
             # Separate calls and puts
-            calls = contracts_df[contracts_df["type"] == "call"]
-            puts = contracts_df[contracts_df["type"] == "put"]
+            calls = cast(pd.DataFrame, contracts_df[contracts_df["type"] == "call"])
+            puts = cast(pd.DataFrame, contracts_df[contracts_df["type"] == "put"])
 
             return {"calls": self.standardize_columns(calls), "puts": self.standardize_columns(puts)}
 
@@ -536,11 +537,13 @@ class AlpacaProvider(MarketDataProvider):
             page_token = None
 
             while True:
-                request = OptionChainRequest(
-                    underlying_symbol=symbol,
-                    expiration_date=datetime.strptime(expiration_date, "%Y-%m-%d").date() if expiration_date else None,
-                    page_token=page_token,
-                )
+                request_kwargs: dict[str, Any] = {
+                    "underlying_symbol": symbol,
+                    "expiration_date": datetime.strptime(expiration_date, "%Y-%m-%d").date() if expiration_date else None,
+                }
+                if page_token is not None:
+                    request_kwargs["page_token"] = page_token
+                request = cast(Any, OptionChainRequest)(**request_kwargs)
 
                 response = self.option_client.get_option_chain(request)
                 logging.debug(f"Response type: {type(response)}")
@@ -548,13 +551,14 @@ class AlpacaProvider(MarketDataProvider):
 
                 if not response:
                     break
+                response_any = cast(Any, response)
 
                 # If response is a dictionary with symbols as keys
-                if isinstance(response, dict):
-                    snapshots = response.values()
+                if isinstance(response_any, dict):
+                    snapshots = response_any.values()
                 else:
                     # If response is iterable but not a dict
-                    snapshots = response if hasattr(response, "__iter__") else [response]
+                    snapshots = response_any if hasattr(response_any, "__iter__") else [response_any]
 
                 # Process snapshots
                 for snapshot in snapshots:
@@ -598,10 +602,10 @@ class AlpacaProvider(MarketDataProvider):
                         continue
 
                 # Check for pagination
-                if isinstance(response, dict):
-                    page_token = response.get("next_page_token")
+                if isinstance(response_any, dict):
+                    page_token = response_any.get("next_page_token")
                 else:
-                    page_token = getattr(response, "next_page_token", None)
+                    page_token = getattr(response_any, "next_page_token", None)
 
                 if not page_token:
                     break
@@ -613,8 +617,8 @@ class AlpacaProvider(MarketDataProvider):
                 return {"calls": pd.DataFrame(), "puts": pd.DataFrame()}
 
             # Separate calls and puts
-            calls = contracts_df[contracts_df["type"] == "call"]
-            puts = contracts_df[contracts_df["type"] == "put"]
+            calls = cast(pd.DataFrame, contracts_df[contracts_df["type"] == "call"])
+            puts = cast(pd.DataFrame, contracts_df[contracts_df["type"] == "put"])
 
             logging.debug(f"Found {len(calls)} calls and {len(puts)} puts")
 
@@ -626,7 +630,13 @@ class AlpacaProvider(MarketDataProvider):
 
     def _convert_interval(self, interval: str) -> TimeFrame:
         """Convert common interval strings to Alpaca TimeFrame"""
-        interval_map = {"1m": TimeFrame.Minute, "5m": TimeFrame.Minute * 5, "15m": TimeFrame.Minute * 15, "1h": TimeFrame.Hour, "1d": TimeFrame.Day}
+        interval_map = {
+            "1m": TimeFrame.Minute,
+            "5m": cast(Any, TimeFrame)(5, TimeFrameUnit.Minute),
+            "15m": cast(Any, TimeFrame)(15, TimeFrameUnit.Minute),
+            "1h": TimeFrame.Hour,
+            "1d": TimeFrame.Day,
+        }
         return interval_map.get(interval.lower(), TimeFrame.Minute)
 
     def _extract_strike(self, option_symbol: str) -> float:
@@ -718,7 +728,8 @@ class AlpacaProvider(MarketDataProvider):
         numeric_cols = ["strike", "bid", "ask", "last", "volume", "open_interest", "implied_volatility", "delta", "gamma", "theta", "vega", "rho"]
         for col in numeric_cols:
             if col in df.columns:
-                df.loc[:, col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+                numeric_series = cast(pd.Series, pd.to_numeric(df[col], errors="coerce"))
+                df.loc[:, col] = numeric_series.fillna(0.0)
 
         return df
 
@@ -800,17 +811,18 @@ class AlpacaProvider(MarketDataProvider):
             # Query option contracts for this symbol to get available expirations
             from alpaca.trading.requests import GetOptionContractsRequest
 
-            request = GetOptionContractsRequest(underlying_symbols=[symbol.upper()], status="active")
+            request = GetOptionContractsRequest(underlying_symbols=[symbol.upper()], status=AssetStatus.ACTIVE)
 
-            response = self.trading_client.get_option_contracts(request)
+            response = cast(Any, self.trading_client.get_option_contracts(request))
 
-            if not response or not response.option_contracts:
+            contracts = cast(list[Any], getattr(response, "option_contracts", [])) if response else []
+            if not contracts:
                 logging.debug(f"No option contracts found for {symbol}")
                 return []
 
             # Extract unique expiration dates
             expirations = set()
-            for contract in response.option_contracts:
+            for contract in contracts:
                 if hasattr(contract, "expiration_date") and contract.expiration_date:
                     exp_str = str(contract.expiration_date)
                     expirations.add(exp_str)

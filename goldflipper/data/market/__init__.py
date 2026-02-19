@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from typing import cast
 
 import pandas as pd
 import yfinance as yf
@@ -110,7 +111,8 @@ class YFinanceProvider(MarketDataProvider):
         numeric_cols = ["strike", "bid", "ask", "last", "volume", "open_interest", "implied_volatility", "delta", "gamma", "theta", "vega", "rho"]
         for col in numeric_cols:
             if col in df.columns:
-                df.loc[:, col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+                numeric_series = cast(pd.Series, pd.to_numeric(df[col], errors="coerce"))
+                df.loc[:, col] = numeric_series.fillna(0.0)
 
         return df
 
@@ -152,10 +154,17 @@ class YFinanceProvider(MarketDataProvider):
     def get_historical_data(self, symbol: str, start_date: datetime, end_date: datetime, interval: str = "1m") -> pd.DataFrame:
         # Check cache first
         cache_key = f"{symbol}_{start_date}_{end_date}_{interval}"
-        if cache_key in self._cache:
-            return self._cache[cache_key]
+        cached = self._cache.get(cache_key)
+        if isinstance(cached, pd.DataFrame):
+            return cached
 
-        data = yf.download(symbol, start=start_date, end=end_date, interval=interval)
+        raw_data = yf.download(symbol, start=start_date, end=end_date, interval=interval)
+        if raw_data is None:
+            data = pd.DataFrame()
+        elif isinstance(raw_data, pd.Series):
+            data = raw_data.to_frame()
+        else:
+            data = raw_data
 
         # Cache the result
         self._cache[cache_key] = data
@@ -252,7 +261,7 @@ class YFinanceProvider(MarketDataProvider):
             # Filter by strike price
             use_strike = strike_price if strike_price is not None else extracted_strike
             if use_strike is not None:
-                filtered_data = options_data[options_data["strike"] == use_strike]
+                filtered_data = cast(pd.DataFrame, options_data[options_data["strike"] == use_strike])
             else:
                 filtered_data = options_data
 

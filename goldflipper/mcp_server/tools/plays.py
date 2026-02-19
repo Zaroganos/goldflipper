@@ -243,7 +243,7 @@ def modify_play(play_name: str, updates: str) -> dict:
     Returns:
         Dict with updated fields or error.
     """
-    file_path, status = _find_play_file(play_name)
+    file_path, _status = _find_play_file(play_name)
     if file_path is None:
         return {"error": f"Play '{play_name}' not found"}
 

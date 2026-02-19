@@ -5,6 +5,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 sys.path.insert(0, project_root)
 
 import logging
+from typing import cast
 
 import pandas as pd
 import yaml
@@ -14,6 +15,14 @@ from goldflipper.chart.candlestick import CandlestickChart
 from goldflipper.data.indicators.base import MarketData
 from goldflipper.data.indicators.ema import EMACalculator
 from goldflipper.data.indicators.macd import MACDCalculator
+
+
+def _as_series(data: pd.DataFrame, column: str) -> pd.Series:
+    """Extract a single Series from potentially ambiguous pandas indexing."""
+    values = data[column]
+    if isinstance(values, pd.DataFrame):
+        return cast(pd.Series, values.iloc[:, 0])
+    return cast(pd.Series, values)
 
 
 def validate_period_interval(period: str, interval: str) -> tuple[bool, str]:
@@ -174,10 +183,10 @@ def main():
 
             # Create MarketData object for indicators
             market_data = MarketData(
-                high=data["High"],
-                low=data["Low"],
-                close=data["Close"],
-                volume=data["Volume"],
+                high=_as_series(data, "High"),
+                low=_as_series(data, "Low"),
+                close=_as_series(data, "Close"),
+                volume=_as_series(data, "Volume"),
                 period=20,  # Default period for indicators
             )
 

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -20,8 +20,11 @@ class CandlestickChart(BaseChart):
     def create(self) -> None:
         """Create the base candlestick chart"""
         # Select only OHLCV columns and ensure correct data types
-        plot_data = self.data[["Open", "High", "Low", "Close", "Volume"]].copy()
+        plot_data = cast(pd.DataFrame, self.data[["Open", "High", "Low", "Close", "Volume"]].copy())
         plot_data = plot_data.astype({"Open": "float64", "High": "float64", "Low": "float64", "Close": "float64", "Volume": "float64"})
+        time_index = cast(pd.DatetimeIndex, plot_data.index)
+        if len(time_index) < 2:
+            raise ValueError("Need at least two data points to render candlesticks")
 
         try:
             # Create figure
@@ -38,31 +41,30 @@ class CandlestickChart(BaseChart):
             self.axes.append(self.figure.add_subplot(gs[3]))  # Second indicator panel
 
             # Plot candlesticks with adjusted appearance
-            up = plot_data[plot_data.Close >= plot_data.Open]
-            down = plot_data[plot_data.Close < plot_data.Open]
+            up = cast(pd.DataFrame, plot_data.loc[plot_data["Close"] >= plot_data["Open"]])
+            down = cast(pd.DataFrame, plot_data.loc[plot_data["Close"] < plot_data["Open"]])
 
             # Calculate width based on data frequency
-            time_diff = plot_data.index[1] - plot_data.index[0]
+            time_diff = time_index[1] - time_index[0]
             width = time_diff.total_seconds() / (24 * 60 * 60)  # Convert to days for matplotlib
             candle_width = width * 0.8
-            width * 0.2
 
             # Plot up candlesticks
             self.axes[0].bar(
-                up.index, up.Close - up.Open, bottom=up.Open, width=candle_width, color="green", alpha=0.8, zorder=2
+                up.index, up["Close"] - up["Open"], bottom=up["Open"], width=candle_width, color="green", alpha=0.8, zorder=2
             )  # Higher zorder to appear above grid
-            self.axes[0].vlines(up.index, up.Low, up.High, color="green", linewidth=1, zorder=1)
+            self.axes[0].vlines(up.index, up["Low"], up["High"], color="green", linewidth=1, zorder=1)
 
             # Plot down candlesticks
-            self.axes[0].bar(down.index, down.Close - down.Open, bottom=down.Open, width=candle_width, color="red", alpha=0.8, zorder=2)
-            self.axes[0].vlines(down.index, down.Low, down.High, color="red", linewidth=1, zorder=1)
+            self.axes[0].bar(down.index, down["Close"] - down["Open"], bottom=down["Open"], width=candle_width, color="red", alpha=0.8, zorder=2)
+            self.axes[0].vlines(down.index, down["Low"], down["High"], color="red", linewidth=1, zorder=1)
 
             # Plot volume with colors matching price movement
-            self.axes[1].bar(up.index, up.Volume, width=candle_width, color="green", alpha=0.5)
-            self.axes[1].bar(down.index, down.Volume, width=candle_width, color="red", alpha=0.5)
+            self.axes[1].bar(up.index, up["Volume"], width=candle_width, color="green", alpha=0.5)
+            self.axes[1].bar(down.index, down["Volume"], width=candle_width, color="red", alpha=0.5)
 
             # Calculate appropriate time interval for x-axis labels
-            time_diff = plot_data.index[1] - plot_data.index[0]
+            time_diff = time_index[1] - time_index[0]
             minutes_diff = time_diff.total_seconds() / 60
 
             # Configure time formatting for intraday data
@@ -76,8 +78,8 @@ class CandlestickChart(BaseChart):
                 interval = 60  # Show every hour for larger intervals
 
             # Get time range based on actual data
-            start_time = plot_data.index[0]
-            last_data_point = plot_data.index[-1]
+            start_time = time_index[0]
+            last_data_point = time_index[-1]
 
             # Add one interval to the end to ensure we show a clean ending
             end_time = last_data_point + pd.Timedelta(minutes=interval)

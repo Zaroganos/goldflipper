@@ -7,6 +7,7 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 import subprocess
+from typing import Any, cast
 
 import alpaca
 
@@ -186,13 +187,13 @@ def check_system_status():
     print("-" * 40)
 
     try:
-        trade_client = get_alpaca_client()
+        trade_client = cast(Any, get_alpaca_client())
 
         # Check trading account status
         acct = trade_client.get_account()
         print(f"  Account Status:         {acct.status}")
-        print(f"  Buying Power:           ${float(acct.buying_power):,.2f}")
-        print(f"  Options Buying Power:   ${float(acct.options_buying_power):,.2f}")
+        print(f"  Buying Power:           ${float(getattr(acct, 'buying_power', 0.0) or 0.0):,.2f}")
+        print(f"  Options Buying Power:   ${float(getattr(acct, 'options_buying_power', 0.0) or 0.0):,.2f}")
         print(f"  Options Approved Level: {acct.options_approved_level}")
         print(f"  Options Trading Level:  {acct.options_trading_level}")
 

@@ -5,6 +5,7 @@ if "%~1"=="" (
     goto usage
 )
 
+set CHECK_PATHS=goldflipper/ src/ tests/
 set COMMAND=%~1
 shift
 
@@ -12,7 +13,10 @@ if /I "%COMMAND%"=="run" goto run
 if /I "%COMMAND%"=="test" goto test
 if /I "%COMMAND%"=="lint" goto lint
 if /I "%COMMAND%"=="format" goto format
+if /I "%COMMAND%"=="typecheck" goto typecheck
+if /I "%COMMAND%"=="typecheck-full" goto typecheck_full
 if /I "%COMMAND%"=="check" goto check
+if /I "%COMMAND%"=="check-full" goto check_full
 if /I "%COMMAND%"=="build" goto build
 if /I "%COMMAND%"=="build-prod" goto build_prod
 goto usage
@@ -26,24 +30,45 @@ uv run pytest %*
 goto end
 
 :lint
-uv run ruff check src/ tests/ %*
+uv run ruff check %CHECK_PATHS% %*
 goto end
 
 :format
-uv run ruff format src/ tests/ %*
+uv run ruff format %CHECK_PATHS% %*
+goto end
+
+:typecheck
+uv run pyright src/
+goto end
+
+:typecheck_full
+uv run pyright
 goto end
 
 :check
 echo Running all checks...
-uv run ruff format --check src/ tests/
+uv run ruff format --check %CHECK_PATHS%
 if errorlevel 1 goto check_failed
-uv run ruff check src/ tests/
+uv run ruff check %CHECK_PATHS%
 if errorlevel 1 goto check_failed
 uv run pyright src/
 if errorlevel 1 goto check_failed
 uv run pytest
 if errorlevel 1 goto check_failed
 echo All checks passed.
+goto end
+
+:check_full
+echo Running full-repo checks...
+uv run ruff format --check .
+if errorlevel 1 goto check_failed
+uv run ruff check .
+if errorlevel 1 goto check_failed
+uv run pyright
+if errorlevel 1 goto check_failed
+uv run pytest
+if errorlevel 1 goto check_failed
+echo Full-repo checks completed.
 goto end
 
 :check_failed
@@ -67,7 +92,10 @@ echo   run        - Run goldflipper
 echo   test       - Run tests
 echo   lint       - Lint code
 echo   format     - Format code
-echo   check      - Run all checks (format, lint, type, test)
+echo   typecheck  - Type check src/ only (fast baseline)
+echo   typecheck-full - Type check configured project scope (goldflipper + src)
+echo   check      - Run baseline checks (format, lint, type, test)
+echo   check-full - Run full-repo checks (format, lint, type, test)
 echo   build      - Fast dev exe (no LTO, no compression)
 echo   build-prod - Full production exe (optimized, smaller)
 exit /b 1

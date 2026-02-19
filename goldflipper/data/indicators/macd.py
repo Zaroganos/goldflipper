@@ -1,3 +1,5 @@
+from typing import cast
+
 import pandas as pd
 
 from .base import IndicatorCalculator, MarketData
@@ -23,7 +25,7 @@ class MACDCalculator(IndicatorCalculator):
 
     def _calculate_ema(self, data: pd.Series, period: int) -> pd.Series:
         """Calculate EMA for a given period"""
-        return data.ewm(span=period, adjust=False).mean()
+        return cast(pd.Series, data.ewm(span=period, adjust=False).mean())
 
     def calculate(self) -> dict[str, pd.Series]:
         """

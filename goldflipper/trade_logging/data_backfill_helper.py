@@ -333,7 +333,7 @@ class DataBackfillHelper:
             play_name = play_data.get("play_name", f"Play_{i}")
 
             try:
-                success, updated_play = self.backfill_play_data(play_data)
+                _success, updated_play = self.backfill_play_data(play_data)
                 updated_plays.append(updated_play)
 
                 # Progress reporting

@@ -192,7 +192,8 @@ class PlayCard(Widget):
             yield Button("✏️ Edit", id=f"edit_{os.path.splitext(self.play['filename'])[0]}", classes="edit-button")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id.startswith("edit_"):
+        button_id = event.button.id
+        if button_id and button_id.startswith("edit_"):
             # Use stored full path for editing
             filepath = self.play.get("filepath", "")
             if filepath:
@@ -307,7 +308,7 @@ class ViewPlaysApp(App):
 
         while plays_container.children:
             child = plays_container.children[0]
-            plays_container.remove(child)
+            await child.remove()
 
         # Get active account info for display
         active_account = get_active_account_name()

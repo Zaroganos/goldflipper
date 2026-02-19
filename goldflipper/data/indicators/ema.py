@@ -1,3 +1,5 @@
+from typing import cast
+
 import pandas as pd
 
 from .base import IndicatorCalculator, MarketData
@@ -6,7 +8,7 @@ from .base import IndicatorCalculator, MarketData
 class EMACalculator(IndicatorCalculator):
     """Calculator for Exponential Moving Average (EMA) indicator"""
 
-    def __init__(self, market_data: MarketData, periods: list[int] = None):
+    def __init__(self, market_data: MarketData, periods: list[int] | None = None):
         """
         Initialize EMA Calculator
 
@@ -21,7 +23,7 @@ class EMACalculator(IndicatorCalculator):
 
     def _calculate_single_ema(self, period: int) -> pd.Series:
         """Calculate EMA for a single period"""
-        return self.data.close.ewm(span=period, adjust=False).mean()
+        return cast(pd.Series, self.data.close.ewm(span=period, adjust=False).mean())
 
     def _determine_trends(self, emas: dict[str, pd.Series]) -> dict[str, bool]:
         """Determine if price is above/below each EMA and trend direction"""

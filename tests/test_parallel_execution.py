@@ -216,23 +216,16 @@ def test_orchestrator_initialization():
     orchestrator = StrategyOrchestrator()
     success = orchestrator.initialize()
 
-    if not success:
-        print("❌ FAIL: Orchestrator failed to initialize")
-        return False
+    assert success, "Orchestrator failed to initialize"
 
     # Check parallel mode
-    if orchestrator._execution_mode != ExecutionMode.PARALLEL:
-        print(f"❌ FAIL: Expected PARALLEL mode, got {orchestrator._execution_mode}")
-        return False
+    assert orchestrator._execution_mode == ExecutionMode.PARALLEL, f"Expected PARALLEL mode, got {orchestrator._execution_mode}"
 
     print(f"✅ Execution mode: {orchestrator._execution_mode.value}")
 
     # Check multiple strategies loaded
     strategy_count = len(orchestrator.strategies)
-    if strategy_count < 2:
-        print(f"❌ FAIL: Expected at least 2 strategies, got {strategy_count}")
-        print(f"   Loaded strategies: {[s.get_name() for s in orchestrator.strategies]}")
-        return False
+    assert strategy_count >= 2, f"Expected at least 2 strategies, got {strategy_count}. Loaded: {[s.get_name() for s in orchestrator.strategies]}"
 
     print(f"✅ Loaded {strategy_count} strategies:")
     for s in orchestrator.strategies:
@@ -241,13 +234,9 @@ def test_orchestrator_initialization():
     # Check specific strategies
     strategy_names = [s.get_name() for s in orchestrator.strategies]
 
-    if "option_swings" not in strategy_names:
-        print("❌ FAIL: option_swings strategy not loaded")
-        return False
+    assert "option_swings" in strategy_names, "option_swings strategy not loaded"
 
-    if "momentum" not in strategy_names:
-        print("❌ FAIL: momentum strategy not loaded")
-        return False
+    assert "momentum" in strategy_names, "momentum strategy not loaded"
 
     print("✅ Both option_swings and momentum strategies loaded")
 
@@ -260,7 +249,6 @@ def test_orchestrator_initialization():
     print(f"  Max Workers: {orchestrator._max_workers}")
 
     print("\n✅ TEST 1 PASSED: Orchestrator initialization successful")
-    return True
 
 
 def test_parallel_execution_timing():
@@ -390,7 +378,6 @@ def test_parallel_execution_timing():
             print("⚠️ Sequential execution detected (may need plays to trigger parallel)")
 
     print("\n✅ TEST 2 PASSED: Parallel execution timing analyzed")
-    return True
 
 
 def test_parallel_with_plays():
@@ -465,9 +452,7 @@ def test_parallel_with_plays():
         except Exception as e:
             print(f"❌ Failed to create play for {symbol}: {e}")
 
-    if len(created_plays) < 2:
-        print("\n❌ FAIL: Could not create plays for both strategies")
-        return False
+    assert len(created_plays) >= 2, "Could not create plays for both strategies"
 
     print(f"\nCreated {len(created_plays)} test plays")
 
@@ -529,7 +514,6 @@ def test_parallel_with_plays():
     cleanup_test_plays(plays_dir)
 
     print("\n✅ TEST 3 PASSED: Parallel execution with plays completed")
-    return True
 
 
 def test_shared_resource_access():
@@ -567,7 +551,6 @@ def test_shared_resource_access():
         print(f"⚠️ Multiple client instances: {len(client_ids)}")
 
     print("\n✅ TEST 4 PASSED: Shared resource access verified")
-    return True
 
 
 def run_all_tests():
@@ -582,7 +565,8 @@ def run_all_tests():
 
     # Test 1: Initialization
     try:
-        results["initialization"] = test_orchestrator_initialization()
+        test_orchestrator_initialization()
+        results["initialization"] = True
     except Exception as e:
         print(f"❌ TEST 1 FAILED with exception: {e}")
         results["initialization"] = False
@@ -592,7 +576,8 @@ def run_all_tests():
 
     # Test 2: Timing
     try:
-        results["timing"] = test_parallel_execution_timing()
+        test_parallel_execution_timing()
+        results["timing"] = True
     except Exception as e:
         print(f"❌ TEST 2 FAILED with exception: {e}")
         results["timing"] = False
@@ -602,7 +587,8 @@ def run_all_tests():
 
     # Test 3: With Plays (skip if market closed)
     try:
-        results["with_plays"] = test_parallel_with_plays()
+        test_parallel_with_plays()
+        results["with_plays"] = True
     except Exception as e:
         print(f"❌ TEST 3 FAILED with exception: {e}")
         results["with_plays"] = False
@@ -612,7 +598,8 @@ def run_all_tests():
 
     # Test 4: Shared Resources
     try:
-        results["shared_resources"] = test_shared_resource_access()
+        test_shared_resource_access()
+        results["shared_resources"] = True
     except Exception as e:
         print(f"❌ TEST 4 FAILED with exception: {e}")
         results["shared_resources"] = False

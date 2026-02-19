@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from time import sleep
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import requests
@@ -265,8 +265,8 @@ class MarketDataAppProvider(MarketDataProvider):
                 df = pd.DataFrame(df_data)
 
                 # Split into calls and puts based on option symbol
-                calls_df = df[df["optionSymbol"].str.contains("C")]
-                puts_df = df[df["optionSymbol"].str.contains("P")]
+                calls_df = cast(pd.DataFrame, df[df["optionSymbol"].astype(str).str.contains("C", na=False)])
+                puts_df = cast(pd.DataFrame, df[df["optionSymbol"].astype(str).str.contains("P", na=False)])
 
                 # Standardize column names
                 calls_df = self.standardize_columns(calls_df)
@@ -382,7 +382,8 @@ class MarketDataAppProvider(MarketDataProvider):
         numeric_cols = ["strike", "bid", "ask", "last", "volume", "open_interest", "implied_volatility", "delta", "gamma", "theta", "vega", "rho"]
         for col in numeric_cols:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+                numeric_series = cast(pd.Series, pd.to_numeric(df[col], errors="coerce"))
+                df[col] = numeric_series.fillna(0.0)
 
         return df
 
