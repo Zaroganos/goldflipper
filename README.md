@@ -1,7 +1,10 @@
 # Goldflipper
-Goldflipper Classic Trading System
 
-![goldlfipper](https://github.com/user-attachments/assets/60a7b1c3-40ef-4dd2-9c64-98be7e93f185)
+[![Pylint](https://github.com/Zaroganos/goldflipper/actions/workflows/pylint.yml/badge.svg)](https://github.com/Zaroganos/goldflipper/actions/workflows/pylint.yml)
+
+Goldflipper Trading System
+
+<img width="1074" height="760" alt="Screenshot 2026-02-19 181208" src="https://github.com/user-attachments/assets/5eb5c068-8759-44c8-afde-067fdcd55f92" />
 
 ## Disclaimer
 
