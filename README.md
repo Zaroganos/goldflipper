@@ -1,6 +1,13 @@
 # Goldflipper
 
+[![CI](https://github.com/Zaroganos/goldflipper/actions/workflows/ci.yml/badge.svg)](https://github.com/Zaroganos/goldflipper/actions/workflows/ci.yml)
 [![Pylint](https://github.com/Zaroganos/goldflipper/actions/workflows/pylint.yml/badge.svg)](https://github.com/Zaroganos/goldflipper/actions/workflows/pylint.yml)
+[![Version](https://img.shields.io/badge/version-0.2.8-blue.svg)](https://github.com/Zaroganos/goldflipper/releases)
+[![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows_10%20%7C%2011-lightgrey.svg)](docs/WINDOWS_INSTALLER.md)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Pyright](https://img.shields.io/badge/type%20checked-pyright-brightgreen.svg)](https://github.com/microsoft/pyright)
 
 Goldflipper Trading System
 
