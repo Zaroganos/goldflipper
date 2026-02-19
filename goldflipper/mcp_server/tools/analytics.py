@@ -68,12 +68,12 @@ def get_trade_log(limit: int = 50, strategy: str | None = None, symbol: str | No
 
     # Apply filters
     if strategy and strategy != "All" and "strategy" in df.columns:
-        df = df[df["strategy"] == strategy]
+        df = cast(pd.DataFrame, df.loc[df["strategy"] == strategy])
     if symbol and "symbol" in df.columns:
-        df = df[df["symbol"] == symbol.upper()]
+        df = cast(pd.DataFrame, df.loc[df["symbol"] == symbol.upper()])
 
     # Take the most recent entries
-    df = df.tail(limit)
+    df = cast(pd.DataFrame, df.tail(limit))
 
     trades = []
     for _, row in df.iterrows():
