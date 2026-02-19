@@ -15,7 +15,19 @@
       "Bash(uv lock:*)",
       "Bash(uv sync:*)",
       "Bash(uv tool run ruff check:*)",
-      "Bash(uv run pytest:*)"
+      "Bash(uv run pytest:*)",
+      "mcp__docs-mcp-server__search_docs",
+      "mcp__docs-mcp-server__list_libraries",
+      "mcp__docs-mcp-server__fetch_url",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:cloud.zimerguz.net)",
+      "Bash(pwsh -Command \"irm ''https://cloud.zimerguz.net/index.php/s/goldflipper-bootstrap/download''\")",
+      "Bash(pwsh -Command \"irm ''https://cloud.zimerguz.net/s/goldflipper-bootstrap/download''\")",
+      "Bash(pwsh -NoProfile -Command \"irm ''https://cloud.zimerguz.net/s/goldflipper-bootstrap/download''\")",
+      "Bash(pwsh -NoProfile -Command \"\\(irm ''https://cloud.zimerguz.net/s/goldflipper-bootstrap/download''\\)[0..3]\")",
+      "Bash(curl:*)",
+      "Bash(pwsh -NoProfile -File \"C:/Users/Iliya/Documents/GitHub/goldflipper_multistrat/goldflipper/scripts/_nc_test.ps1\")",
+      "Bash(pwsh -NoProfile -Command '$r = Invoke-WebRequest \"\"https://cloud.zimerguz.net/s/osCCAY2Gm3mNKPK/download?path=/&files=version.json\"\" -UseBasicParsing; Write-Host \"\"Status: $\\($r.StatusCode\\)\"\"; Write-Host \"\"CT: $\\($r.Headers[''Content-Type'']\\)\"\"; Write-Host \"\"Len: $\\($r.Content.Length\\)\"\"')"
     ]
   }
 }

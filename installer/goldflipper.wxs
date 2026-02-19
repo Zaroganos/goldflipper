@@ -60,8 +60,10 @@
         <!-- Folder name used by WixUI_Advanced scope dialog to build install paths -->
         <Property Id="ApplicationFolderName" Value="Goldflipper" />
 
-        <!-- Default to per-user install; user can switch to per-machine in the UI -->
-        <Property Id="MSIINSTALLPERUSER" Value="1" />
+        <!-- Controls which radio button is pre-selected in the scope dialog.
+             WixUI_Advanced reads this to set the default; it writes MSIINSTALLPERUSER
+             based on the user's final choice. WixPerUserFolder = "Just me" default. -->
+        <Property Id="WixAppFolder" Value="WixPerUserFolder" />
 
         <!-- License file shown during installation (RTF format required) -->
         <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectDir)\installer\License.rtf" />

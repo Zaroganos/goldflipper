@@ -12,7 +12,7 @@ This document describes the complete Windows Installer (MSI) implementation for 
 ### Technologies Used
 - **WiX Toolset v4+** - Modern Windows Installer XML toolset
 - **.NET 6+ SDK** - Required for WiX CLI
-- **Python 3.10+** - Build orchestration script
+- **Python 3.11+** - Build orchestration script
 - **Nuitka** - For the compiled executable that the MSI packages
 
 ### Key Features Implemented
@@ -27,6 +27,7 @@ This document describes the complete Windows Installer (MSI) implementation for 
 - **Program Files Installation** to `C:\Program Files\Goldflipper\`
 - **Start Menu Shortcut** under `Start Menu\Programs\Goldflipper\`
 - **Desktop Shortcut** (optional feature, enabled by default)
+  - TODO: Add option to the install wizard flow; remove from the secondary python tkinter GUI if using the install wizard instead.
 - **Add/Remove Programs** entry with:
   - Application icon
   - Product information
@@ -38,11 +39,13 @@ This document describes the complete Windows Installer (MSI) implementation for 
 - **Downgrade Protection** - Prevents installing older versions over newer
 - **Fixed UpgradeCode** - Ensures proper upgrade chain across versions
 - **Automatic Version Detection** - Reads from `pyproject.toml`
+  - TODO: Also check the dl location's json manifest
 
 #### 4. Enterprise Features
 - **Silent Installation** support (`msiexec /qn`)
 - **Custom Directory Installation** (`INSTALLFOLDER` property)
 - **Per-Machine Installation Scope** (requires admin privileges)
+  - TODO: Check if it will need the Powershell execution override thing
 - **Embedded Cabinet** - Single MSI file, no loose CAB files
 
 ## Architecture
@@ -207,6 +210,7 @@ uv run python scripts/build_msi.py --arch x64 --skip-nuitka --output custom.msi
 
 ### Security Considerations
 - **Code Signing** - Recommended for distribution (not implemented)
+  - TODO!!! Self-signed for now. Let the user import the self-signed certs??
 - **Digital Signature** - Prevents tampering warnings
 - **UAC Compliance** - Proper elevation requests
 - **Secure Installation** - No temporary file exposure

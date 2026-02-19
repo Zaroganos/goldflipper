@@ -1,11 +1,11 @@
 import logging
 import logging.handlers
-import sys
 import os
 import gzip
 import shutil
 from pathlib import Path
 import zipfile
+from typing import Any
 
 try:
     from goldflipper.config.config import config
@@ -16,7 +16,7 @@ except Exception:
 _logging_configured = False
 
 
-def _get_config_value(*keys, default=None):
+def _get_config_value(*keys, default: Any = None) -> Any:
     if config is None:
         return default
     return config.get(*keys, default=default)
@@ -172,7 +172,9 @@ def configure_logging(
         file_from_paths = _get_config_value('paths', 'log_file', default=None)
         log_file = file_from_logging or file_from_paths or 'logs/app_run.log'
 
-    log_path = Path(log_file)
+    # Ensure log_file is a string
+    log_file_str = str(log_file) if log_file is not None else 'logs/app_run.log'
+    log_path = Path(log_file_str)
     if not log_path.is_absolute():
         # Resolve relative to project root (two levels up from this file: .../goldflipper)
         project_root = Path(__file__).resolve().parents[2]
@@ -181,18 +183,18 @@ def configure_logging(
     _ensure_parent_dir(log_path)
 
     # Determine level and format
-    level_str = _get_config_value('logging', 'level', default='INFO').upper()
+    level_str = str(_get_config_value('logging', 'level', default='INFO')).upper()
     level = getattr(logging, level_str, logging.INFO)
     if level_override is not None:
         level = level_override
-    fmt = _get_config_value('logging', 'format', default='%(asctime)s - %(levelname)s - %(message)s')
+    fmt = str(_get_config_value('logging', 'format', default='%(asctime)s - %(levelname)s - %(message)s'))
 
     # Rotation settings
-    rotation_type = _get_config_value('logging', 'rotation', 'type', default='time')  # 'time' or 'size'
-    when = _get_config_value('logging', 'rotation', 'when', default='midnight')
-    interval = int(_get_config_value('logging', 'rotation', 'interval', default=1))
-    backup_count = int(_get_config_value('logging', 'rotation', 'backup_count', default=14))
-    max_bytes = int(_get_config_value('logging', 'rotation', 'max_bytes', default=10 * 1024 * 1024))  # 10MB
+    rotation_type = str(_get_config_value('logging', 'rotation', 'type', default='time'))  # 'time' or 'size'
+    when = str(_get_config_value('logging', 'rotation', 'when', default='midnight'))
+    interval = int(_get_config_value('logging', 'rotation', 'interval', default=1) or 1)
+    backup_count = int(_get_config_value('logging', 'rotation', 'backup_count', default=14) or 14)
+    max_bytes = int(_get_config_value('logging', 'rotation', 'max_bytes', default=10 * 1024 * 1024) or 10 * 1024 * 1024)  # 10MB
     compress_enabled = bool(_get_config_value('logging', 'rotation', 'compress', default=True))
     compression_format = str(_get_config_value('logging', 'rotation', 'compression_format', default='gz')).lower()
 

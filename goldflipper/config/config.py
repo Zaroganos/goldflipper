@@ -1,5 +1,5 @@
 """
-Configuration Management Module for Goldflipper
+Configuration Management Module
 
 This module provides a centralized configuration management system using a singleton pattern.
 It loads settings from a YAML file and provides both object-oriented and traditional access

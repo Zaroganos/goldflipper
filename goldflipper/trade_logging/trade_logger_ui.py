@@ -301,19 +301,27 @@ class TradeLoggerUI:
             message = "Files exported to:\n"
             
             if format_option in ['csv', 'both'] and result.get('csv_file'):
-                message += f"CSV: {result['csv_file']}\n"
+                csv_file = result.get('csv_file')
+                if csv_file:
+                    message += f"CSV: {csv_file}\n"
                 
             if format_option in ['excel', 'both'] and result.get('excel_file'):
-                message += f"Excel: {result['excel_file']}\n"
+                excel_file = result.get('excel_file')
+                if excel_file:
+                    message += f"Excel: {excel_file}\n"
             
             # Add desktop paths if applicable
             desktop_files = []
             if self.save_to_desktop.get():
                 if format_option in ['csv', 'both'] and result.get('csv_desktop_file'):
-                    desktop_files.append(f"CSV: {result['csv_desktop_file']}")
+                    csv_desktop_file = result.get('csv_desktop_file')
+                    if csv_desktop_file:
+                        desktop_files.append(f"CSV: {csv_desktop_file}")
                     
                 if format_option in ['excel', 'both'] and result.get('excel_desktop_file'):
-                    desktop_files.append(f"Excel: {result['excel_desktop_file']}")
+                    excel_desktop_file = result.get('excel_desktop_file')
+                    if excel_desktop_file:
+                        desktop_files.append(f"Excel: {excel_desktop_file}")
             
             if desktop_files:
                 message += "\nCopies have been saved to your Desktop:\n"
