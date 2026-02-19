@@ -21,7 +21,7 @@ The Goldflipper Trading Logger is a comprehensive system for tracking, analyzing
 
 2.2 User Interface (trade_logger_ui.py)
     Provides both a tkinter-based desktop interface and a web dashboard.
-    
+
     Features:
     - Summary statistics display
     - Export functionality
@@ -202,10 +202,10 @@ Access: http://localhost:8050 when running
 10.1 Common Issues
      - File permission errors
        Solution: Check directory permissions
-     
+
      - Data format inconsistencies
        Solution: Validate JSON structure
-     
+
      - Dashboard connection issues
        Solution: Verify port availability
 
@@ -313,4 +313,4 @@ Areas covered:
 - Performance tests
 - UI/UX testing
 
-END OF DOCUMENTATION 
+END OF DOCUMENTATION

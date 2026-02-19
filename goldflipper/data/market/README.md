@@ -3,7 +3,7 @@
 ## Overview
 The Market Data System is designed to provide a flexible, maintainable, and provider-agnostic way to handle market data in the Goldflipper trading system. It follows clean architecture principles and enables easy switching between different data providers.
 
-## Architecture Diagram 
+## Architecture Diagram
 mermaid
 graph TD
 A[Trading Strategy] --> B[MarketDataOperations]
@@ -57,7 +57,6 @@ Key Methods:
 5. Provider fetches data from its source
 6. Data flows back up through the chain with transformations at each level
 
-
 ## Usage Example
 python
 Initialize the manager with default YFinance provider
@@ -66,7 +65,6 @@ Get current market data
 market_data = manager.get_current_market_data("AAPL")
 Get option chain data
 option_data = manager.get_option_data("AAPL", "2024-01-19")
-
 
 ## Future Extensions
 
@@ -124,7 +122,6 @@ default_provider: "yfinance"
 cache_timeout: 300 # seconds
 rate_limit: 100 # requests per minute
 
-
 ## Testing
 
 The architecture supports comprehensive testing:
@@ -149,4 +146,3 @@ The system includes:
 4. Cache appropriately
 5. Validate data before use
 6. Log significant events
-

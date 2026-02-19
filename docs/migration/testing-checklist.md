@@ -4,12 +4,12 @@
 
 ## Environment Verification
 
-- [x] `uv sync` completes on a fresh clone (no cached venv present).  
+- [x] `uv sync` completes on a fresh clone (no cached venv present).
   - 2025-11-29: `uv sync` + `uv sync --all-extras` both succeeded after removing cached venv.
-- [x] `uv run python --version` reports an approved interpreter (3.11–3.13).  
+- [x] `uv run python --version` reports an approved interpreter (3.11–3.13).
   - Result: Python 3.11.12.
 - [x] `uv run goldflipper --help` prints the CLI options without errors.
-- [ ] `uv run goldflipper --mode console` reaches the TUI welcome screen.  
+- [ ] `uv run goldflipper --mode console` reaches the TUI welcome screen.
   - Pending manual check (Textual UI requires interactive session).
 
 ## Configuration & First-Run UX
@@ -21,20 +21,20 @@
 
 ## Developer Tooling
 
-- [ ] `uv run ruff format --check goldflipper tests` passes.  
+- [ ] `uv run ruff format --check goldflipper tests` passes.
   - 2025-11-29: Fails; 80 files would be reformatted (legacy formatting backlog).
-- [ ] `uv run ruff check goldflipper tests` passes (or only known waivers).  
+- [ ] `uv run ruff check goldflipper tests` passes (or only known waivers).
   - Fails with 3,841 issues (2,354 auto-fixable); backlog predates migration work.
-- [x] `uv run pyright goldflipper` passes.  
+- [x] `uv run pyright goldflipper` passes.
   - 2026-02-19: Passes with 0 errors (258 warnings total).
   - `reportMissingModuleSource` warnings were reduced to 0 by updating `pyrightconfig.json`.
-- [x] `uv run pytest` passes or reports only acknowledged flaky tests.  
+- [x] `uv run pytest` passes or reports only acknowledged flaky tests.
   - 2025-11-29: `tests/test_market_data.py::test_market_data` passed (warning from `websockets` deprecation only).
   - 2025-12-08: Full multi-strategy test suite passes (41 tests total):
-    * `test_orchestrator_unit.py`: 16 passed
-    * `test_dry_run_mode.py`: 9 passed
-    * `test_parallel_execution.py`: 4 passed
-    * `test_strategy_evaluation.py`: 12 passed
+    - `test_orchestrator_unit.py`: 16 passed
+    - `test_dry_run_mode.py`: 9 passed
+    - `test_parallel_execution.py`: 4 passed
+    - `test_strategy_evaluation.py`: 12 passed
 
 ## Runtime Functionality
 
@@ -49,10 +49,10 @@
 - [ ] `dist/goldflipper.exe --help` runs on the build machine.
 - [ ] Executable on a clean Windows VM launches the first-run wizard when settings are absent.
 - [ ] After setup, the executable opens the TUI and accesses template/config files (no missing-file errors).
-- [x] Included resources configured: `goldflipper/config`, `goldflipper/reference`, `goldflipper/tools/play-template.json`, `goldflipper.ico`.  
+- [x] Included resources configured: `goldflipper/config`, `goldflipper/reference`, `goldflipper/tools/play-template.json`, `goldflipper.ico`.
   - 2025-12-01: Build scripts updated with multi-strategy resources:
-    * `goldflipper/tools/templates/` - Strategy-specific play templates (JSON)
-    * `goldflipper/strategy/playbooks/` - Strategy playbooks (YAML configs)
+    - `goldflipper/tools/templates/` - Strategy-specific play templates (JSON)
+    - `goldflipper/strategy/playbooks/` - Strategy playbooks (YAML configs)
   - **Deferred:** Actual build test pending (requires sufficient CPU/memory).
 
 ## Documentation & Scripts
@@ -80,5 +80,3 @@
 - Adjusted `pyrightconfig.json` to suppress `reportMissingModuleSource` noise from third-party packages.
 - Follow-up pass eliminated `reportOptionalMemberAccess` warnings (now 0 in that category).
 - Current Pyright baseline: 0 errors, 228 warnings.
-
-

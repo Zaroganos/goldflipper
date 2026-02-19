@@ -1,0 +1,41 @@
+config:
+  default: true
+  MD013: false
+  MD022: false
+  MD026: false
+  MD029: false
+  MD031: false
+  MD032: false
+  MD040: false
+  MD041: false
+  MD034: false
+  MD035: false
+  MD036: false
+  MD051: false
+  MD060: false
+  MD024:
+    siblings_only: true
+globs:
+  - "README.md"
+  - "docs/**/*.md"
+  - "goldflipper/docs/**/*.md"
+  - "goldflipper/data/market/*.md"
+  - "goldflipper/trade_logging/logging_docs.md"
+ignores:
+  - ".venv/**"
+  - ".uv-cache/**"
+  - ".ruff_cache/**"
+  - ".pytest_cache/**"
+  - "dist/**"
+  - "logs/**"
+  - "output/**"
+  - "plays/**"
+  - "docs/MSI_INSTALLER_DEVELOPMENT_CHAT.md"
+  - "docs/Options_Swing_PB_v3.md"
+  - "docs/Options_Swing_PB_v3-1.md"
+  - "docs/update-mechanism-todo.md"
+  - "UPGRADE_PLAN.md"
+  - "AGENTS.md"
+  - "CLAUDE.md"
+  - "goldflipper/docs/MULTI_STRATEGY_IMPLEMENTATION.md"
+  - "goldflipper/docs/DEPRECATED_CODE_CANDIDATES.md"

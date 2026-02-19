@@ -115,6 +115,9 @@ uv run ruff check --fix .
 # Type check
 uv run pyright
 
+# Markdown lint (uses .markdownlint-cli2.yaml)
+npx -y markdownlint-cli2
+
 # Run all checks
 scripts\dev.bat check
 ```
@@ -397,4 +400,3 @@ uv run goldflipper
 - [Pyright Documentation](https://microsoft.github.io/pyright/)
 - [Nuitka Documentation](https://nuitka.net/doc/user-manual.html)
 - [Textual Documentation](https://textual.textualize.io/)
-

@@ -118,7 +118,7 @@ scripts\dev.bat build-prod      # Production build (optimized)
 
 ## CRITICAL FIX (2025-12-03) - Dynamic Imports
 
-**Problem:** TUI buttons worked in source mode but failed in exe mode. Only the 
+**Problem:** TUI buttons worked in source mode but failed in exe mode. Only the
 "Configuration" button worked because it was directly imported at module level.
 
 **Root Cause:** The build was using `--include-data-dir` for Python modules:
@@ -224,9 +224,7 @@ from goldflipper.utils.exe_utils import (
     get_config_dir,      # Persistent config directory
     get_settings_template_path,  # Bundled template in extraction
     get_plays_dir,       # Persistent plays/ directory (next to exe)
-    get_play_subdir,     # Persistent plays/{subdir}/ directory  
+    get_play_subdir,     # Persistent plays/{subdir}/ directory
     get_logs_dir,        # Persistent logs/ directory (next to exe)
 )
 ```
-
-

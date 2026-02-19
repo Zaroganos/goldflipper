@@ -3,17 +3,14 @@ Goldflipper Classic Trading System
 
 ![goldlfipper](https://github.com/user-attachments/assets/60a7b1c3-40ef-4dd2-9c64-98be7e93f185)
 
-
 ## Disclaimer
 
-Goldflipper Classic is proprietary, source-available software. Please note that technical support, bug fix, and feature requests are managed on a discretionary basis at this time. 
+Goldflipper Classic is proprietary, source-available software. Please note that technical support, bug fix, and feature requests are managed on a discretionary basis at this time.
 This program does not capture or transmit any of your data. Goldflipper only makes connections to brokerage(s) and market data provider(s). Newer branches also make calls using ancillary python libraries in order to enhance function by validating inputs (to address user entry errors), and by checking the market calendar. Security wise, note that in this version, access keys are stored in the settings file in plaintext (or, plain-yaml).
-
 
 ## Introduction
 
 Goldflipper Classic is a rules-based semi-autonomous trading system developed in Python. It utilizes a modular, event-driven architecture to automate trading strategy execution, with a current focus on level 2 options trading. The system is designed for customizability, modularity, and offers a feature-rich parameter selection that enables functionality not seen in any other program of its kind. Goldflipper integrates with the Alpaca Markets API for live trading, and has API integrations with market data providers as well in order to provide a modular and robust trading experience with fallbacks for reliability.
-
 
 ## Getting Started
 
@@ -146,7 +143,6 @@ scripts\dev.bat check
 uv run python scripts/build_nuitka.py
 ```
 
-
 ### Adding Dependencies
 
 ```powershell
@@ -187,7 +183,6 @@ python goldflipper\goldflipper_tui.py
 
 #### 2. **Windows Service Mode**
 - Runs on startup as daemon
-
 
 ## Key Features
 
@@ -242,7 +237,6 @@ python goldflipper\goldflipper_tui.py
 - **Market hours validation** and holiday awareness
 - **Fallback to legacy mode** if orchestrator encounters issues
 
-
 ## Market Data Providers
 
 Goldflipper supports multiple market data providers for robust and reliable data access:
@@ -252,7 +246,6 @@ Goldflipper supports multiple market data providers for robust and reliable data
 ### **Alpaca Markets** (Backup)
 
 ### **Yahoo Finance** (Backup)
-
 
 ## Configuration Guide
 

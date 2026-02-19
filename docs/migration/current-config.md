@@ -65,5 +65,3 @@
 
 ## Package Structure Snapshot
 - Documented in `docs/migration/package-structure.txt` (generated via `tree /F src`)
-
-

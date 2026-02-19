@@ -34,4 +34,3 @@ package_data = {
   1. `uv build` (future) or `python -m build` once enabled.
   2. Inspect the generated wheel contents to confirm templates and CSV files exist.
   3. Install the wheel into a clean environment and run workflows that read the template files.
-
