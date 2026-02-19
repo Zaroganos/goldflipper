@@ -1,7 +1,6 @@
 """Analytics and trade logging tools — summary stats, trade log queries, export."""
 
-import os
-from typing import Optional
+from typing import Any
 
 from goldflipper.mcp_server.server import mcp
 
@@ -9,11 +8,12 @@ from goldflipper.mcp_server.server import mcp
 def _get_logger():
     """Get a PlayLogger instance."""
     from goldflipper.trade_logging.trade_logger import PlayLogger
+
     return PlayLogger(save_to_desktop=False, enable_backfill=False)
 
 
 @mcp.tool
-def get_trade_summary(strategy: Optional[str] = None) -> dict:
+def get_trade_summary(strategy: str | None = None) -> dict:
     """Get summary statistics from the trade log.
 
     Args:
@@ -45,7 +45,7 @@ def get_trade_summary(strategy: Optional[str] = None) -> dict:
 
 
 @mcp.tool
-def get_trade_log(limit: int = 50, strategy: Optional[str] = None, symbol: Optional[str] = None) -> dict:
+def get_trade_log(limit: int = 50, strategy: str | None = None, symbol: str | None = None) -> dict:
     """Read recent entries from the trade log CSV.
 
     Args:
@@ -127,7 +127,7 @@ def refresh_trade_log(mode: str = "closed", confirm: bool = False) -> dict:
             "preview": True,
             "mode": mode,
             "message": f"Would rebuild trade log from {'closed/expired' if mode == 'closed' else 'all'} play files. "
-                       "This resets the current trade log. Set confirm=True to execute.",
+            "This resets the current trade log. Set confirm=True to execute.",
         }
 
     try:
@@ -157,7 +157,7 @@ def export_trade_log(format: str = "both") -> dict:
 
     try:
         logger = _get_logger()
-        result = logger.export_to_spreadsheet(format=format, save_to_desktop=False)
+        result: dict[str, Any] = logger.export_to_spreadsheet(format=format, save_to_desktop=False)
     except Exception as e:
         return {"error": f"Export failed: {e}"}
 

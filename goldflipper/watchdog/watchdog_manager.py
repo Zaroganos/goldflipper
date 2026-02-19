@@ -1,9 +1,10 @@
+import logging
 import threading
 import time
-import psutil
-import logging
 from datetime import datetime
-from pathlib import Path
+
+import psutil
+
 
 class WatchdogManager:
     def __init__(self, check_interval=30):
@@ -49,17 +50,17 @@ class WatchdogManager:
         """Main monitoring loop"""
         self.logger.info("Monitor loop started")
         last_check_time = datetime.now()
-        
+
         while self.running:
             try:
                 current_time = datetime.now()
                 with self._lock:
                     heartbeat_age = (current_time - self.last_heartbeat).total_seconds()
                     check_interval = (current_time - last_check_time).total_seconds()
-                
+
                 self.logger.info(f"Checking health. Heartbeat age: {heartbeat_age:.2f}s, Check interval: {check_interval:.2f}s")
                 last_check_time = current_time
-                
+
                 self._check_system_health()
                 self._check_application_health()
                 time.sleep(self.check_interval)
@@ -71,7 +72,7 @@ class WatchdogManager:
         try:
             memory = psutil.virtual_memory()
             cpu_percent = psutil.cpu_percent()
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage("/")
 
             if memory.percent > 90:
                 self.logger.warning(f"High memory usage: {memory.percent}%")
@@ -88,7 +89,7 @@ class WatchdogManager:
         try:
             with self._lock:
                 heartbeat_age = (datetime.now() - self.last_heartbeat).total_seconds()
-                
+
             if heartbeat_age > self.check_interval * 2:
                 self.logger.error(f"Application heartbeat missing for {heartbeat_age:.6f} seconds")
                 self._trigger_recovery()
@@ -102,4 +103,4 @@ class WatchdogManager:
         """Handle recovery actions when application appears unresponsive"""
         self.logger.warning("Initiating recovery procedure")
         # For now, just log the event. We can add more recovery actions later
-        # Such as restarting specific components or notifying administrators 
+        # Such as restarting specific components or notifying administrators

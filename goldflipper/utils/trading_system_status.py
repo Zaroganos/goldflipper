@@ -1,5 +1,7 @@
 import os
+
 import psutil
+
 
 def is_trading_system_running():
     """
@@ -8,10 +10,11 @@ def is_trading_system_running():
     validates that no stray trading process exists.
     """
     # On Windows, check the service status first.
-    if os.name == 'nt':
+    if os.name == "nt":
         try:
-            import win32serviceutil
             import win32service
+            import win32serviceutil
+
             status = win32serviceutil.QueryServiceStatus("GoldflipperService")
             if status[1] == win32service.SERVICE_RUNNING:
                 return True

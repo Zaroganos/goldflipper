@@ -22,21 +22,20 @@ mcp = FastMCP(
 def _register_tools():
     """Import all tool modules to trigger their @mcp.tool registrations."""
     # Phase 1: Read-only tools
-    from goldflipper.mcp_server.tools import market_data  # noqa: F401
-    from goldflipper.mcp_server.tools import plays  # noqa: F401
-    from goldflipper.mcp_server.tools import portfolio  # noqa: F401
-    from goldflipper.mcp_server.tools import strategies  # noqa: F401
-    from goldflipper.mcp_server.tools import system  # noqa: F401
-
     # Phase 2: Orders & trading
-    from goldflipper.mcp_server.tools import orders  # noqa: F401
-
     # Phase 3: Strategy development & config
-    from goldflipper.mcp_server.tools import strategy_dev  # noqa: F401
-    from goldflipper.mcp_server.tools import config_tools  # noqa: F401
-
     # Phase 4: Analytics
-    from goldflipper.mcp_server.tools import analytics  # noqa: F401
+    from goldflipper.mcp_server.tools import (
+        analytics,  # noqa: F401
+        config_tools,  # noqa: F401
+        market_data,  # noqa: F401
+        orders,  # noqa: F401
+        plays,  # noqa: F401
+        portfolio,  # noqa: F401
+        strategies,  # noqa: F401
+        strategy_dev,  # noqa: F401
+        system,  # noqa: F401
+    )
 
 
 def create_server() -> FastMCP:

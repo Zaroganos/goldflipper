@@ -1,10 +1,10 @@
+import gzip
 import logging
 import logging.handlers
 import os
-import gzip
 import shutil
-from pathlib import Path
 import zipfile
+from pathlib import Path
 from typing import Any
 
 try:
@@ -34,11 +34,11 @@ def _safe_rotate_existing_log(
     compression_format: str,
 ) -> None:
     """Safely rotate an existing log file if it exceeds the size threshold.
-    
+
     This function checks if the log file already exists and is too large,
     and rotates it before the logging handler is created. This prevents
     large log files from accumulating between application restarts.
-    
+
     Args:
         log_path: Path to the log file
         max_bytes: Maximum size in bytes before rotation
@@ -50,45 +50,45 @@ def _safe_rotate_existing_log(
         # Check if log file exists and get its size
         if not log_path.exists():
             return  # No file to rotate
-        
+
         file_size = log_path.stat().st_size
-        
+
         # Only rotate if file exceeds the threshold
         if file_size < max_bytes:
             return  # File is within acceptable size
-        
+
         # File is too large, need to rotate
         # Use the same naming convention as the handlers
         base_name = str(log_path)
-        
+
         # First, rotate existing backups (remove oldest if we're at limit)
         if backup_count > 0:
             # Find and remove the oldest backup if we're at the limit
             backup_files = []
             for i in range(backup_count, 0, -1):
                 if compress_enabled:
-                    if compression_format == 'zip':
+                    if compression_format == "zip":
                         backup_name = f"{base_name}.{i}.zip"
                     else:
                         backup_name = f"{base_name}.{i}.gz"
                 else:
                     backup_name = f"{base_name}.{i}"
-                
+
                 backup_path = Path(backup_name)
                 if backup_path.exists():
                     backup_files.append(backup_path)
-            
+
             # Remove oldest backup if we're at the limit
             if len(backup_files) >= backup_count:
                 try:
                     backup_files[0].unlink()  # Remove oldest
                 except Exception:
                     pass  # Ignore errors removing old backups
-            
+
             # Shift existing backups
             for i in range(backup_count - 1, 0, -1):
                 if compress_enabled:
-                    if compression_format == 'zip':
+                    if compression_format == "zip":
                         old_backup = f"{base_name}.{i}.zip"
                         new_backup = f"{base_name}.{i + 1}.zip"
                     else:
@@ -97,39 +97,39 @@ def _safe_rotate_existing_log(
                 else:
                     old_backup = f"{base_name}.{i}"
                     new_backup = f"{base_name}.{i + 1}"
-                
+
                 old_path = Path(old_backup)
                 new_path = Path(new_backup)
-                
+
                 if old_path.exists():
                     try:
                         old_path.rename(new_path)
                     except Exception:
                         pass  # Ignore errors during backup shifting
-        
+
         # Rotate the current log file
         if compress_enabled:
-            if compression_format == 'zip':
+            if compression_format == "zip":
                 rotated_name = f"{base_name}.1.zip"
             else:
                 rotated_name = f"{base_name}.1.gz"
         else:
             rotated_name = f"{base_name}.1"
-        
+
         rotated_path = Path(rotated_name)
-        
+
         # Compress and move the current log file
         try:
             if compress_enabled:
-                if compression_format == 'zip':
+                if compression_format == "zip":
                     # Write the rotated file into a zip archive
-                    with zipfile.ZipFile(rotated_path, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+                    with zipfile.ZipFile(rotated_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
                         arcname = log_path.name
                         zf.write(log_path, arcname=arcname)
                     log_path.unlink()  # Remove original after compression
                 else:
                     # Gzip compress
-                    with open(log_path, 'rb') as f_in, gzip.open(rotated_path, 'wb') as f_out:
+                    with open(log_path, "rb") as f_in, gzip.open(rotated_path, "wb") as f_out:
                         shutil.copyfileobj(f_in, f_out)
                     log_path.unlink()  # Remove original after compression
             else:
@@ -144,7 +144,7 @@ def _safe_rotate_existing_log(
             except Exception:
                 pass  # If all rotation attempts fail, continue anyway
                 # The handler will manage rotation on next write
-        
+
     except Exception:
         # If anything goes wrong, silently continue
         # The logging handler will still work and manage rotation going forward
@@ -168,12 +168,12 @@ def configure_logging(
     # Determine log destination
     if log_file is None:
         # Prefer logging.file, then paths.log_file, then default
-        file_from_logging = _get_config_value('logging', 'file', default=None)
-        file_from_paths = _get_config_value('paths', 'log_file', default=None)
-        log_file = file_from_logging or file_from_paths or 'logs/app_run.log'
+        file_from_logging = _get_config_value("logging", "file", default=None)
+        file_from_paths = _get_config_value("paths", "log_file", default=None)
+        log_file = file_from_logging or file_from_paths or "logs/app_run.log"
 
     # Ensure log_file is a string
-    log_file_str = str(log_file) if log_file is not None else 'logs/app_run.log'
+    log_file_str = str(log_file) if log_file is not None else "logs/app_run.log"
     log_path = Path(log_file_str)
     if not log_path.is_absolute():
         # Resolve relative to project root (two levels up from this file: .../goldflipper)
@@ -183,20 +183,20 @@ def configure_logging(
     _ensure_parent_dir(log_path)
 
     # Determine level and format
-    level_str = str(_get_config_value('logging', 'level', default='INFO')).upper()
+    level_str = str(_get_config_value("logging", "level", default="INFO")).upper()
     level = getattr(logging, level_str, logging.INFO)
     if level_override is not None:
         level = level_override
-    fmt = str(_get_config_value('logging', 'format', default='%(asctime)s - %(levelname)s - %(message)s'))
+    fmt = str(_get_config_value("logging", "format", default="%(asctime)s - %(levelname)s - %(message)s"))
 
     # Rotation settings
-    rotation_type = str(_get_config_value('logging', 'rotation', 'type', default='time'))  # 'time' or 'size'
-    when = str(_get_config_value('logging', 'rotation', 'when', default='midnight'))
-    interval = int(_get_config_value('logging', 'rotation', 'interval', default=1) or 1)
-    backup_count = int(_get_config_value('logging', 'rotation', 'backup_count', default=14) or 14)
-    max_bytes = int(_get_config_value('logging', 'rotation', 'max_bytes', default=10 * 1024 * 1024) or 10 * 1024 * 1024)  # 10MB
-    compress_enabled = bool(_get_config_value('logging', 'rotation', 'compress', default=True))
-    compression_format = str(_get_config_value('logging', 'rotation', 'compression_format', default='gz')).lower()
+    rotation_type = str(_get_config_value("logging", "rotation", "type", default="time"))  # 'time' or 'size'
+    when = str(_get_config_value("logging", "rotation", "when", default="midnight"))
+    interval = int(_get_config_value("logging", "rotation", "interval", default=1) or 1)
+    backup_count = int(_get_config_value("logging", "rotation", "backup_count", default=14) or 14)
+    max_bytes = int(_get_config_value("logging", "rotation", "max_bytes", default=10 * 1024 * 1024) or 10 * 1024 * 1024)  # 10MB
+    compress_enabled = bool(_get_config_value("logging", "rotation", "compress", default=True))
+    compression_format = str(_get_config_value("logging", "rotation", "compression_format", default="gz")).lower()
 
     # Check and rotate existing log file if it's already too large
     # This handles the case where the log file grew large between application restarts
@@ -210,12 +210,12 @@ def configure_logging(
 
     # Build handlers
     handlers: list[logging.Handler] = []
-    if rotation_type == 'size':
+    if rotation_type == "size":
         file_handler = logging.handlers.RotatingFileHandler(
             filename=str(log_path),
             maxBytes=max_bytes,
             backupCount=backup_count,
-            encoding='utf-8',
+            encoding="utf-8",
             delay=True,
         )
     else:
@@ -224,30 +224,31 @@ def configure_logging(
             when=when,
             interval=interval,
             backupCount=backup_count,
-            encoding='utf-8',
+            encoding="utf-8",
             delay=True,
             utc=False,
         )
 
     if compress_enabled:
+
         def namer(default_name: str) -> str:
-            if compression_format == 'zip':
+            if compression_format == "zip":
                 return f"{default_name}.zip"
             # default to gzip
             return f"{default_name}.gz"
 
         def rotator(source: str, dest: str) -> None:
             try:
-                if dest.endswith('.zip'):
+                if dest.endswith(".zip"):
                     # Write the rotated file into a zip archive
-                    with zipfile.ZipFile(dest, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+                    with zipfile.ZipFile(dest, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
                         arcname = os.path.basename(dest[:-4])  # remove .zip
                         # Use original filename as arcname without .zip
                         zf.write(source, arcname=os.path.basename(arcname))
                     os.remove(source)
                 else:
                     # Gzip compress
-                    with open(source, 'rb') as f_in, gzip.open(dest, 'wb') as f_out:
+                    with open(source, "rb") as f_in, gzip.open(dest, "wb") as f_out:
                         shutil.copyfileobj(f_in, f_out)
                     os.remove(source)
             except Exception:
@@ -268,7 +269,7 @@ def configure_logging(
 
     if service_mode:
         try:
-            handlers.append(logging.handlers.NTEventLogHandler('GoldflipperService'))
+            handlers.append(logging.handlers.NTEventLogHandler("GoldflipperService"))
         except Exception:
             # Event log handler may not be available; continue without it
             pass
@@ -276,7 +277,7 @@ def configure_logging(
     # Clear existing handlers to avoid duplicates
     # Properly flush, close, and remove all existing handlers first
     root_logger = logging.getLogger()
-    
+
     # Flush and close all existing handlers before removing them
     for existing in root_logger.handlers[:]:
         try:
@@ -285,7 +286,7 @@ def configure_logging(
         except Exception:
             pass  # Ignore errors during cleanup
         root_logger.removeHandler(existing)
-    
+
     # Also check and clean up any handlers on child loggers that might cause duplicates
     # Child loggers should not have their own handlers - they should propagate to root logger
     # This prevents messages from being logged twice (once by child handler, once by root handler via propagation)
@@ -315,16 +316,14 @@ def configure_logging(
         root_logger.addHandler(h)
 
     # Optional: reduce noise from third-party libraries
-    for noisy in ('urllib3', 'yfinance', 'alpaca_trade_api'):
+    for noisy in ("urllib3", "yfinance", "alpaca_trade_api"):
         logging.getLogger(noisy).setLevel(max(logging.WARNING, level))
 
 
 def is_logging_configured() -> bool:
     """Check if logging has been configured via configure_logging().
-    
+
     This can be used to prevent basicConfig from being called after
     configure_logging has already set up logging.
     """
     return _logging_configured
-
-

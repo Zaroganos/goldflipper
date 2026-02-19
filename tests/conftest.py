@@ -4,6 +4,7 @@ Pytest configuration for Goldflipper test suite.
 This conftest.py ensures proper imports by adding the project root to sys.path
 before any tests run.
 """
+
 import os
 import sys
 

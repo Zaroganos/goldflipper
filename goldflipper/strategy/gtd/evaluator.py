@@ -307,15 +307,19 @@ class GTDEvaluator:
 
         # Rule 2: SHORTEN - take earliest date
         if shorten_results:
-            shorten_results.sort(key=lambda x: x[1].recommended_date)
+            shorten_results.sort(key=lambda x: x[1].recommended_date or date.max)
             _, earliest = shorten_results[0]
-            new_effective = earliest.recommended_date
+            earliest_date = earliest.recommended_date
+            if earliest_date is not None:
+                new_effective = earliest_date
 
         # Rule 3: EXTEND - take latest date, capped at option expiration
         if extend_results and new_effective is None:
-            extend_results.sort(key=lambda x: x[1].recommended_date, reverse=True)
+            extend_results.sort(key=lambda x: x[1].recommended_date or date.min, reverse=True)
             _, latest = extend_results[0]
             extended_date = latest.recommended_date
+            if extended_date is None:
+                extended_date = current_effective
             # Cap at option expiration
             if option_expiration is not None and extended_date > option_expiration:
                 extended_date = option_expiration

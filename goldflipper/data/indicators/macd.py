@@ -1,20 +1,15 @@
 import pandas as pd
-from typing import Dict
+
 from .base import IndicatorCalculator, MarketData
+
 
 class MACDCalculator(IndicatorCalculator):
     """Calculator for Moving Average Convergence Divergence (MACD) indicator"""
-    
-    def __init__(
-        self, 
-        market_data: MarketData, 
-        fast_period: int = 12,
-        slow_period: int = 26,
-        signal_period: int = 9
-    ):
+
+    def __init__(self, market_data: MarketData, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9):
         """
         Initialize MACD Calculator
-        
+
         Args:
             market_data: MarketData object containing price data
             fast_period: Period for fast EMA (default: 12)
@@ -25,15 +20,15 @@ class MACDCalculator(IndicatorCalculator):
         self.fast_period = fast_period
         self.slow_period = slow_period
         self.signal_period = signal_period
-    
+
     def _calculate_ema(self, data: pd.Series, period: int) -> pd.Series:
         """Calculate EMA for a given period"""
         return data.ewm(span=period, adjust=False).mean()
-    
-    def calculate(self) -> Dict[str, pd.Series]:
+
+    def calculate(self) -> dict[str, pd.Series]:
         """
         Calculate MACD and related values
-        
+
         Returns:
             Dict containing:
             - 'macd_line': MACD line (fast EMA - slow EMA)
@@ -48,38 +43,32 @@ class MACDCalculator(IndicatorCalculator):
         # Calculate EMAs
         fast_ema = self._calculate_ema(self.data.close, self.fast_period)
         slow_ema = self._calculate_ema(self.data.close, self.slow_period)
-        
+
         # Calculate MACD line
         macd_line = fast_ema - slow_ema
-        
+
         # Calculate signal line
         signal_line = self._calculate_ema(macd_line, self.signal_period)
-        
+
         # Calculate histogram
         histogram = macd_line - signal_line
-        
+
         # Get latest values for boolean indicators
         macd_above_signal = pd.Series([macd_line.iloc[-1] > signal_line.iloc[-1]])
         histogram_increasing = pd.Series([histogram.iloc[-1] > histogram.iloc[-2]])
         macd_increasing = pd.Series([macd_line.iloc[-1] > macd_line.iloc[-2]])
-        
+
         # Calculate crossovers (for latest point)
-        macd_crossover_up = pd.Series([
-            (macd_line.iloc[-1] > signal_line.iloc[-1]) and 
-            (macd_line.iloc[-2] <= signal_line.iloc[-2])
-        ])
-        macd_crossover_down = pd.Series([
-            (macd_line.iloc[-1] < signal_line.iloc[-1]) and 
-            (macd_line.iloc[-2] >= signal_line.iloc[-2])
-        ])
-        
+        macd_crossover_up = pd.Series([(macd_line.iloc[-1] > signal_line.iloc[-1]) and (macd_line.iloc[-2] <= signal_line.iloc[-2])])
+        macd_crossover_down = pd.Series([(macd_line.iloc[-1] < signal_line.iloc[-1]) and (macd_line.iloc[-2] >= signal_line.iloc[-2])])
+
         return {
-            'macd_line': macd_line,
-            'signal_line': signal_line,
-            'macd_histogram': histogram,
-            'macd_above_signal': macd_above_signal,
-            'histogram_increasing': histogram_increasing,
-            'macd_increasing': macd_increasing,
-            'macd_crossover_up': macd_crossover_up,
-            'macd_crossover_down': macd_crossover_down
-        } 
+            "macd_line": macd_line,
+            "signal_line": signal_line,
+            "macd_histogram": histogram,
+            "macd_above_signal": macd_above_signal,
+            "histogram_increasing": histogram_increasing,
+            "macd_increasing": macd_increasing,
+            "macd_crossover_up": macd_crossover_up,
+            "macd_crossover_down": macd_crossover_down,
+        }

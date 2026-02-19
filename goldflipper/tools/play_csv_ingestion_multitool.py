@@ -10,13 +10,13 @@ Each strategy has its own CSV template format and column mappings.
 """
 
 import csv
-import os
 import json
-import sys
+import os
 import re
+import sys
 from datetime import datetime
-from typing import Dict, Any, List, Tuple, Optional
 from enum import Enum
+from typing import Any
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,11 +24,11 @@ sys.path.append(project_root)
 
 from goldflipper.tools.play_creation_tool import create_option_contract_symbol
 from goldflipper.tools.play_validation import PlayValidator
-from goldflipper.config.config import config
 
 
 class StrategyType(Enum):
     """Supported strategy types for CSV ingestion."""
+
     OPTION_SWINGS = "option_swings"
     SELL_PUTS = "sell_puts"
     MOMENTUM = "momentum"
@@ -56,7 +56,7 @@ SELL_PUTS_COLUMNS = {
     "close_at_dte": 17,
     "roll_if_itm": 18,
     "accept_assignment": 19,
-    "notes": 20
+    "notes": 20,
 }
 
 # Column mappings for Momentum/Gap CSV template
@@ -87,33 +87,33 @@ MOMENTUM_COLUMNS = {
     "same_day_exit": 23,
     "max_hold_days": 24,
     "exit_before_close_mins": 25,
-    "notes": 26
+    "notes": 26,
 }
 
 
-def detect_strategy_from_csv(filepath: str) -> Optional[StrategyType]:
+def detect_strategy_from_csv(filepath: str) -> StrategyType | None:
     """
     Detect the strategy type from CSV file content.
-    
+
     Looks for strategy markers in the first few rows.
     """
     try:
         with open(filepath, newline="", encoding="utf-8") as f:
             reader = csv.reader(f)
-            rows = [row for _, row in zip(range(5), reader)]
-        
+            rows = [row for _, row in zip(range(5), reader, strict=False)]
+
         # Check content for strategy markers
         content = " ".join(" ".join(row) for row in rows).lower()
-        
+
         if "short puts" in content or "sell puts" in content or "strategy: sell_puts" in content:
             return StrategyType.SELL_PUTS
         elif "momentum" in content or "gap" in content or "strategy: momentum" in content:
             return StrategyType.MOMENTUM
         elif "option swings" in content or "calls" in content and "puts" in content:
             return StrategyType.OPTION_SWINGS
-        
+
         return None
-        
+
     except Exception as e:
         print(f"Error detecting strategy: {e}")
         return None
@@ -140,7 +140,7 @@ def parse_boolean(value: str) -> bool:
     return value.strip().upper() in ("Y", "YES", "TRUE", "1")
 
 
-def parse_percentage(value: str) -> Optional[float]:
+def parse_percentage(value: str) -> float | None:
     """Parse percentage values, removing % symbol."""
     if not value or value.strip().upper() == "N/A":
         return None
@@ -151,7 +151,7 @@ def parse_percentage(value: str) -> Optional[float]:
         return None
 
 
-def parse_float(value: str) -> Optional[float]:
+def parse_float(value: str) -> float | None:
     """Parse float values."""
     if not value or value.strip().upper() == "N/A":
         return None
@@ -162,7 +162,7 @@ def parse_float(value: str) -> Optional[float]:
         return None
 
 
-def parse_int(value: str) -> Optional[int]:
+def parse_int(value: str) -> int | None:
     """Parse integer values."""
     if not value or value.strip().upper() == "N/A":
         return None
@@ -173,18 +173,15 @@ def parse_int(value: str) -> Optional[int]:
         return None
 
 
-def fix_date(raw_date: str) -> Optional[str]:
+def fix_date(raw_date: str) -> str | None:
     """Parse and normalize date to MM/DD/YYYY format."""
     if not raw_date or raw_date.strip().upper() == "N/A":
         return None
-    
+
     cleaned = raw_date.strip().replace("\\", "/").replace("-", "/")
-    
-    formats = [
-        "%m/%d/%Y", "%m/%d/%y", "%Y/%m/%d",
-        "%m/%d", "%d/%m/%Y", "%d/%m/%y"
-    ]
-    
+
+    formats = ["%m/%d/%Y", "%m/%d/%y", "%Y/%m/%d", "%m/%d", "%d/%m/%Y", "%d/%m/%y"]
+
     for fmt in formats:
         try:
             dt = datetime.strptime(cleaned, fmt)
@@ -193,7 +190,7 @@ def fix_date(raw_date: str) -> Optional[str]:
             return dt.strftime("%m/%d/%Y")
         except ValueError:
             continue
-    
+
     # Try adding current year for MM/DD format
     parts = cleaned.split("/")
     if len(parts) == 2:
@@ -202,7 +199,7 @@ def fix_date(raw_date: str) -> Optional[str]:
             return datetime(datetime.now().year, month, day).strftime("%m/%d/%Y")
         except (ValueError, TypeError):
             pass
-    
+
     return None
 
 
@@ -210,13 +207,10 @@ def generate_play_name(symbol: str, trade_type: str, strategy: str) -> str:
     """Generate a unique play name."""
     import random
     import string
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    suffix = ''.join(random.choices(string.digits, k=3))
-    prefix = {
-        "sell_puts": "SP",
-        "momentum": "GAP",
-        "option_swings": "OS"
-    }.get(strategy, "PLAY")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    suffix = "".join(random.choices(string.digits, k=3))
+    prefix = {"sell_puts": "SP", "momentum": "GAP", "option_swings": "OS"}.get(strategy, "PLAY")
     return f"{prefix}_{symbol}_{trade_type}_{timestamp}_{suffix}"
 
 
@@ -224,46 +218,43 @@ def generate_play_name(symbol: str, trade_type: str, strategy: str) -> str:
 # Sell Puts Parser
 # =============================================================================
 
-def parse_sell_puts_row(
-    row: List[str], 
-    row_num: int, 
-    errors: List[str]
-) -> Optional[Dict[str, Any]]:
+
+def parse_sell_puts_row(row: list[str], row_num: int, errors: list[str]) -> dict[str, Any] | None:
     """
     Parse a single row from the Short Puts CSV template.
-    
+
     Returns play dictionary or None if parsing fails.
     """
     cols = SELL_PUTS_COLUMNS
-    
+
     def get(col_name: str) -> str:
         idx = cols.get(col_name, -1)
         return row[idx].strip() if idx >= 0 and idx < len(row) else ""
-    
+
     # Required fields
     symbol = get("symbol").upper().lstrip("$")
     if not symbol:
         return None  # Skip empty rows
-    
+
     expiration = fix_date(get("expiration"))
     if not expiration:
         errors.append(f"Row {row_num}: Invalid expiration date")
         return None
-    
+
     gtd = fix_date(get("gtd"))
     if not gtd:
         errors.append(f"Row {row_num}: Missing GTD date (required)")
         return None
-    
+
     strike_price = parse_float(get("strike_price"))
     if strike_price is None:
         errors.append(f"Row {row_num}: Invalid strike price")
         return None
-    
+
     contracts = parse_int(get("contracts")) or 1
     entry_stock_price = parse_float(get("entry_stock_price"))
     order_type = parse_order_type(get("order_type"))
-    
+
     # Optional fields with defaults
     target_delta = parse_float(get("target_delta")) or 0.30
     target_dte = parse_int(get("target_dte")) or 45
@@ -276,22 +267,17 @@ def parse_sell_puts_row(
     close_at_dte = parse_int(get("close_at_dte")) or 21
     roll_if_itm = parse_boolean(get("roll_if_itm"))
     accept_assignment = parse_boolean(get("accept_assignment"))
-    
+
     # Generate option symbol (PUT only for sell_puts)
-    option_symbol = create_option_contract_symbol(
-        symbol=symbol,
-        expiration_date=expiration,
-        strike_price=f"{strike_price:.3f}",
-        trade_type="put"
-    )
-    
+    option_symbol = create_option_contract_symbol(symbol=symbol, expiration_date=expiration, strike_price=f"{strike_price:.3f}", trade_type="put")
+
     if "INVALID" in option_symbol:
         errors.append(f"Row {row_num}: Invalid option symbol generated")
         return None
-    
+
     # Calculate collateral
     collateral = float(strike_price) * 100 * contracts
-    
+
     play = {
         "play_name": generate_play_name(symbol, "PUT", "sell_puts"),
         "symbol": symbol,
@@ -311,7 +297,7 @@ def parse_sell_puts_row(
             "entry_stock_price": entry_stock_price,
             "target_delta": target_delta,
             "target_dte": target_dte,
-            "min_premium": min_premium
+            "min_premium": min_premium,
         },
         "take_profit": {
             "TP_type": "Single",
@@ -319,13 +305,8 @@ def parse_sell_puts_row(
             "order_type": tp_order_type,
             "TP_option_prem": 0.0,
             "trailing_config": {"enabled": False},
-            "trail_state": {
-                "current_trail_level": None,
-                "highest_favorable_price": None,
-                "last_update_timestamp": None,
-                "trail_activated": False
-            },
-            "trail_history": []
+            "trail_state": {"current_trail_level": None, "highest_favorable_price": None, "last_update_timestamp": None, "trail_activated": False},
+            "trail_history": [],
         },
         "stop_loss": {
             "SL_type": "LIMIT",
@@ -338,28 +319,16 @@ def parse_sell_puts_row(
                 "current_trail_level": None,
                 "highest_favorable_price": None,
                 "last_update_timestamp": None,
-                "breakeven_activated": False
+                "breakeven_activated": False,
             },
-            "trail_history": []
+            "trail_history": [],
         },
-        "management": {
-            "close_at_dte": close_at_dte,
-            "roll_if_itm": roll_if_itm,
-            "accept_assignment": accept_assignment
-        },
-        "collateral": {
-            "required": True,
-            "type": "cash",
-            "amount": collateral,
-            "calculated": True
-        },
+        "management": {"close_at_dte": close_at_dte, "roll_if_itm": roll_if_itm, "accept_assignment": accept_assignment},
+        "collateral": {"required": True, "type": "cash", "amount": collateral, "calculated": True},
         "play_class": "SIMPLE",
-        "creation_date": datetime.now().strftime('%Y-%m-%d'),
+        "creation_date": datetime.now().strftime("%Y-%m-%d"),
         "creator": "csv-ingestor",
-        "conditional_plays": {
-            "OCO_triggers": [],
-            "OTO_triggers": []
-        },
+        "conditional_plays": {"OCO_triggers": [], "OTO_triggers": []},
         "status": {
             "play_status": "NEW",
             "order_id": None,
@@ -370,7 +339,7 @@ def parse_sell_puts_row(
             "closing_order_status": None,
             "contingency_order_id": None,
             "contingency_order_status": None,
-            "conditionals_handled": False
+            "conditionals_handled": False,
         },
         "logging": {
             "delta_atOpen": 0.0,
@@ -385,10 +354,10 @@ def parse_sell_puts_row(
             "close_type": None,
             "close_condition": None,
             "profit_pct_of_max": None,
-            "was_assigned": False
-        }
+            "was_assigned": False,
+        },
     }
-    
+
     return play
 
 
@@ -396,56 +365,53 @@ def parse_sell_puts_row(
 # Momentum/Gap Parser
 # =============================================================================
 
-def parse_momentum_row(
-    row: List[str], 
-    row_num: int, 
-    errors: List[str]
-) -> Optional[Dict[str, Any]]:
+
+def parse_momentum_row(row: list[str], row_num: int, errors: list[str]) -> dict[str, Any] | None:
     """
     Parse a single row from the Momentum/Gap CSV template.
-    
+
     Returns play dictionary or None if parsing fails.
     """
     cols = MOMENTUM_COLUMNS
-    
+
     def get(col_name: str) -> str:
         idx = cols.get(col_name, -1)
         return row[idx].strip() if idx >= 0 and idx < len(row) else ""
-    
+
     # Required fields
     symbol = get("symbol").upper().lstrip("$")
     if not symbol:
         return None  # Skip empty rows
-    
+
     expiration = fix_date(get("expiration"))
     if not expiration:
         errors.append(f"Row {row_num}: Invalid expiration date")
         return None
-    
+
     gtd = fix_date(get("gtd"))
     if not gtd:
         errors.append(f"Row {row_num}: Missing GTD date (required)")
         return None
-    
+
     trade_type = get("trade_type").upper()
     if trade_type not in ("CALL", "PUT"):
         errors.append(f"Row {row_num}: Invalid trade_type (must be CALL or PUT)")
         return None
-    
+
     # Get strike from entry conditions or calculate from gap info
     entry_stock_price = parse_float(get("entry_stock_price"))
     if entry_stock_price is None:
         errors.append(f"Row {row_num}: Invalid entry stock price")
         return None
-    
+
     contracts = parse_int(get("contracts")) or 1
     order_type = parse_order_type(get("order_type"))
-    
+
     # Playbook and gap info
     playbook = get("playbook").lower() or "manual"
     if playbook not in ("gap_move", "gap_fade", "manual"):
         playbook = "manual"
-    
+
     gap_type = get("gap_type").lower() or "unknown"
     gap_pct = parse_percentage(get("gap_pct")) or 0.0
     previous_close = parse_float(get("previous_close")) or entry_stock_price
@@ -453,7 +419,7 @@ def parse_momentum_row(
     trade_direction = get("trade_direction").lower() or "manual"
     if trade_direction not in ("with_gap", "fade_gap", "manual"):
         trade_direction = "manual"
-    
+
     # Optional fields
     target_delta = parse_float(get("target_delta")) or 0.55
     tp_premium_pct = parse_percentage(get("tp_premium_pct")) or 50.0
@@ -468,19 +434,19 @@ def parse_momentum_row(
     same_day_exit = parse_boolean(get("same_day_exit"))
     max_hold_days = parse_int(get("max_hold_days")) or 5
     exit_before_close_mins = parse_int(get("exit_before_close_mins")) or 15
-    
+
     # Generate option symbol
     option_symbol = create_option_contract_symbol(
         symbol=symbol,
         expiration_date=expiration,
         strike_price=f"{entry_stock_price:.3f}",  # Use entry price as approx strike
-        trade_type=trade_type.lower()
+        trade_type=trade_type.lower(),
     )
-    
+
     if "INVALID" in option_symbol:
         errors.append(f"Row {row_num}: Invalid option symbol generated")
         return None
-    
+
     play = {
         "play_name": generate_play_name(symbol, trade_type, "momentum"),
         "symbol": symbol,
@@ -498,7 +464,7 @@ def parse_momentum_row(
             "order_type": order_type,
             "entry_premium": 0.0,
             "entry_stock_price": entry_stock_price,
-            "target_delta": target_delta
+            "target_delta": target_delta,
         },
         "gap_info": {
             "gap_type": gap_type,
@@ -506,31 +472,23 @@ def parse_momentum_row(
             "previous_close": previous_close,
             "gap_open": gap_open,
             "trade_direction": trade_direction,
-            "confirmation_time": None
+            "confirmation_time": None,
         },
         "take_profit": {
             "TP_type": "Multiple",
             "premium_pct": tp_premium_pct,
             "order_type": tp_order_type,
             "TP_option_prem": 0.0,
-            "TP_levels": [
-                {"pct": 25, "contracts_pct": 50},
-                {"pct": 50, "contracts_pct": 100}
-            ],
+            "TP_levels": [{"pct": 25, "contracts_pct": 50}, {"pct": 50, "contracts_pct": 100}],
             "trailing_config": {
                 "enabled": trailing_enabled,
                 "trail_type": "percentage",
                 "trail_distance_pct": trailing_pct,
                 "activation_threshold_pct": 20.0,
-                "update_frequency_seconds": 30
+                "update_frequency_seconds": 30,
             },
-            "trail_state": {
-                "current_trail_level": None,
-                "highest_favorable_price": None,
-                "last_update_timestamp": None,
-                "trail_activated": False
-            },
-            "trail_history": []
+            "trail_state": {"current_trail_level": None, "highest_favorable_price": None, "last_update_timestamp": None, "trail_activated": False},
+            "trail_history": [],
         },
         "stop_loss": {
             "SL_type": sl_type,
@@ -542,23 +500,20 @@ def parse_momentum_row(
                 "current_trail_level": None,
                 "highest_favorable_price": None,
                 "last_update_timestamp": None,
-                "breakeven_activated": False
+                "breakeven_activated": False,
             },
-            "trail_history": []
+            "trail_history": [],
         },
         "time_management": {
             "same_day_exit": same_day_exit,
             "max_hold_days": max_hold_days,
             "exit_before_close": True,
-            "exit_minutes_before_close": exit_before_close_mins
+            "exit_minutes_before_close": exit_before_close_mins,
         },
         "play_class": "SIMPLE",
-        "creation_date": datetime.now().strftime('%Y-%m-%d'),
+        "creation_date": datetime.now().strftime("%Y-%m-%d"),
         "creator": "csv-ingestor",
-        "conditional_plays": {
-            "OCO_triggers": [],
-            "OTO_triggers": []
-        },
+        "conditional_plays": {"OCO_triggers": [], "OTO_triggers": []},
         "status": {
             "play_status": "NEW",
             "order_id": None,
@@ -569,7 +524,7 @@ def parse_momentum_row(
             "closing_order_status": None,
             "contingency_order_id": None,
             "contingency_order_status": None,
-            "conditionals_handled": False
+            "conditionals_handled": False,
         },
         "logging": {
             "delta_atOpen": 0.0,
@@ -583,10 +538,10 @@ def parse_momentum_row(
             "premium_atClose": 0.0,
             "close_type": None,
             "close_condition": None,
-            "hold_duration_hours": None
-        }
+            "hold_duration_hours": None,
+        },
     }
-    
+
     return play
 
 
@@ -594,11 +549,12 @@ def parse_momentum_row(
 # Main Ingestion Functions
 # =============================================================================
 
-def is_data_row(row: List[str], strategy: StrategyType) -> bool:
+
+def is_data_row(row: list[str], strategy: StrategyType) -> bool:
     """Check if row contains data (not header)."""
     if not row:
         return False
-    
+
     # Look for row number in first column
     try:
         int(row[0].strip())
@@ -607,52 +563,48 @@ def is_data_row(row: List[str], strategy: StrategyType) -> bool:
         return False
 
 
-def ingest_csv(
-    filepath: str, 
-    strategy: Optional[StrategyType] = None,
-    skip_validation: bool = False
-) -> Tuple[List[Dict[str, Any]], List[str]]:
+def ingest_csv(filepath: str, strategy: StrategyType | None = None, skip_validation: bool = False) -> tuple[list[dict[str, Any]], list[str]]:
     """
     Ingest plays from a CSV file.
-    
+
     Args:
         filepath: Path to CSV file
         strategy: Strategy type (auto-detected if None)
         skip_validation: Skip market validation
-        
+
     Returns:
         Tuple of (plays list, errors list)
     """
     errors = []
     plays = []
-    
+
     # Detect strategy if not provided
     if strategy is None:
         strategy = detect_strategy_from_csv(filepath)
         if strategy is None:
             errors.append("Could not detect strategy from CSV. Please specify.")
             return [], errors
-    
+
     print(f"Ingesting CSV as: {strategy.value}")
-    
+
     # Read CSV
     with open(filepath, newline="", encoding="utf-8") as f:
         reader = list(csv.reader(f))
-    
+
     if not reader:
         errors.append("CSV file is empty")
         return [], errors
-    
+
     # Find data rows (skip headers)
     data_rows = []
     for i, row in enumerate(reader):
         if is_data_row(row, strategy):
             data_rows.append((i + 1, row))  # 1-indexed row number
-    
+
     if not data_rows:
         errors.append("No data rows found in CSV")
         return [], errors
-    
+
     # Parse based on strategy
     for row_num, row in data_rows:
         if strategy == StrategyType.SELL_PUTS:
@@ -662,31 +614,28 @@ def ingest_csv(
         else:
             # Use original ingestion for option_swings
             continue
-        
+
         if play:
             plays.append(play)
-    
+
     # Validate plays if requested
     if not skip_validation and plays:
         validator = PlayValidator(enable_market_checks=not skip_validation)
         for i, play in enumerate(plays):
-            result = validator.validate_play(play, f"Play {i+1}")
+            result = validator.validate_play(play, f"Play {i + 1}")
             errors.extend(result.errors)
-    
+
     return plays, errors
 
 
-def save_plays(
-    plays: List[Dict[str, Any]], 
-    target_dir: Optional[str] = None
-) -> List[str]:
+def save_plays(plays: list[dict[str, Any]], target_dir: str | None = None) -> list[str]:
     """
     Save plays to JSON files.
-    
+
     Args:
         plays: List of play dictionaries
         target_dir: Target directory (default: plays/new)
-        
+
     Returns:
         List of saved file paths
     """
@@ -694,62 +643,45 @@ def save_plays(
         base_dir = os.path.join(project_root, "goldflipper", "plays", "new")
     else:
         base_dir = target_dir
-    
+
     os.makedirs(base_dir, exist_ok=True)
     saved_files = []
-    
+
     for play in plays:
         filename = re.sub(r"[^\w\-]", "_", play["play_name"]) + ".json"
         filepath = os.path.join(base_dir, filename)
-        
+
         with open(filepath, "w") as f:
             json.dump(play, f, indent=4)
-        
+
         saved_files.append(filepath)
         print(f"[SUCCESS] Saved: {filepath}")
-    
+
     return saved_files
 
 
 def main():
     """Interactive CLI for multi-strategy CSV ingestion."""
     import argparse
-    
-    parser = argparse.ArgumentParser(
-        description="Multi-Strategy CSV Play Ingestion Tool"
-    )
-    parser.add_argument(
-        "csv_file",
-        nargs="?",
-        help="Path to CSV file"
-    )
-    parser.add_argument(
-        "--strategy",
-        choices=["option_swings", "sell_puts", "momentum"],
-        help="Strategy type (auto-detected if not specified)"
-    )
-    parser.add_argument(
-        "--skip-validation",
-        action="store_true",
-        help="Skip market validation"
-    )
-    parser.add_argument(
-        "--output-dir",
-        help="Custom output directory for play files"
-    )
-    
+
+    parser = argparse.ArgumentParser(description="Multi-Strategy CSV Play Ingestion Tool")
+    parser.add_argument("csv_file", nargs="?", help="Path to CSV file")
+    parser.add_argument("--strategy", choices=["option_swings", "sell_puts", "momentum"], help="Strategy type (auto-detected if not specified)")
+    parser.add_argument("--skip-validation", action="store_true", help="Skip market validation")
+    parser.add_argument("--output-dir", help="Custom output directory for play files")
+
     args = parser.parse_args()
-    
+
     # Get CSV file path
     if args.csv_file:
         csv_path = args.csv_file
     else:
         csv_path = input("Enter path to CSV file: ").strip()
-    
+
     if not os.path.exists(csv_path):
         print(f"Error: File not found: {csv_path}")
         return
-    
+
     # Get strategy
     strategy = None
     if args.strategy:
@@ -762,13 +694,13 @@ def main():
             confirm = input("Is this correct? (Y/N): ").strip().upper()
             if confirm == "Y":
                 strategy = detected
-        
+
         if strategy is None:
             print("\nSelect strategy:")
             print("1. Option Swings (BTO/STC)")
             print("2. Short Puts (STO/BTC)")
             print("3. Momentum/Gap (BTO/STC)")
-            
+
             choice = input("Enter choice (1-3): ").strip()
             if choice == "1":
                 strategy = StrategyType.OPTION_SWINGS
@@ -779,49 +711,46 @@ def main():
             else:
                 print("Invalid choice")
                 return
-    
+
     # For option_swings, use original ingestion tool
     if strategy == StrategyType.OPTION_SWINGS:
         print("Using original CSV ingestion tool for Option Swings...")
         from goldflipper.tools.play_csv_ingestion_tool import main as original_main
+
         sys.argv = [sys.argv[0], csv_path]
         if args.skip_validation:
             sys.argv.append("--skip-market-validation")
         original_main()
         return
-    
+
     # Ingest CSV
-    plays, errors = ingest_csv(
-        csv_path, 
-        strategy, 
-        skip_validation=args.skip_validation
-    )
-    
+    plays, errors = ingest_csv(csv_path, strategy, skip_validation=args.skip_validation)
+
     if errors:
         print("\nErrors encountered:")
         for err in errors[:20]:
             print(f"  - {err}")
         if len(errors) > 20:
             print(f"  ... and {len(errors) - 20} more")
-    
+
     if not plays:
         print("\nNo valid plays to save.")
         return
-    
+
     # Confirm save
     print(f"\nFound {len(plays)} valid plays.")
-    
+
     # Show summary
     print("\nPlay Summary:")
     for i, play in enumerate(plays[:5], 1):
-        symbol = play.get('symbol', '?')
-        trade_type = play.get('trade_type', '?')
-        action = play.get('action', '?')
-        exp = play.get('expiration_date', '?')
+        symbol = play.get("symbol", "?")
+        trade_type = play.get("trade_type", "?")
+        action = play.get("action", "?")
+        exp = play.get("expiration_date", "?")
         print(f"  {i}. {symbol} {trade_type} ({action}) - Exp: {exp}")
     if len(plays) > 5:
         print(f"  ... and {len(plays) - 5} more")
-    
+
     # Confirm target directory
     target_dir = args.output_dir
     if target_dir is None:
@@ -830,12 +759,12 @@ def main():
         change = input("Change directory? (Y/N): ").strip().upper()
         if change == "Y":
             target_dir = input("Enter target directory: ").strip()
-    
+
     confirm = input("\nProceed with saving? (Y/N): ").strip().upper()
     if confirm != "Y":
         print("Cancelled.")
         return
-    
+
     # Save plays
     saved = save_plays(plays, target_dir)
     print(f"\nSaved {len(saved)} plays to disk.")

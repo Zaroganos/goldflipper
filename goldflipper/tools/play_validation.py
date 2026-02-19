@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, date
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Any
 
 from goldflipper.data.market.errors import MarketDataError
 from goldflipper.data.market.manager import MarketDataManager
@@ -19,8 +19,8 @@ LOGGER = logging.getLogger(__name__)
 class ValidationResult:
     """Container for play validation feedback."""
 
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def is_valid(self) -> bool:
@@ -32,18 +32,18 @@ class PlayValidator:
 
     def __init__(
         self,
-        market_manager: Optional[MarketDataManager] = None,
+        market_manager: MarketDataManager | None = None,
         enable_market_checks: bool = True,
-        min_days_warning: Optional[int] = None,
-        earnings_validation_config: Optional[Dict[str, Any]] = None,
+        min_days_warning: int | None = None,
+        earnings_validation_config: dict[str, Any] | None = None,
     ) -> None:
-        self._symbol_cache: Dict[str, Dict[str, Optional[str]]] = {}
-        self._contract_cache: Dict[str, Dict[str, Optional[str]]] = {}
-        self._initialization_error: Optional[str] = None
-        self._market_manager: Optional[MarketDataManager] = None
+        self._symbol_cache: dict[str, dict[str, str | None]] = {}
+        self._contract_cache: dict[str, dict[str, str | None]] = {}
+        self._initialization_error: str | None = None
+        self._market_manager: MarketDataManager | None = None
         self._enable_market_checks = enable_market_checks
         self._min_days_warning = min_days_warning
-        self._earnings_config: Dict[str, Any] = {}
+        self._earnings_config: dict[str, Any] = {}
         self._earnings_enabled: bool = False
 
         if enable_market_checks:
@@ -61,7 +61,7 @@ class PlayValidator:
         if earnings_validation_config is not None:
             self.configure_earnings_validation(earnings_validation_config)
 
-    def configure_earnings_validation(self, earnings_validation_config: Optional[Dict[str, Any]]) -> None:
+    def configure_earnings_validation(self, earnings_validation_config: dict[str, Any] | None) -> None:
         """Configure earnings-based validation behavior.
 
         This is separated from __init__ to keep constructor arguments simple; callers
@@ -71,7 +71,7 @@ class PlayValidator:
         self._earnings_config = config
         self._earnings_enabled = bool(config.get("enabled", False))
 
-    def validate_play(self, play: Dict, context: str) -> ValidationResult:
+    def validate_play(self, play: dict, context: str) -> ValidationResult:
         """Validate a play dictionary, returning collected errors and warnings."""
 
         result = ValidationResult()
@@ -90,25 +90,21 @@ class PlayValidator:
         if not option_symbol:
             result.errors.append(f"{context}: Missing option_contract_symbol.")
 
-        strike_numeric: Optional[float] = None
+        strike_numeric: float | None = None
         if strike_value_raw is None:
             result.errors.append(f"{context}: Missing strike_price.")
         else:
             try:
                 strike_numeric = float(strike_value_raw)
             except (TypeError, ValueError):
-                result.errors.append(
-                    f"{context}: strike_price '{strike_value_raw}' is not a valid number."
-                )
+                result.errors.append(f"{context}: strike_price '{strike_value_raw}' is not a valid number.")
 
-        contract_expiry_dt: Optional[datetime] = None
+        contract_expiry_dt: datetime | None = None
         if expiration_value:
             try:
                 contract_expiry_dt = datetime.strptime(str(expiration_value), "%m/%d/%Y")
             except ValueError:
-                result.errors.append(
-                    f"{context}: Expiration date '{expiration_value}' is not MM/DD/YYYY."
-                )
+                result.errors.append(f"{context}: Expiration date '{expiration_value}' is not MM/DD/YYYY.")
         else:
             result.errors.append(f"{context}: Missing expiration_date.")
 
@@ -117,19 +113,18 @@ class PlayValidator:
         if contract_expiry_dt is not None:
             contract_expiry_date_only = contract_expiry_dt.date()
             if contract_expiry_date_only <= today:
-                result.errors.append(
-                    f"{context}: Expiration date (GTE) '{expiration_value}' is today or in the past."
-                )
+                result.errors.append(f"{context}: Expiration date (GTE) '{expiration_value}' is today or in the past.")
             elif self._min_days_warning is not None:
                 days_until_expiry = (contract_expiry_date_only - today).days
                 if days_until_expiry < self._min_days_warning:
                     result.warnings.append(
-                        f"{context}: Expiration date (GTE) '{expiration_value}' is less than {self._min_days_warning} days away ({days_until_expiry} days)."
+                        f"{context}: Expiration date (GTE) '{expiration_value}' is less than "
+                        f"{self._min_days_warning} days away ({days_until_expiry} days)."
                     )
 
         # Validate play_expiration_date (GTD) - required field, error if missing, today or past, warning if too soon
         play_expiration_value = play.get("play_expiration_date")
-        play_expiry_dt: Optional[datetime] = None
+        play_expiry_dt: datetime | None = None
         if not play_expiration_value:
             result.errors.append(f"{context}: Missing play_expiration_date (GTD). GTD date is required.")
         else:
@@ -137,19 +132,16 @@ class PlayValidator:
                 play_expiry_dt = datetime.strptime(str(play_expiration_value), "%m/%d/%Y")
                 play_expiry_date_only = play_expiry_dt.date()
                 if play_expiry_date_only <= today:
-                    result.errors.append(
-                        f"{context}: Play expiration date (GTD) '{play_expiration_value}' is today or in the past."
-                    )
+                    result.errors.append(f"{context}: Play expiration date (GTD) '{play_expiration_value}' is today or in the past.")
                 elif self._min_days_warning is not None:
                     days_until_play_expiry = (play_expiry_date_only - today).days
                     if days_until_play_expiry < self._min_days_warning:
                         result.warnings.append(
-                            f"{context}: Play expiration date (GTD) '{play_expiration_value}' is less than {self._min_days_warning} days away ({days_until_play_expiry} days)."
+                            f"{context}: Play expiration date (GTD) '{play_expiration_value}' is less than "
+                            f"{self._min_days_warning} days away ({days_until_play_expiry} days)."
                         )
             except ValueError:
-                result.errors.append(
-                    f"{context}: Play expiration date (GTD) '{play_expiration_value}' is not MM/DD/YYYY."
-                )
+                result.errors.append(f"{context}: Play expiration date (GTD) '{play_expiration_value}' is not MM/DD/YYYY.")
 
         contracts_value = play.get("contracts")
         if contracts_value is None:
@@ -157,13 +149,9 @@ class PlayValidator:
         else:
             try:
                 if int(contracts_value) <= 0:
-                    result.errors.append(
-                        f"{context}: contracts must be a positive integer (found '{contracts_value}')."
-                    )
+                    result.errors.append(f"{context}: contracts must be a positive integer (found '{contracts_value}').")
             except (TypeError, ValueError):
-                result.errors.append(
-                    f"{context}: contracts '{contracts_value}' is not a valid integer."
-                )
+                result.errors.append(f"{context}: contracts '{contracts_value}' is not a valid integer.")
 
         if option_symbol:
             result.errors.extend(
@@ -178,10 +166,7 @@ class PlayValidator:
             )
 
         if not self._enable_market_checks:
-            warning_msg = (
-                f"{context}: Market data validation skipped"
-                + (f" ({self._initialization_error})." if self._initialization_error else ".")
-            )
+            warning_msg = f"{context}: Market data validation skipped" + (f" ({self._initialization_error})." if self._initialization_error else ".")
             result.warnings.append(warning_msg)
             return result
 
@@ -195,9 +180,7 @@ class PlayValidator:
             result.warnings.extend(sym_warnings)
 
             if self._earnings_enabled:
-                earnings_errors, earnings_warnings = self._validate_earnings_window(
-                    symbol, contract_expiry_dt, play_expiry_dt, context
-                )
+                earnings_errors, earnings_warnings = self._validate_earnings_window(symbol, contract_expiry_dt, play_expiry_dt, context)
                 result.errors.extend(earnings_errors)
                 result.warnings.extend(earnings_warnings)
 
@@ -211,10 +194,10 @@ class PlayValidator:
     def _validate_earnings_window(
         self,
         symbol: str,
-        contract_expiry_dt: Optional[datetime],
-        play_expiry_dt: Optional[datetime],
+        contract_expiry_dt: datetime | None,
+        play_expiry_dt: datetime | None,
         context: str,
-    ) -> Tuple[List[str], List[str]]:
+    ) -> tuple[list[str], list[str]]:
         """Validate risk from upcoming earnings within the play's active window.
 
         Uses MarketDataManager.get_next_earnings_date (via MarketDataApp) to find the
@@ -222,8 +205,8 @@ class PlayValidator:
         - A configured min_days_before_earnings buffer; and
         - The play's active window: today through min(GTE, GTD), when both are known.
         """
-        errors: List[str] = []
-        warnings: List[str] = []
+        errors: list[str] = []
+        warnings: list[str] = []
 
         if not self._market_manager:
             return errors, warnings
@@ -240,9 +223,7 @@ class PlayValidator:
         try:
             next_earnings = self._market_manager.get_next_earnings_date(symbol)
         except Exception as exc:  # pragma: no cover - defensive catch
-            warnings.append(
-                f"{context}: Unable to check upcoming earnings for {symbol}: {exc}"
-            )
+            warnings.append(f"{context}: Unable to check upcoming earnings for {symbol}: {exc}")
             return errors, warnings
 
         if not next_earnings:
@@ -278,16 +259,14 @@ class PlayValidator:
         option_symbol: str,
         symbol: str,
         trade_type: str,
-        strike_numeric: Optional[float],
-        contract_expiry_dt: Optional[datetime],
+        strike_numeric: float | None,
+        contract_expiry_dt: datetime | None,
         context: str,
-    ) -> List[str]:
-        errors: List[str] = []
+    ) -> list[str]:
+        errors: list[str] = []
 
         if len(option_symbol) < 15:
-            errors.append(
-                f"{context}: Option contract '{option_symbol}' is too short to follow OCC format."
-            )
+            errors.append(f"{context}: Option contract '{option_symbol}' is too short to follow OCC format.")
             return errors
 
         root = option_symbol[:-15]
@@ -296,16 +275,12 @@ class PlayValidator:
         strike_fragment = option_symbol[-8:]
 
         if symbol and root != symbol:
-            errors.append(
-                f"{context}: Contract root '{root}' does not match symbol '{symbol}'."
-            )
+            errors.append(f"{context}: Contract root '{root}' does not match symbol '{symbol}'.")
 
         if trade_type in {"CALL", "PUT"}:
             expected_cp = "C" if trade_type == "CALL" else "P"
             if option_type != expected_cp:
-                errors.append(
-                    f"{context}: Contract type '{option_type}' does not match trade_type '{trade_type}'."
-                )
+                errors.append(f"{context}: Contract type '{option_type}' does not match trade_type '{trade_type}'.")
 
         if contract_expiry_dt is not None:
             expected_date = contract_expiry_dt.strftime("%y%m%d")
@@ -318,9 +293,7 @@ class PlayValidator:
             try:
                 strike_from_contract = int(strike_fragment) / 1000.0
             except ValueError:
-                errors.append(
-                    f"{context}: Contract strike fragment '{strike_fragment}' is not numeric."
-                )
+                errors.append(f"{context}: Contract strike fragment '{strike_fragment}' is not numeric.")
             else:
                 if not math.isclose(
                     strike_numeric,
@@ -328,13 +301,15 @@ class PlayValidator:
                     rel_tol=1e-4,
                     abs_tol=1e-3,
                 ):
-                    errors.append(
-                        f"{context}: Contract strike {strike_from_contract:.3f} does not match play strike {strike_numeric:.3f}."
-                    )
+                    errors.append(f"{context}: Contract strike {strike_from_contract:.3f} does not match play strike {strike_numeric:.3f}.")
 
         return errors
 
-    def _validate_symbol_with_market_data(self, symbol: str, context: str) -> Tuple[List[str], List[str]]:
+    def _validate_symbol_with_market_data(self, symbol: str, context: str) -> tuple[list[str], list[str]]:
+        market_manager = self._market_manager
+        if market_manager is None:
+            return [], [f"{context}: Market data validation unavailable."]
+
         cached = self._symbol_cache.get(symbol)
         if cached:
             status = cached.get("status")
@@ -347,7 +322,7 @@ class PlayValidator:
                 return [], [f"{context}: {message}"]
 
         try:
-            price = self._market_manager.get_stock_price(symbol)
+            price = market_manager.get_stock_price(symbol)
         except MarketDataError as exc:
             message = f"Unable to verify ticker {symbol}: {exc}"
             self._symbol_cache[symbol] = {"status": "warning", "message": message}
@@ -370,9 +345,11 @@ class PlayValidator:
         self._symbol_cache[symbol] = {"status": "valid", "message": None}
         return [], []
 
-    def _validate_option_with_market_data(
-        self, option_symbol: str, context: str
-    ) -> Tuple[List[str], List[str]]:
+    def _validate_option_with_market_data(self, option_symbol: str, context: str) -> tuple[list[str], list[str]]:
+        market_manager = self._market_manager
+        if market_manager is None:
+            return [], [f"{context}: Market data validation unavailable."]
+
         cached = self._contract_cache.get(option_symbol)
         if cached:
             status = cached.get("status")
@@ -385,7 +362,7 @@ class PlayValidator:
                 return [], [f"{context}: {message}"]
 
         try:
-            quote = self._market_manager.get_option_quote(option_symbol)
+            quote = market_manager.get_option_quote(option_symbol)
         except MarketDataError as exc:
             message = f"Unable to verify option {option_symbol}: {exc}"
             self._contract_cache[option_symbol] = {"status": "warning", "message": message}
@@ -396,25 +373,19 @@ class PlayValidator:
             return [], [f"{context}: {message}"]
 
         if not quote:
-            message = (
-                f"Market data returned no quote for option {option_symbol}. Verify contract details."
-            )
+            message = f"Market data returned no quote for option {option_symbol}. Verify contract details."
             self._contract_cache[option_symbol] = {"status": "invalid", "message": message}
             return [f"{context}: {message}"], []
 
-        errors: List[str] = []
-        warnings: List[str] = []
+        errors: list[str] = []
+        warnings: list[str] = []
 
-        volume = quote.get('volume')
-        open_interest = quote.get('open_interest')
+        volume = quote.get("volume")
+        open_interest = quote.get("open_interest")
         if volume is not None and volume == 0:
-            warnings.append(
-                f"{context}: Option {option_symbol} has zero reported volume; check liquidity."
-            )
+            warnings.append(f"{context}: Option {option_symbol} has zero reported volume; check liquidity.")
         if open_interest is not None and open_interest == 0:
-            warnings.append(
-                f"{context}: Option {option_symbol} has zero open interest; confirm availability."
-            )
+            warnings.append(f"{context}: Option {option_symbol} has zero open interest; confirm availability.")
 
         self._contract_cache[option_symbol] = {"status": "valid", "message": None}
         return errors, warnings

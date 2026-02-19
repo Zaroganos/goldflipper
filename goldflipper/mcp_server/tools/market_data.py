@@ -1,7 +1,7 @@
 """Market data query tools — stock prices, option quotes, expirations, earnings."""
 
-from goldflipper.mcp_server.server import mcp
 from goldflipper.mcp_server.context import ctx
+from goldflipper.mcp_server.server import mcp
 
 
 @mcp.tool

@@ -1,7 +1,7 @@
 """Portfolio and account query tools — positions, account info, active account."""
 
-from goldflipper.mcp_server.server import mcp
 from goldflipper.mcp_server.context import ctx
+from goldflipper.mcp_server.server import mcp
 
 
 @mcp.tool
@@ -22,17 +22,19 @@ def get_portfolio_positions() -> dict:
 
     pos_list = []
     for pos in positions:
-        pos_list.append({
-            "symbol": str(pos.symbol),
-            "qty": str(pos.qty),
-            "side": str(pos.side),
-            "market_value": str(pos.market_value),
-            "current_price": str(pos.current_price),
-            "avg_entry_price": str(pos.avg_entry_price),
-            "unrealized_pl": str(pos.unrealized_pl),
-            "unrealized_plpc": str(pos.unrealized_plpc),
-            "asset_class": str(pos.asset_class),
-        })
+        pos_list.append(
+            {
+                "symbol": str(pos.symbol),
+                "qty": str(pos.qty),
+                "side": str(pos.side),
+                "market_value": str(pos.market_value),
+                "current_price": str(pos.current_price),
+                "avg_entry_price": str(pos.avg_entry_price),
+                "unrealized_pl": str(pos.unrealized_pl),
+                "unrealized_plpc": str(pos.unrealized_plpc),
+                "asset_class": str(pos.asset_class),
+            }
+        )
 
     return {
         "account": get_active_account_name(),
@@ -81,7 +83,7 @@ def get_active_account() -> dict:
     Returns:
         Dict with account name, nickname, and whether it's a paper account.
     """
-    from goldflipper.config.config import get_active_account_name, get_account_nickname
+    from goldflipper.config.config import get_account_nickname, get_active_account_name
 
     account_name = get_active_account_name()
     nickname = get_account_nickname(account_name)

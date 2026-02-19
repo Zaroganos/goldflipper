@@ -17,9 +17,9 @@
     - MSI per-machine install will trigger a UAC prompt
     - version.json schema expected per channel (lives in Distribution/<channel>/version.json):
         {
-            "version":      "0.2.3",
-            "download_url": "https://cloud.zimerguz.net/s/osCCAY2Gm3mNKPK/download?path=/&files=goldflipper-0.2.3-x64.msi",
-            "portable_url": "https://cloud.zimerguz.net/s/osCCAY2Gm3mNKPK/download?path=/&files=goldflipper-0.2.3-portable.exe",
+            "version":      "0.2.5",
+            "download_url": "https://cloud.zimerguz.net/s/osCCAY2Gm3mNKPK/download?path=/&files=goldflipper-0.2.5-x64.msi",
+            "portable_url": "https://cloud.zimerguz.net/s/osCCAY2Gm3mNKPK/download?path=/&files=goldflipper-0.2.5-portable.exe",
             "notes":        "Human-readable release notes"
         }
       Each channel uses a single folder-level public share (token never changes).

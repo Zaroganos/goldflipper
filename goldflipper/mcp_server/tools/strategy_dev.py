@@ -1,12 +1,10 @@
 """Strategy development tools — playbooks, strategy code, scaffolding."""
 
 import os
-from typing import Optional
 
 import yaml
 
 from goldflipper.mcp_server.server import mcp
-from goldflipper.mcp_server.context import ctx
 
 
 def _get_playbooks_dir() -> str:
@@ -20,7 +18,7 @@ def _get_runners_dir() -> str:
 
 
 @mcp.tool
-def list_playbooks(strategy: Optional[str] = None) -> dict:
+def list_playbooks(strategy: str | None = None) -> dict:
     """List available playbook YAML files, optionally filtered by strategy.
 
     Args:
@@ -55,14 +53,16 @@ def list_playbooks(strategy: Optional[str] = None) -> dict:
             if filename.endswith((".yaml", ".yml")):
                 filepath = os.path.join(strat_dir, filename)
                 try:
-                    with open(filepath, "r") as f:
+                    with open(filepath) as f:
                         data = yaml.safe_load(f) or {}
-                    playbooks.append({
-                        "filename": filename,
-                        "name": data.get("name", filename),
-                        "status": data.get("status", "unknown"),
-                        "description": (data.get("description", "") or "")[:200],
-                    })
+                    playbooks.append(
+                        {
+                            "filename": filename,
+                            "name": data.get("name", filename),
+                            "status": data.get("status", "unknown"),
+                            "description": (data.get("description", "") or "")[:200],
+                        }
+                    )
                 except Exception:
                     playbooks.append({"filename": filename, "name": filename, "status": "error", "description": "Failed to parse"})
         result[strat_name] = playbooks
@@ -89,7 +89,7 @@ def get_playbook(strategy: str, name: str) -> dict:
         return {"error": f"Playbook not found: {strategy}/{filename}"}
 
     try:
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             data = yaml.safe_load(f) or {}
     except Exception as e:
         return {"error": f"Failed to parse playbook: {e}"}
@@ -161,7 +161,7 @@ def modify_playbook(strategy: str, name: str, updates_yaml: str) -> dict:
 
     # Load existing
     try:
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             existing = yaml.safe_load(f) or {}
     except Exception as e:
         return {"error": f"Failed to load playbook: {e}"}
@@ -211,7 +211,7 @@ def get_strategy_code(strategy_name: str) -> dict:
         return {"error": f"Strategy runner not found: {strategy_name}.py"}
 
     try:
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             source = f.read()
     except Exception as e:
         return {"error": f"Failed to read strategy file: {e}"}
@@ -335,11 +335,13 @@ def list_runner_modules() -> dict:
     modules = []
     for mod_name in known_modules:
         filepath = os.path.join(runners_dir, f"{mod_name}.py")
-        modules.append({
-            "module": mod_name,
-            "file_exists": os.path.isfile(filepath),
-            "registered": StrategyRegistry.is_registered(mod_name),
-        })
+        modules.append(
+            {
+                "module": mod_name,
+                "file_exists": os.path.isfile(filepath),
+                "registered": StrategyRegistry.is_registered(mod_name),
+            }
+        )
 
     # Also check for any .py files in runners/ not in the known list
     if os.path.isdir(runners_dir):
@@ -347,11 +349,13 @@ def list_runner_modules() -> dict:
             if filename.endswith(".py") and filename != "__init__.py":
                 mod_name = filename[:-3]
                 if mod_name not in known_modules:
-                    modules.append({
-                        "module": mod_name,
-                        "file_exists": True,
-                        "registered": StrategyRegistry.is_registered(mod_name),
-                        "note": "Not in known runner_modules list",
-                    })
+                    modules.append(
+                        {
+                            "module": mod_name,
+                            "file_exists": True,
+                            "registered": StrategyRegistry.is_registered(mod_name),
+                            "note": "Not in known runner_modules list",
+                        }
+                    )
 
     return {"runner_modules": modules, "count": len(modules)}

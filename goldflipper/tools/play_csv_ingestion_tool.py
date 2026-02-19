@@ -1,28 +1,26 @@
 import csv
-import os
 import json
-import sys
+import os
 import re
-import copy
-import platform
 import subprocess
-from datetime import datetime
+import sys
 from collections import defaultdict
+from datetime import datetime
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
+from goldflipper.config.config import config
 from goldflipper.tools.play_creation_tool import create_option_contract_symbol
 from goldflipper.tools.play_validation import PlayValidator
-from goldflipper.config.config import config
 
 # --- Constants and Fixed Index Ranges ---
 # These ranges assume that the final header row splits calls and puts via a blank separator column.
 #
 # OCO/OSO COLUMN FORMAT:
 # The OCO/OSO column (index 5) supports enhanced conditional trading:
-# 
+#
 # OCO (One-Cancels-Other) Examples:
 #   "1"       - Simple OCO group 1
 #   "1,2,3"   - Multiple OCO groups (this play cancels/is cancelled by groups 1, 2, and 3)
@@ -47,14 +45,14 @@ PUTS_START = 25
 
 # Fixed (expected) index mappings for each section.
 CALLS_ENTRY = {
-    "symbol": 2,       # "Ticket" column (3rd column in calls section)
+    "symbol": 2,  # "Ticket" column (3rd column in calls section)
     "expiration_date": 3,  # "Expiration (Contract)"
-    "gtd": 4,          # "GTD" column
-    "oco": 5,          # "OCO/OSO" column - supports: "1,2,3" (OCO), "+1,-1" (OSO), "1,+2,-2" (mixed)
-    "entry_stock_price": 11, # "Share Price (Buy)"
-    "contracts": 13,   # "# of Con"
-    "strike_price": 8,   # "Strike Price" column
-    "order_type": 12  # "Order Type" column for entry
+    "gtd": 4,  # "GTD" column
+    "oco": 5,  # "OCO/OSO" column - supports: "1,2,3" (OCO), "+1,-1" (OSO), "1,+2,-2" (mixed)
+    "entry_stock_price": 11,  # "Share Price (Buy)"
+    "contracts": 13,  # "# of Con"
+    "strike_price": 8,  # "Strike Price" column
+    "order_type": 12,  # "Order Type" column for entry
 }
 CALLS_VALIDATION = {
     "itm": 7,
@@ -77,17 +75,17 @@ CALLS_SL = {
     "sl_premium_pct": 21,
     "sl_stock_pct": 22,
     # Order type column for sell side (shared with TP)
-    "sl_order_type": 19
+    "sl_order_type": 19,
 }
 PUTS_ENTRY = {
-    "symbol": 2,       # Same relative position in puts section
+    "symbol": 2,  # Same relative position in puts section
     "expiration_date": 3,
     "gtd": 4,
-    "oco": 5,          # "OCO/OSO" column - supports: "1,2,3" (OCO), "+1,-1" (OSO), "1,+2,-2" (mixed)
+    "oco": 5,  # "OCO/OSO" column - supports: "1,2,3" (OCO), "+1,-1" (OSO), "1,+2,-2" (mixed)
     "entry_stock_price": 11,
     "contracts": 13,
     "strike_price": 8,
-    "order_type": 12  # "Order Type" column for entry
+    "order_type": 12,  # "Order Type" column for entry
 }
 PUTS_VALIDATION = CALLS_VALIDATION.copy()
 PUTS_TP = {
@@ -97,7 +95,7 @@ PUTS_TP = {
     # Note: No trailing column in current CSV template
     # "tp_trailing_activation_pct": 18,  # Not present in current CSV structure
     # "Order Type" column follows Stock% in the current schema
-    "tp_order_type": 18  # Relative index: Order Type is at absolute index 43 (25+18)
+    "tp_order_type": 18,  # Relative index: Order Type is at absolute index 43 (25+18)
 }
 PUTS_SL = {
     # Puts side: after TP section, Order Type(18), then # of con(19)
@@ -105,16 +103,17 @@ PUTS_SL = {
     "sl_stock_price": 20,
     "sl_premium_pct": 21,
     "sl_stock_pct": 22,
-    "sl_order_type": 18  # Shared with TP order type
+    "sl_order_type": 18,  # Shared with TP order type
 }
 
 # --- Utility Functions ---
+
 
 def is_data_row(row):
     """
     Determines if a row represents play data.
     Previously, only the first cell (calls side) was checked.
-    Now, if either the first cell or the cell at index PUTS_START (put side) 
+    Now, if either the first cell or the cell at index PUTS_START (put side)
     can be converted to int, we consider the row as data.
     """
     if not row:
@@ -127,6 +126,7 @@ def is_data_row(row):
             except ValueError:
                 continue
     return False
+
 
 def build_composite_headers(header_rows):
     """
@@ -154,17 +154,18 @@ def detect_puts_start(composite_headers):
     Strategy: find the second 'Ticket' header; subtract the relative offset for symbol (2).
     Fallback to legacy PUTS_START if detection fails.
     """
-    indices = [i for i, h in enumerate(composite_headers) if isinstance(h, str) and 'ticket' in h.lower()]
+    indices = [i for i, h in enumerate(composite_headers) if isinstance(h, str) and "ticket" in h.lower()]
     if len(indices) >= 2:
         ticket_idx_puts = indices[1]
         start = max(0, ticket_idx_puts - 2)
         return start
     # Alternate: look for the literal 'Puts' banner cell
     for i, h in enumerate(composite_headers):
-        if isinstance(h, str) and 'puts' in h.lower():
+        if isinstance(h, str) and "puts" in h.lower():
             # Heuristic: banner sits at first column of puts block
             return i
     return PUTS_START
+
 
 def find_strike_index(section_headers):
     """
@@ -178,14 +179,15 @@ def find_strike_index(section_headers):
     for idx, header in enumerate(section_headers):
         if "strike price" in header.lower():
             strike_columns.append(idx)
-    
+
     # Then look for moneyness columns
     moneyness_terms = ["itm", "atm", "otm"]
     for idx, header in enumerate(section_headers):
         if any(term in header.lower() for term in moneyness_terms):
             strike_columns.append(idx)
-    
+
     return strike_columns
+
 
 def load_reference_template():
     """
@@ -193,17 +195,17 @@ def load_reference_template():
     Returns tuple (calls_headers, puts_headers, puts_start) or None if template not found.
     """
     template_path = os.path.join(project_root, "goldflipper", "reference", "Play Template - 2025.csv")
-    
+
     if not os.path.exists(template_path):
         return None
-    
+
     try:
         with open(template_path, newline="", encoding="utf-8") as csvfile:
             reader = list(csv.reader(csvfile))
-        
+
         if not reader:
             return None
-        
+
         # Extract headers using same logic as main ingestion
         header_rows = []
         found_data = False
@@ -212,73 +214,89 @@ def load_reference_template():
                 found_data = True
             if not found_data:
                 header_rows.append(row)
-        
+
         composite_headers = build_composite_headers(header_rows)
         dynamic_puts_start = detect_puts_start(composite_headers)
         calls_headers = composite_headers[CALLS_START:CALLS_END]
         puts_headers = composite_headers[dynamic_puts_start:]
-        
+
         return calls_headers, puts_headers, dynamic_puts_start
     except Exception as e:
         print(f"Warning: Could not load reference template: {e}")
         return None
+
 
 def validate_column_mappings(section_headers, mapping_dict, section_name, section_start=0, reference_headers=None):
     """
     Validate that CSV column headers match expected mappings.
     Compares against reference template headers (required).
     Returns a list of validation errors/warnings.
-    
+
     Args:
         section_headers: List of header strings for this section
         mapping_dict: Dictionary mapping field names to column indices (relative to section_start)
         section_name: Name of section (e.g., "calls", "puts") for error messages
         section_start: Starting column index of this section in the full CSV
         reference_headers: List of reference headers from template to compare against (required)
-    
+
     Returns:
         List of error/warning messages
     """
     errors = []
-    
+
     for field_name, col_idx in mapping_dict.items():
         abs_idx = section_start + col_idx
-        
+
         if col_idx >= len(section_headers):
-            errors.append(f"[{section_name}] Column index {col_idx} (absolute {abs_idx}, field '{field_name}') is out of range. CSV has {len(section_headers)} columns in this section.")
+            errors.append(
+                f"[{section_name}] Column index {col_idx} (absolute {abs_idx}, field '{field_name}') "
+                f"is out of range. CSV has {len(section_headers)} columns in this section."
+            )
             continue
-        
+
         actual_header = section_headers[col_idx].strip()
         actual_header_lower = actual_header.lower()
-        
+
         # Compare against reference template headers
         if reference_headers is None:
             errors.append(f"[{section_name}] Reference template not available for validation (field '{field_name}')")
             continue
-            
+
         if col_idx >= len(reference_headers):
-            errors.append(f"[{section_name}] Column index {col_idx} (field '{field_name}') is out of range in reference template. Reference has {len(reference_headers)} columns.")
+            errors.append(
+                f"[{section_name}] Column index {col_idx} (field '{field_name}') is out of range in reference template. "
+                f"Reference has {len(reference_headers)} columns."
+            )
             continue
-        
+
         expected_header = reference_headers[col_idx].strip()
         expected_header_lower = expected_header.lower()
-        
+
         # Normalize comparison (case-insensitive, ignore extra whitespace)
         if actual_header_lower != expected_header_lower:
             # For empty headers, be more lenient
             if not actual_header and not expected_header:
                 continue  # Both empty, that's fine
             elif not actual_header:
-                errors.append(f"[{section_name}] Column {abs_idx} (field '{field_name}') has empty header but reference template expects: '{expected_header}'")
+                errors.append(
+                    f"[{section_name}] Column {abs_idx} (field '{field_name}') has empty header but reference template expects: '{expected_header}'"
+                )
             elif not expected_header:
                 # Reference is empty but actual has something - might be OK for some columns
                 if field_name != "strike_price":
-                    errors.append(f"[{section_name}] Column {abs_idx} (field '{field_name}') has header '{actual_header}' but reference template has empty header")
+                    errors.append(
+                        f"[{section_name}] Column {abs_idx} (field '{field_name}') has header '{actual_header}' "
+                        "but reference template has empty header"
+                    )
             else:
                 # Both have content but don't match
-                errors.append(f"[{section_name}] Column {abs_idx} (field '{field_name}') header '{actual_header}' doesn't match reference template: '{expected_header}'")
-    
+                errors.append(
+                    f"[{section_name}] Column {abs_idx} (field '{field_name}') header '{actual_header}' "
+                    f"doesn't match reference template: '{expected_header}'"
+                )
+
     return errors
+
 
 def clean_numeric_string(value):
     """
@@ -290,15 +308,16 @@ def clean_numeric_string(value):
         return match.group(0)
     return None
 
+
 def safe_convert_float(value, field_name, row_num, errors):
     """More aggressive cleaning for financial values"""
     clean_str = str(value).strip().upper()
     clean_str = clean_str.replace(",", "").replace("$", "").replace("%", "")
-    
+
     # Handle negative values in parentheses
     if "(" in clean_str and ")" in clean_str:
         clean_str = "-" + clean_str.replace("(", "").replace(")", "")
-    
+
     # Extract first numeric value found
     match = re.search(r"[-+]?\d*\.?\d+", clean_str)
     if match:
@@ -306,9 +325,10 @@ def safe_convert_float(value, field_name, row_num, errors):
             return float(match.group())
         except ValueError:
             pass
-    
+
     errors.append(f"Row {row_num}: Failed to convert {field_name} value '{value}'")
     return None
+
 
 def safe_convert_int(value, field_name, row_num, errors):
     """
@@ -333,6 +353,7 @@ def safe_convert_int(value, field_name, row_num, errors):
         errors.append(f"Row {row_num}: Unable to convert field '{field_name}' value '{value}' to int after cleaning.")
         return None
 
+
 def fix_expiration_date(raw_date, ref_year=None):
     """Ultra-resilient date parser with smart year handling"""
     if not raw_date or str(raw_date).lower() == "n/a":
@@ -340,13 +361,13 @@ def fix_expiration_date(raw_date, ref_year=None):
 
     # Clean input aggressively
     date_str = re.sub(r"[^0-9/\\-]", "", str(raw_date).strip()).replace("\\", "/").replace("-", "/")
-    
+
     # Handle empty string after cleaning
     if not date_str:
         return None
 
     # If only month and day provided, add current year
-    parts = date_str.split('/')
+    parts = date_str.split("/")
     if len(parts) == 2:
         month, day = int(parts[0]), int(parts[1])
         current_year = datetime.now().year
@@ -354,12 +375,8 @@ def fix_expiration_date(raw_date, ref_year=None):
         return target_date.strftime("%m/%d/%Y")
 
     # Try all possible date formats with priority to MM/DD formats
-    formats = [
-        "%m/%d/%Y", "%m/%d/%y", "%Y/%m/%d",
-        "%m/%d", "%d/%m/%Y", "%d/%m/%y",
-        "%Y-%m-%d", "%y-%m-%d", "%m-%d"
-    ]
-    
+    formats = ["%m/%d/%Y", "%m/%d/%y", "%Y/%m/%d", "%m/%d", "%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%y-%m-%d", "%m-%d"]
+
     for fmt in formats:
         try:
             dt = datetime.strptime(date_str, fmt)
@@ -369,19 +386,19 @@ def fix_expiration_date(raw_date, ref_year=None):
                     dt = dt.replace(year=2000 + dt.year)
                 else:  # Assume 19xx for years 50 and above
                     dt = dt.replace(year=1900 + dt.year)
-            
+
             # Handle 2-digit year ambiguity
             if dt.year > 2100:
                 dt = dt.replace(year=dt.year - 100)
             elif dt.year < 1900:
                 dt = dt.replace(year=ref_year) if ref_year else dt.replace(year=2000 + dt.year)
-                    
+
             return dt.strftime("%m/%d/%Y")
         except ValueError:
             continue
 
     # Final fallback: extract any date-like pattern
-    date_components = re.findall(r'\d+', date_str)
+    date_components = re.findall(r"\d+", date_str)
     if len(date_components) >= 3:
         m, d, y = date_components[0], date_components[1], date_components[2]
     elif len(date_components) == 2 and ref_year:
@@ -393,45 +410,48 @@ def fix_expiration_date(raw_date, ref_year=None):
         y = int(y)
         m = int(m)
         d = int(d)
-        
+
         # Year adjustments
         if y < 50:
             y += 2000
         elif y < 100:
             y += 1900
-            
+
         # Create date with validation
         dt = datetime(y, m, d)
         return dt.strftime("%m/%d/%Y")
-    except:
+    except Exception:
         return None
+
 
 def parse_order_type(cell_value):
     """Convert spreadsheet order types to standardized values"""
     lower_val = str(cell_value).strip().lower()
-    if 'market' in lower_val:
-        return 'market'
-    if any(term in lower_val for term in ['bid', 'limit (bid)', 'limit at bid']):
-        return 'limit at bid'
-    if any(term in lower_val for term in ['ask', 'limit (ask)', 'limit at ask']):
-        return 'limit at ask'
-    if any(term in lower_val for term in ['mid', 'limit (mid)', 'limit at mid']):
-        return 'limit at mid'
-    if any(term in lower_val for term in ['last', 'limit (last)', 'limit at last']):
-        return 'limit at last'
-    return 'limit at last'  # Default fallback
+    if "market" in lower_val:
+        return "market"
+    if any(term in lower_val for term in ["bid", "limit (bid)", "limit at bid"]):
+        return "limit at bid"
+    if any(term in lower_val for term in ["ask", "limit (ask)", "limit at ask"]):
+        return "limit at ask"
+    if any(term in lower_val for term in ["mid", "limit (mid)", "limit at mid"]):
+        return "limit at mid"
+    if any(term in lower_val for term in ["last", "limit (last)", "limit at last"]):
+        return "limit at last"
+    return "limit at last"  # Default fallback
+
 
 def clean_ticker_symbol(symbol):
     """
     Clean a ticker symbol by removing leading '$' and converting to uppercase.
-    
+
     Args:
         symbol (str): The ticker symbol to clean
-        
+
     Returns:
         str: The cleaned ticker symbol
     """
-    return symbol.strip().lstrip('$').upper()
+    return symbol.strip().lstrip("$").upper()
+
 
 def parse_conditional_values(value_str, row_num, section, errors):
     """
@@ -440,41 +460,43 @@ def parse_conditional_values(value_str, row_num, section, errors):
     - Multiple values: "1,2,3" or "1;2;3"
     - OSO notation: "+1,-1" (parent/child pairs)
     - Mixed: "1,+2,-2,3"
-    
+
     Returns dict with 'oco', 'oso_parent', 'oso_child' lists
     """
-    result = {'oco': [], 'oso_parent': [], 'oso_child': []}
-    
+    result = {"oco": [], "oso_parent": [], "oso_child": []}
+
     if not value_str or not value_str.strip():
         return result
-    
+
     # Split on comma or semicolon
-    raw_values = re.split('[,;]', value_str.strip())
-    
+    raw_values = re.split("[,;]", value_str.strip())
+
     for raw_val in raw_values:
         val = raw_val.strip()
         if not val:
             continue
-            
+
         try:
-            if val.startswith('+'):
+            if val.startswith("+"):
                 # OSO parent (triggers child)
                 number = int(val[1:])
-                result['oso_parent'].append(number)
-            elif val.startswith('-'):
+                result["oso_parent"].append(number)
+            elif val.startswith("-"):
                 # OSO child (triggered by parent)
                 number = int(val[1:])
-                result['oso_child'].append(number)
+                result["oso_child"].append(number)
             else:
                 # Regular OCO
                 number = int(val)
-                result['oco'].append(number)
+                result["oco"].append(number)
         except ValueError:
             errors.append(f"Row {row_num} ({section}): Invalid conditional value '{val}'. Use numbers, +numbers, or -numbers.")
-    
+
     return result
 
+
 # --- Core Processing Function ---
+
 
 def create_play_from_data(section, data_row, section_headers, section_range_start, strike_rel_index, row_num):
     """
@@ -517,12 +539,12 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     oco_numbers = []
     oso_parent_numbers = []
     oso_child_numbers = []
-    
+
     if oco_value:
         parsed_values = parse_conditional_values(oco_value, row_num, section, errors)
-        oco_numbers = parsed_values['oco']
-        oso_parent_numbers = parsed_values['oso_parent']  
-        oso_child_numbers = parsed_values['oso_child']
+        oco_numbers = parsed_values["oco"]
+        oso_parent_numbers = parsed_values["oso_parent"]
+        oso_child_numbers = parsed_values["oso_child"]
 
     entry_stock_value = get_cell(mapping["entry_stock_price"])
     if not entry_stock_value:
@@ -546,7 +568,7 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
         if temp_value.strip():
             strike_value = temp_value
             break
-    
+
     if not strike_value:
         # Fallback: check neighboring columns to the first strike column
         if strike_columns:
@@ -557,7 +579,7 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
                     if temp_value.strip():
                         strike_value = temp_value
                         break
-    
+
     # Clean the found strike value
     if strike_value:
         cleaned_strike = strike_value.replace(",", "").replace("$", "").strip()
@@ -577,20 +599,19 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     raw_exp_date = get_cell(mapping["expiration_date"])
     exp_date = fix_expiration_date(raw_exp_date) or raw_exp_date or ""
 
-    exp_date_obj = None
     try:
-        exp_date_obj = datetime.strptime(exp_date, "%m/%d/%Y")
+        datetime.strptime(exp_date, "%m/%d/%Y")
     except Exception:
-        exp_date_obj = None
+        pass
 
     # Note: Date validation (past/today checks and warnings) is now handled by PlayValidator
     # Keeping this check here as a pre-validation catch, but PlayValidator will be the authoritative source
-    
+
     # Get reference year from expiration date
     ref_year = None
     try:
         ref_year = datetime.strptime(exp_date, "%m/%d/%Y").year
-    except:
+    except Exception:
         pass
 
     # Process GTD date - required field, no fallback
@@ -613,7 +634,7 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
         symbol=symbol_value,
         expiration_date=exp_date,
         strike_price=f"{strike_numeric:.3f}",  # Ensure 3 decimal places
-        trade_type=trade_type  # 'calls' or 'puts'
+        trade_type=trade_type,  # 'calls' or 'puts'
     )
 
     # Error handling if needed
@@ -631,21 +652,24 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
         condition = {}
         # Stock price
         stock_price = get_cell(base_idx[f"{prefix}_stock_price"])
-        if stock_price and stock_price != 'N/A':
+        if stock_price and stock_price != "N/A":
             converted = safe_convert_float(stock_price, f"{condition_type} stock price", row_num, errors)
-            if converted: condition["stock_price"] = converted
-        
+            if converted:
+                condition["stock_price"] = converted
+
         # Premium percentage
-        premium_pct = get_cell(base_idx[f"{prefix}_premium_pct"]).replace('%', '')
-        if premium_pct and premium_pct != 'N/A':
+        premium_pct = get_cell(base_idx[f"{prefix}_premium_pct"]).replace("%", "")
+        if premium_pct and premium_pct != "N/A":
             converted = safe_convert_float(premium_pct, f"{condition_type} premium %", row_num, errors)
-            if converted: condition["premium_pct"] = converted
-        
+            if converted:
+                condition["premium_pct"] = converted
+
         # Stock percentage
-        stock_pct = get_cell(base_idx[f"{prefix}_stock_pct"]).replace('%', '')
-        if stock_pct and stock_pct != 'N/A':
+        stock_pct = get_cell(base_idx[f"{prefix}_stock_pct"]).replace("%", "")
+        if stock_pct and stock_pct != "N/A":
             converted = safe_convert_float(stock_pct, f"{condition_type} stock %", row_num, errors)
-            if converted: condition["stock_pct"] = converted
+            if converted:
+                condition["stock_pct"] = converted
 
         # Get order type from correct column
         order_type_col = base_idx[f"{prefix}_order_type"]
@@ -655,30 +679,32 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
         # Set SL_type based on order type
         if condition_type == "sl":
             condition["SL_type"] = "STOP" if parsed_order_type == "market" else "LIMIT"
-        
+
         condition["order_type"] = parsed_order_type
 
-        # Optional trailing activation column (new schema): blank => trailing disabled; number => per-play activation; 'x'/'y' or any non-empty token => default activation
+        # Optional trailing activation column (new schema):
+        # blank => trailing disabled; number => per-play activation;
+        # 'x'/'y' or any non-empty token => default activation
         # Only enable trailing if the global trailing.enabled setting is True
-        trailing_globally_enabled = config.get('trailing', 'enabled', default=False)
+        trailing_globally_enabled = config.get("trailing", "enabled", default=False)
         if condition_type == "tp" and "tp_trailing_activation_pct" in base_idx and trailing_globally_enabled:
             trailing_cell = get_cell(base_idx["tp_trailing_activation_pct"]).strip()
-            if trailing_cell and trailing_cell.upper() != 'N/A':
+            if trailing_cell and trailing_cell.upper() != "N/A":
                 lc = trailing_cell.lower()
-                if lc in ('x', 'y'):
-                    condition.setdefault('trailing_config', {})['enabled'] = True
+                if lc in ("x", "y"):
+                    condition.setdefault("trailing_config", {})["enabled"] = True
                 else:
                     num = clean_numeric_string(trailing_cell)
                     if num is not None:
                         try:
                             pct_val = float(num)
                             if pct_val > 0:
-                                condition.setdefault('trailing_config', {})['enabled'] = True
-                                condition['trailing_activation_pct'] = pct_val
+                                condition.setdefault("trailing_config", {})["enabled"] = True
+                                condition["trailing_activation_pct"] = pct_val
                         except ValueError:
-                            condition.setdefault('trailing_config', {})['enabled'] = True
+                            condition.setdefault("trailing_config", {})["enabled"] = True
                     else:
-                        condition.setdefault('trailing_config', {})['enabled'] = True
+                        condition.setdefault("trailing_config", {})["enabled"] = True
 
         # Only create condition if at least one price type exists
         if condition:
@@ -698,20 +724,14 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
     play = {
         "symbol": symbol_value or "",
         "trade_type": trade_type.upper(),
-        "entry_point": {
-            "stock_price": entry_stock_numeric,
-            "order_type": parsed_entry_order_type
-        },
+        "entry_point": {"stock_price": entry_stock_numeric, "order_type": parsed_entry_order_type},
         "strike_price": f"{strike_numeric:.1f}",
         "expiration_date": exp_date,
         "contracts": contracts_numeric,
         "option_contract_symbol": option_symbol,
         "play_name": generate_play_name(symbol_value, trade_type),
         "play_class": "SIMPLE",
-        "conditional_plays": {
-            "OCO_triggers": [],
-            "OTO_triggers": []
-        },
+        "conditional_plays": {"OCO_triggers": [], "OTO_triggers": []},
         "strategy": "Option Swings",
         "creation_date": datetime.now().strftime("%Y-%m-%d"),
         "creator": "auto-ingestor",
@@ -725,17 +745,18 @@ def create_play_from_data(section, data_row, section_headers, section_range_star
             "closing_order_status": None,
             "contingency_order_id": None,
             "contingency_order_status": None,
-            "conditionals_handled": False
+            "conditionals_handled": False,
         },
         "play_expiration_date": gtd_date,
         "stop_loss": stop_loss if stop_loss else None,
         "take_profit": take_profit if take_profit else None,
         "oco_numbers": oco_numbers,  # Store OCO numbers for later processing
         "oso_parent_numbers": oso_parent_numbers,  # Store OSO parent numbers
-        "oso_child_numbers": oso_child_numbers  # Store OSO child numbers
+        "oso_child_numbers": oso_child_numbers,  # Store OSO child numbers
     }
 
     return play, errors
+
 
 def save_play(play, section):
     """
@@ -743,40 +764,43 @@ def save_play(play, section):
     SIMPLE plays are saved to plays/new; OTO plays and OSO child plays to plays/temp.
     """
     base_dir = os.path.join(project_root, "goldflipper", "plays")
-    
+
     # OSO child plays go to temp directory
     is_oso_child = len(play.get("oso_child_numbers", [])) > 0
     is_oto_play = play.get("play_class", "SIMPLE") == "OTO"
-    
+
     target_dir = os.path.join(base_dir, "temp" if (is_oto_play or is_oso_child) else "new")
     os.makedirs(target_dir, exist_ok=True)
     filename = re.sub(r"[^\w\-]", "_", play["play_name"]) + ".json"
     filepath = os.path.join(target_dir, filename)
-    
+
     try:
         with open(filepath, "w") as f:
             json.dump(play, f, indent=4)
         print(f"[SUCCESS] ({section}) Play saved to: {filepath}")
-        
+
     except Exception as e:
         print(f"[ERROR] Failed to save play: {e}")
 
+
 def main():
     # At the very start:
-    print(f"Script version: 2025-11-18-v1.5")
-    
+    print("Script version: 2025-11-18-v1.5")
+
     # After config import:
     from goldflipper.config.config import config
+
     print(f"Config instance ID: {id(config)}")
     config.reload()  # Force fresh load
-    
+
     # At the file open check:
-    ingestor_config = config.get('csv_ingestor') or {}
+    ingestor_config = config.get("csv_ingestor") or {}
     print(f"Raw ingestor config: {ingestor_config}")
-    should_open = ingestor_config.get('open_after_creation', True)
+    should_open = ingestor_config.get("open_after_creation", True)
     print(f"Final open_after_creation value: {should_open} (type: {type(should_open)})")
 
     import argparse
+
     parser = argparse.ArgumentParser(description="Ingest plays from a standardized CSV template.")
     parser.add_argument("csv_file", help="Path to the CSV file containing play data.")
     parser.add_argument(
@@ -814,14 +838,14 @@ def main():
     dynamic_puts_start = detect_puts_start(composite_headers)
     calls_headers = composite_headers[CALLS_START:CALLS_END]
     puts_headers = composite_headers[dynamic_puts_start:]
-    
+
     # Load reference template for validation
     reference_template = load_reference_template()
     ref_calls_headers = None
     ref_puts_headers = None
     if reference_template:
         ref_calls_headers, ref_puts_headers, _ = reference_template
-    
+
     # Validate column mappings match expected headers
     mapping_errors = []
     mapping_errors.extend(validate_column_mappings(calls_headers, CALLS_ENTRY, "calls", CALLS_START, ref_calls_headers))
@@ -830,14 +854,14 @@ def main():
     mapping_errors.extend(validate_column_mappings(puts_headers, PUTS_ENTRY, "puts", dynamic_puts_start, ref_puts_headers))
     mapping_errors.extend(validate_column_mappings(puts_headers, PUTS_TP, "puts", dynamic_puts_start, ref_puts_headers))
     mapping_errors.extend(validate_column_mappings(puts_headers, PUTS_SL, "puts", dynamic_puts_start, ref_puts_headers))
-    
+
     if mapping_errors:
         print("\n[COLUMN MAPPING VALIDATION WARNINGS]")
         print("The CSV column headers don't match the expected structure:")
         for error in mapping_errors:
             print(f"  {error}")
         print("\nProceeding with ingestion, but data may be misaligned.\n")
-    
+
     strike_calls = find_strike_index(calls_headers)
     if strike_calls is None:
         strike_calls = 8  # Updated index for strike price
@@ -848,13 +872,13 @@ def main():
         print("Warning: Falling back to default strike column index 8 for puts.")
 
     # Get validation config (dates, earnings, etc.)
-    ingestor_config = config.get('csv_ingestor') or {}
-    validation_config = ingestor_config.get('validation', {})
-    validation_enabled = validation_config.get('enabled', True)
-    strictness_level = validation_config.get('strictness_level')
+    ingestor_config = config.get("csv_ingestor") or {}
+    validation_config = ingestor_config.get("validation", {})
+    validation_enabled = validation_config.get("enabled", True)
+    strictness_level = validation_config.get("strictness_level")
     if strictness_level is None:
-        if 'strict_mode' in validation_config:
-            strict_mode_value = validation_config.get('strict_mode')
+        if "strict_mode" in validation_config:
+            strict_mode_value = validation_config.get("strict_mode")
             if isinstance(strict_mode_value, bool) and strict_mode_value:
                 strictness_level = "high"
             else:
@@ -865,9 +889,9 @@ def main():
         strictness_level = strictness_level.strip().lower()
     if strictness_level not in {"high", "moderate", "low"}:
         strictness_level = "moderate"
-    date_validation_config = validation_config.get('date_validation', {})
-    earnings_validation_config = validation_config.get('earnings_validation', {})
-    min_days_warning = date_validation_config.get('min_days_warning')
+    date_validation_config = validation_config.get("date_validation", {})
+    earnings_validation_config = validation_config.get("earnings_validation", {})
+    min_days_warning = date_validation_config.get("min_days_warning")
 
     validator = None
     if validation_enabled:
@@ -883,7 +907,7 @@ def main():
     validation_errors = []
     validation_warnings = []
     created_files = []
-    
+
     # First pass: Create all plays
     for i, row in enumerate(data_rows, start=1):
         # Process calls only if calls symbol exists
@@ -904,7 +928,7 @@ def main():
                 # strictness_level will gate whether ingestion can proceed.
                 if not errors_calls:
                     valid_plays.append(("calls", play_calls))
-        
+
         # Process puts only if puts symbol exists
         if dynamic_puts_start + PUTS_ENTRY["symbol"] < len(row) and row[dynamic_puts_start + PUTS_ENTRY["symbol"]].strip():
             play_puts, errors_puts = create_play_from_data("puts", row, puts_headers, dynamic_puts_start, strike_puts, i)
@@ -933,51 +957,51 @@ def main():
             if oco_number not in oco_groups:
                 oco_groups[oco_number] = []
             oco_groups[oco_number].append((section, play))
-    
+
     # Group plays by OSO numbers
     oso_groups = {}
     for section, play in valid_plays:
         # Group OSO parents
         for parent_num in play.get("oso_parent_numbers", []):
             if parent_num not in oso_groups:
-                oso_groups[parent_num] = {'parents': [], 'children': []}
-            oso_groups[parent_num]['parents'].append((section, play))
-        
+                oso_groups[parent_num] = {"parents": [], "children": []}
+            oso_groups[parent_num]["parents"].append((section, play))
+
         # Group OSO children
         for child_num in play.get("oso_child_numbers", []):
             if child_num not in oso_groups:
-                oso_groups[child_num] = {'parents': [], 'children': []}
-            oso_groups[child_num]['children'].append((section, play))
-    
+                oso_groups[child_num] = {"parents": [], "children": []}
+            oso_groups[child_num]["children"].append((section, play))
+
     # Set up OCO relationships (works across calls/puts)
-    for oco_number, plays in oco_groups.items():
+    for _oco_number, plays in oco_groups.items():
         if len(plays) > 1:
             # Create bidirectional OCO relationships across all plays in group
-            for section, play in plays:
+            for _section, play in plays:
                 other_plays = [p["play_name"] + ".json" for s, p in plays if p["play_name"] != play["play_name"]]
                 # Merge with existing OCO triggers if any
                 existing_oco = play["conditional_plays"].get("OCO_triggers", [])
                 play["conditional_plays"]["OCO_triggers"] = list(set(existing_oco + other_plays))
-    
+
     # Set up OSO relationships (One-Sends-Other)
-    for oso_number, oso_data in oso_groups.items():
-        parents = oso_data['parents']
-        children = oso_data['children']
-        
+    for _oso_number, oso_data in oso_groups.items():
+        parents = oso_data["parents"]
+        children = oso_data["children"]
+
         # Each parent triggers all children in this OSO group
-        for parent_section, parent_play in parents:
+        for _parent_section, parent_play in parents:
             child_filenames = [child["play_name"] + ".json" for child_section, child in children]
             if child_filenames:
                 # Merge with existing OTO triggers if any
                 existing_oto = parent_play["conditional_plays"].get("OTO_triggers", [])
                 parent_play["conditional_plays"]["OTO_triggers"] = list(set(existing_oto + child_filenames))
-    
+
     # Remove the temporary conditional number fields
-    for section, play in valid_plays:
+    for _section, play in valid_plays:
         for field in ["oco_numbers", "oso_parent_numbers", "oso_child_numbers"]:
             if field in play:
                 del play[field]
-    
+
     # Save all plays
     for section, play in valid_plays:
         save_play(play, section)
@@ -1024,7 +1048,7 @@ def main():
     print(f"\nIngestion complete. Valid plays: {len(valid_plays)}.")
 
     # Single file-opening location
-    if config.get('csv_ingestor', 'open_after_creation', default=True):
+    if config.get("csv_ingestor", "open_after_creation", default=True):
         for json_path in created_files:
             if os.path.exists(json_path):
                 if sys.platform == "win32":
@@ -1034,8 +1058,10 @@ def main():
                 else:
                     subprocess.run(["xdg-open", json_path])
 
+
 # Initialize play counter at module level
 play_counter = defaultdict(int)
+
 
 def generate_play_name(symbol, trade_type):
     """Generate unique play name with counter and timestamp"""
@@ -1044,6 +1070,6 @@ def generate_play_name(symbol, trade_type):
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
     return f"{symbol}-{trade_type}-{play_counter[key]}-{timestamp}"
 
+
 if __name__ == "__main__":
     main()
-    

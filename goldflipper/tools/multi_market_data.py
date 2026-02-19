@@ -1,106 +1,87 @@
-from typing import Dict, List, Optional, Any
-import pandas as pd
-from datetime import datetime
-import yaml
-import os
-import sys
-from rich.console import Console
-from rich.table import Table
-from rich import print as rprint
-import time
 import asyncio
 import logging
+import os
 import re
+import sys
+import time
+from datetime import datetime
+
+import pandas as pd
+import yaml
+from rich.console import Console
+from rich.table import Table
+
 from goldflipper.utils.logging_setup import configure_logging
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from goldflipper.data.market.providers.base import MarketDataProvider
 from goldflipper.data.market.providers.alpaca_provider import AlpacaProvider
-from goldflipper.data.market.providers.yfinance_provider import YFinanceProvider
+from goldflipper.data.market.providers.base import MarketDataProvider
 from goldflipper.data.market.providers.marketdataapp_provider import MarketDataAppProvider
+from goldflipper.data.market.providers.yfinance_provider import YFinanceProvider
+
 
 class MarketDataComparator:
     """Compares market data from multiple providers"""
-    
+
     def __init__(self):
-        self.providers: Dict[str, MarketDataProvider] = {}
+        self.providers: dict[str, MarketDataProvider] = {}
         self.settings = self._load_settings()
         asyncio.run(self._initialize_providers())
-        
+
     def _load_settings(self) -> dict:
         """Load settings from YAML file"""
-        config_path = os.path.join(project_root, 'goldflipper', 'config', 'settings.yaml')
-        with open(config_path, 'r') as f:
+        config_path = os.path.join(project_root, "goldflipper", "config", "settings.yaml")
+        with open(config_path) as f:
             settings = yaml.safe_load(f)
-        return settings['market_data_providers']
-    
+        return settings["market_data_providers"]
+
     async def _initialize_providers(self):
         """Initialize enabled providers from settings"""
-        provider_map = {
-            'alpaca': AlpacaProvider,
-            'yfinance': YFinanceProvider,
-            'marketdataapp': MarketDataAppProvider
-        }
-        
-        for provider_name, settings in self.settings['providers'].items():
-            if settings['enabled'] and provider_name in provider_map:
+        provider_map = {"alpaca": AlpacaProvider, "yfinance": YFinanceProvider, "marketdataapp": MarketDataAppProvider}
+
+        for provider_name, settings in self.settings["providers"].items():
+            if settings["enabled"] and provider_name in provider_map:
                 try:
-                    if provider_name == 'marketdataapp':
-                        config_path = os.path.join(project_root, 'goldflipper', 'config', 'settings.yaml')
+                    if provider_name == "marketdataapp":
+                        config_path = os.path.join(project_root, "goldflipper", "config", "settings.yaml")
                         provider = provider_map[provider_name](config_path)
                     else:
                         provider = provider_map[provider_name]()
-                    
+
                     # Handle async initialization if needed
-                    if hasattr(provider, '_init_websocket'):
+                    if hasattr(provider, "_init_websocket"):
                         await provider._init_websocket()
-                    
+
                     self.providers[provider_name] = provider
                     logging.info(f"Initialized {provider_name} provider")
                 except Exception as e:
                     logging.error(f"Failed to initialize {provider_name} provider: {str(e)}")
-    
+
     async def compare_stock_price(self, symbol: str) -> pd.DataFrame:
         """Compare stock price across providers"""
         data = []
-        
+
         for name, provider in self.providers.items():
             try:
-                # Handle async vs non-async providers
-                if name in ['alpaca', 'yfinance']:  # These are async
-                    price = await provider.get_stock_price(symbol)
-                else:  # MarketDataApp is synchronous
-                    price = provider.get_stock_price(symbol)
-                    
-                data.append({
-                    'Provider': name,
-                    'Symbol': symbol,
-                    'Price': price,
-                    'Timestamp': datetime.now()
-                })
+                price_result = provider.get_stock_price(symbol)
+                if asyncio.iscoroutine(price_result):
+                    price = await price_result
+                else:
+                    price = price_result
+
+                data.append({"Provider": name, "Symbol": symbol, "Price": price, "Timestamp": datetime.now()})
             except Exception as e:
                 logging.error(f"Error getting price from {name}: {str(e)}")
-                data.append({
-                    'Provider': name,
-                    'Symbol': symbol,
-                    'Price': None,
-                    'Timestamp': datetime.now(),
-                    'Error': str(e)
-                })
-        
+                data.append({"Provider": name, "Symbol": symbol, "Price": None, "Timestamp": datetime.now(), "Error": str(e)})
+
         return pd.DataFrame(data)
-    
-    async def compare_option_chain(
-        self, 
-        symbol: str, 
-        expiration_date: str, 
-        specific_contract: Optional[str] = None
-    ) -> Dict[str, pd.DataFrame]:
+
+    async def compare_option_chain(self, symbol: str, expiration_date: str, specific_contract: str | None = None) -> dict[str, pd.DataFrame]:
         """Compare option chains across providers
-        
+
         Args:
             symbol: The underlying symbol (e.g., 'AAPL')
             expiration_date: Expiration date in YYYY-MM-DD format
@@ -108,15 +89,15 @@ class MarketDataComparator:
         """
         calls_data = []
         puts_data = []
-        
+
         for name, provider in self.providers.items():
             try:
                 if specific_contract:
                     # If we have a specific contract and provider supports single quotes, use that
-                    if hasattr(provider, 'get_option_quote'):
+                    if hasattr(provider, "get_option_quote"):
                         logging.info(f"Using get_option_quote for {specific_contract} with {name}")
                         df = provider.get_option_quote(specific_contract)
-                        if 'C' in specific_contract:
+                        if "C" in specific_contract:
                             calls_data.append(df.assign(Provider=name))
                         else:
                             puts_data.append(df.assign(Provider=name))
@@ -124,13 +105,11 @@ class MarketDataComparator:
                         # Fall back to chain + filter for providers that don't support single quotes
                         logging.info(f"Falling back to get_option_chain for {specific_contract} with {name}")
                         chain = provider.get_option_chain(symbol, expiration_date)
-                        contract_type = 'calls' if 'C' in specific_contract else 'puts'
+                        contract_type = "calls" if "C" in specific_contract else "puts"
                         if contract_type in chain and not chain[contract_type].empty:
-                            filtered_df = chain[contract_type][
-                                chain[contract_type]['symbol'] == specific_contract
-                            ]
+                            filtered_df = chain[contract_type][chain[contract_type]["symbol"] == specific_contract]
                             if not filtered_df.empty:
-                                if contract_type == 'calls':
+                                if contract_type == "calls":
                                     calls_data.append(filtered_df.assign(Provider=name))
                                 else:
                                     puts_data.append(filtered_df.assign(Provider=name))
@@ -138,100 +117,91 @@ class MarketDataComparator:
                     # No specific contract - get full chain
                     logging.info(f"Getting full option chain for {symbol} with {name}")
                     chain = provider.get_option_chain(symbol, expiration_date)
-                    if 'calls' in chain and not chain['calls'].empty:
-                        calls_data.append(chain['calls'].assign(Provider=name))
-                    if 'puts' in chain and not chain['puts'].empty:
-                        puts_data.append(chain['puts'].assign(Provider=name))
-                        
+                    if "calls" in chain and not chain["calls"].empty:
+                        calls_data.append(chain["calls"].assign(Provider=name))
+                    if "puts" in chain and not chain["puts"].empty:
+                        puts_data.append(chain["puts"].assign(Provider=name))
+
             except Exception as e:
                 logging.error(f"Error fetching option data from {name}: {str(e)}")
                 continue
-        
+
         # Combine results
         result = {}
         if calls_data:
-            result['calls'] = pd.concat(calls_data, axis=0, ignore_index=True)
+            result["calls"] = pd.concat(calls_data, axis=0, ignore_index=True)
         else:
-            result['calls'] = pd.DataFrame()
-            
+            result["calls"] = pd.DataFrame()
+
         if puts_data:
-            result['puts'] = pd.concat(puts_data, axis=0, ignore_index=True)
+            result["puts"] = pd.concat(puts_data, axis=0, ignore_index=True)
         else:
-            result['puts'] = pd.DataFrame()
-            
+            result["puts"] = pd.DataFrame()
+
         return result
-    
-    def compare_historical_data(
-        self,
-        symbol: str,
-        start_date: datetime,
-        end_date: datetime,
-        interval: str = "1m"
-    ) -> pd.DataFrame:
+
+    def compare_historical_data(self, symbol: str, start_date: datetime, end_date: datetime, interval: str = "1m") -> pd.DataFrame:
         """Compare historical data across providers"""
         all_data = {}
-        
+
         for name, provider in self.providers.items():
             try:
                 df = provider.get_historical_data(symbol, start_date, end_date, interval)
                 all_data[name] = df
             except Exception as e:
                 logging.error(f"Error getting historical data from {name}: {str(e)}")
-        
+
         # Combine all providers' data
         combined = pd.concat(all_data, axis=1)
-        
-        if self.settings['comparison']['log_differences']:
+
+        if self.settings["comparison"]["log_differences"]:
             self._log_historical_differences(combined, symbol)
-        
+
         return combined
-    
+
     def _log_price_differences(self, df: pd.DataFrame, symbol: str):
         """Log significant differences in price data"""
         if len(df) < 2:
             return
-            
-        max_diff_pct = (df['Price'].max() - df['Price'].min()) / df['Price'].min()
-        if max_diff_pct > self.settings['comparison']['difference_threshold']:
-            logging.warning(
-                f"Significant price difference detected for {symbol}. "
-                f"Max difference: {max_diff_pct:.2%}"
-            )
-    
+
+        max_diff_pct = (df["Price"].max() - df["Price"].min()) / df["Price"].min()
+        if max_diff_pct > self.settings["comparison"]["difference_threshold"]:
+            logging.warning(f"Significant price difference detected for {symbol}. Max difference: {max_diff_pct:.2%}")
+
     def _log_option_differences(self, calls: pd.DataFrame, puts: pd.DataFrame, symbol: str):
         """Log significant differences in option data"""
-        for chain_type, data in [('calls', calls), ('puts', puts)]:
+        for chain_type, data in [("calls", calls), ("puts", puts)]:
             if len(data) < 2:
                 continue
-                
-            for col in ['bid', 'ask', 'last']:
+
+            for col in ["bid", "ask", "last"]:
                 if col in data.columns:
-                    grouped = data.groupby('strike')[col]
+                    grouped = data.groupby("strike")[col]
                     max_diff_pct = grouped.apply(lambda x: (x.max() - x.min()) / x.min() if x.min() != 0 else 0)
-                    significant_diffs = max_diff_pct[max_diff_pct > self.settings['comparison']['difference_threshold']]
-                    
+                    significant_diffs = max_diff_pct[max_diff_pct > self.settings["comparison"]["difference_threshold"]]
+
                     if not significant_diffs.empty:
                         logging.warning(
                             f"Significant {chain_type} option {col} differences detected for {symbol} "
                             f"at strikes: {', '.join(map(str, significant_diffs.index))}"
                         )
-    
+
     def _log_historical_differences(self, df: pd.DataFrame, symbol: str):
         """Log significant differences in historical data"""
-        for col in ['Close', 'Volume']:
+        for col in ["Close", "Volume"]:
             if col in df.columns:
                 providers = [name for name in self.providers.keys() if f"{name}/{col}" in df.columns]
                 if len(providers) < 2:
                     continue
-                    
+
                 for i in range(len(providers)):
                     for j in range(i + 1, len(providers)):
                         col1 = f"{providers[i]}/{col}"
                         col2 = f"{providers[j]}/{col}"
                         diff_pct = abs(df[col1] - df[col2]) / df[col1]
                         max_diff = diff_pct.max()
-                        
-                        if max_diff > self.settings['comparison']['difference_threshold']:
+
+                        if max_diff > self.settings["comparison"]["difference_threshold"]:
                             logging.warning(
                                 f"Significant {col} difference detected for {symbol} between "
                                 f"{providers[i]} and {providers[j]}. Max difference: {max_diff:.2%}"
@@ -240,11 +210,13 @@ class MarketDataComparator:
     async def cleanup(self):
         """Cleanup all providers"""
         for provider in self.providers.values():
-            if hasattr(provider, 'cleanup'):
-                try:
-                    await provider.cleanup()
-                except Exception as e:
-                    logging.error(f"Error cleaning up provider: {str(e)}")
+            try:
+                cleanup_result = provider.cleanup()
+                if asyncio.iscoroutine(cleanup_result):
+                    await cleanup_result
+            except Exception as e:
+                logging.error(f"Error cleaning up provider: {str(e)}")
+
 
 def display_menu():
     console = Console()
@@ -255,17 +227,19 @@ def display_menu():
     console.print("4. Exit")
     return console.input("\nSelect an option (1-4): ")
 
+
 def get_symbol():
     return Console().input("\nEnter symbol (e.g., AAPL): ").upper()
+
 
 def get_option_input() -> tuple:
     """Get option input either by contract symbol or individual components"""
     console = Console()
     contract = None  # Initialize contract variable
-    
+
     # Ask user for input method
     choice = console.input("\nEnter option data by:\n1. Contract Symbol (e.g., AAPL240119C00180000)\n2. Symbol and Expiration\nChoice (1/2): ")
-    
+
     if choice == "1":
         while True:
             contract = console.input("\nEnter option contract symbol: ").upper()
@@ -273,57 +247,60 @@ def get_option_input() -> tuple:
             if len(contract) >= 15:  # Basic length check
                 try:
                     # Parse contract symbol using regex for more reliable parsing
-                    pattern = r'^([A-Z]+)(\d{2})(\d{2})(\d{2})([CP])(\d+)$'
+                    pattern = r"^([A-Z]+)(\d{2})(\d{2})(\d{2})([CP])(\d+)$"
                     match = re.match(pattern, contract)
-                    
+
                     if match:
                         symbol, year, month, day, option_type, strike_str = match.groups()
                         strike = float(strike_str) / 1000  # Convert strike to decimal
-                        
+
                         # Convert date components to full date
-                        expiry = datetime.strptime(f"20{year}{month}{day}", '%Y%m%d').strftime('%Y-%m-%d')
-                        
-                        logging.info(f"Parsed contract: Symbol={symbol}, Expiry={expiry}, Type={'call' if option_type == 'C' else 'put'}, Strike={strike}")
-                        return symbol, expiry, 'call' if option_type == 'C' else 'put', strike, contract
+                        expiry = datetime.strptime(f"20{year}{month}{day}", "%Y%m%d").strftime("%Y-%m-%d")
+
+                        logging.info(
+                            f"Parsed contract: Symbol={symbol}, Expiry={expiry}, Type={'call' if option_type == 'C' else 'put'}, Strike={strike}"
+                        )
+                        return symbol, expiry, "call" if option_type == "C" else "put", strike, contract
                     else:
                         console.print("[red]Invalid contract symbol format. Expected format: SYMBOL[YY][MM][DD][C/P][STRIKE][000][/red]")
                 except Exception as e:
                     console.print(f"[red]Error parsing contract symbol: {str(e)}[/red]")
             else:
                 console.print("[red]Contract symbol too short. Expected format: SYMBOL[YY][MM][DD][C/P][STRIKE][000][/red]")
-    
+
     elif choice == "2":
         # Original method
         symbol = console.input("\nEnter symbol (e.g., AAPL): ").upper()
         expiry = console.input("Enter expiration date (YYYY-MM-DD) or press Enter for nearest: ")
         return symbol, expiry, None, None, None
-    
+
     else:
         console.print("[red]Invalid choice. Defaulting to symbol and expiration method.[/red]")
         return get_option_input()
+
 
 def display_stock_comparison(df: pd.DataFrame):
     console = Console()
     if df.empty:
         console.print("\n[bold red]No data available from any provider.[/bold red]")
         return
-        
-    table = Table(title=f"Stock Price Comparison")
-    
+
+    table = Table(title="Stock Price Comparison")
+
     # Define columns and their display names
     column_config = [
-        ('Provider', 'Provider'),
-        ('Symbol', 'Symbol'),
-        ('Price', 'Price'),
-        ('Timestamp', 'Timestamp'),
-        ('Error', 'Error')  # Optional column
+        ("Provider", "Provider"),
+        ("Symbol", "Symbol"),
+        ("Price", "Price"),
+        ("Timestamp", "Timestamp"),
+        ("Error", "Error"),  # Optional column
     ]
-    
+
     # Add columns that exist in the DataFrame
     for col_name, display_name in column_config:
         if col_name in df.columns:
             table.add_column(display_name)
-    
+
     # Add rows
     for _, row in df.iterrows():
         row_values = []
@@ -331,59 +308,51 @@ def display_stock_comparison(df: pd.DataFrame):
             if col_name in df.columns:
                 value = row[col_name]
                 # Format specific columns
-                if col_name == 'Price' and pd.notnull(value):
+                if col_name == "Price" and pd.notnull(value):
                     value = f"${value:.2f}"
-                elif col_name == 'Timestamp':
+                elif col_name == "Timestamp":
                     value = value.strftime("%Y-%m-%d %H:%M:%S")
-                row_values.append(str(value) if pd.notnull(value) else '')
+                row_values.append(str(value) if pd.notnull(value) else "")
         table.add_row(*row_values)
-    
+
     console.print(table)
 
-def display_option_comparison(chains: Dict[str, pd.DataFrame], symbol: str, specific_strike: float = None):
+
+def display_option_comparison(chains: dict[str, pd.DataFrame], symbol: str, specific_strike: float | None = None):
     """Display option chain comparison with auto-sized columns"""
     console = Console(force_terminal=True, width=2000)
-    
+
     # Load display settings
-    config_path = os.path.join(project_root, 'goldflipper', 'config', 'settings.yaml')
-    with open(config_path, 'r') as f:
+    config_path = os.path.join(project_root, "goldflipper", "config", "settings.yaml")
+    with open(config_path) as f:
         settings = yaml.safe_load(f)
-    display_settings = settings['market_data_display']['option_chain']
-    
+    display_settings = settings["market_data_display"]["option_chain"]
+
     # Get enabled columns from settings
-    enabled_columns = (
-        display_settings.get('enabled_columns', {}).get('basic', []) +
-        display_settings.get('enabled_columns', {}).get('greeks', [])
-    )
-    
+    enabled_columns = display_settings.get("enabled_columns", {}).get("basic", []) + display_settings.get("enabled_columns", {}).get("greeks", [])
+
     for chain_type, df in chains.items():
         if df.empty:
             console.print(f"\n[yellow]No {chain_type} data available[/yellow]")
             continue
-            
+
         # Filter for specific strike if provided
         if specific_strike is not None:
-            df = df[df['strike'] == specific_strike]
+            df = df[df["strike"] == specific_strike]
             if df.empty:
                 console.print(f"\n[yellow]No data found for strike price {specific_strike} in {chain_type}[/yellow]")
                 continue
-        
-        table = Table(
-            title=f"{chain_type.upper()} Options for {symbol}",
-            show_header=True,
-            header_style="bold cyan",
-            show_lines=True,
-            padding=(0, 2)
-        )
-        
+
+        table = Table(title=f"{chain_type.upper()} Options for {symbol}", show_header=True, header_style="bold cyan", show_lines=True, padding=(0, 2))
+
         # Only add columns that are both enabled in settings and present in the DataFrame
         columns_to_display = [col for col in enabled_columns if col in df.columns]
-        
+
         # Add columns with proper formatting
         for col in columns_to_display:
-            justify = 'right' if col in display_settings['formatting']['right_aligned'] else 'left'
+            justify = "right" if col in display_settings["formatting"]["right_aligned"] else "left"
             table.add_column(col, justify=justify)
-        
+
         # Add rows with proper formatting
         for _, row in df.iterrows():
             row_data = []
@@ -391,78 +360,80 @@ def display_option_comparison(chains: Dict[str, pd.DataFrame], symbol: str, spec
                 value = row[col]
                 # Apply formatting based on settings
                 if isinstance(value, (int, float)):
-                    if col in display_settings['formatting']['price_format']:
+                    if col in display_settings["formatting"]["price_format"]:
                         value = f"${value:,.{display_settings['formatting']['decimal_places']['price']}f}"
-                    elif col in display_settings['formatting']['percentage_format']:
+                    elif col in display_settings["formatting"]["percentage_format"]:
                         value = f"{value:.{display_settings['formatting']['decimal_places']['percentage']}%}"
                 row_data.append(str(value))
             table.add_row(*row_data)
-        
+
         console.print(table)
         console.print("\n")
+
 
 def main():
     # Set up logging
     configure_logging(console_mode=True)
-    
+
     try:
         comparator = MarketDataComparator()
         console = Console()
-        
+
         while True:
             choice = display_menu()
-            
+
             if choice == "1":
                 symbol = get_symbol()
                 with console.status(f"Fetching stock prices for {symbol}..."):
                     df = asyncio.run(comparator.compare_stock_price(symbol))
                 display_stock_comparison(df)
-                
+
             elif choice == "2":
                 symbol, expiry, option_type, strike, contract = get_option_input()
                 with console.status(f"Fetching option chains for {symbol}..."):
                     chains = asyncio.run(comparator.compare_option_chain(symbol, expiry))
-                    
+
                     # If option_type is specified (from contract symbol), filter the chains
                     if option_type:
-                        if option_type == 'call':
-                            chains = {'calls': chains['calls']}
+                        if option_type == "call":
+                            chains = {"calls": chains["calls"]}
                         else:
-                            chains = {'puts': chains['puts']}
-                            
+                            chains = {"puts": chains["puts"]}
+
                 display_option_comparison(chains, symbol, strike)
-                
+
             elif choice == "3":
                 symbol = get_symbol()
                 days = console.input("Enter number of days to look back (default: 7): ")
                 days = int(days) if days else 7
-                
+
                 end_date = datetime.now()
                 start_date = end_date - pd.Timedelta(days=days)
-                
+
                 with console.status(f"Fetching historical data for {symbol}..."):
                     df = comparator.compare_historical_data(symbol, start_date, end_date)
-                
+
                 console.print(df)
-                
+
             elif choice == "4":
                 console.print("\n[bold green]Goodbye![/bold green]")
                 # Cleanup before exit
                 asyncio.run(comparator.cleanup())
                 break
-                
+
             else:
                 console.print("\n[bold red]Invalid choice. Please try again.[/bold red]")
-            
+
             time.sleep(1)  # Brief pause before showing menu again
-            
+
     except Exception as e:
         logging.error("Main loop error", exc_info=True)
         Console().print(f"\n[bold red]An error occurred: {str(e)}[/bold red]")
     finally:
         # Clean up any async resources
-        if 'comparator' in locals():
+        if "comparator" in locals():
             asyncio.run(comparator.cleanup())
+
 
 if __name__ == "__main__":
     try:

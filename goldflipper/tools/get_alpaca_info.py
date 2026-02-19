@@ -1,14 +1,17 @@
-import sys
 import os
+import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from goldflipper.alpaca_client import get_alpaca_client
-from goldflipper.utils.display import TerminalDisplay as display
-import logging
-from typing import Optional, Tuple, Dict, Any, Protocol, List, cast
 import json
+import logging
+from typing import Any, Protocol, cast
+
 from alpaca.trading.client import TradingClient
+
+from goldflipper.alpaca_client import get_alpaca_client
 from goldflipper.config.config import config
+from goldflipper.utils.display import TerminalDisplay as display
 
 
 class OrderData(Protocol):
@@ -46,16 +49,16 @@ class AccountData(Protocol):
     buying_power: Any
 
 
-def _get_active_account_context() -> Tuple[str, str]:
+def _get_active_account_context() -> tuple[str, str]:
     """
     Return the active account key and a friendly nickname for display.
     Raises ValueError if the configuration is missing or malformed.
     """
-    accounts = config.get('alpaca', 'accounts')
+    accounts = config.get("alpaca", "accounts")
     if not isinstance(accounts, dict):
         raise ValueError("Alpaca accounts are not configured in settings.yaml")
 
-    active_account = config.get('alpaca', 'active_account')
+    active_account = config.get("alpaca", "active_account")
     if not isinstance(active_account, str) or not active_account:
         raise ValueError("Active Alpaca account is not configured")
 
@@ -63,22 +66,23 @@ def _get_active_account_context() -> Tuple[str, str]:
     if not isinstance(account_config, dict):
         raise ValueError(f"Configuration for Alpaca account '{active_account}' is missing or invalid")
 
-    nickname = account_config.get('nickname')
+    nickname = account_config.get("nickname")
     if isinstance(nickname, str) and nickname.strip():
         return active_account, nickname
 
     # Fall back to a prettified version of the account key
-    return active_account, active_account.replace('_', ' ').title()
+    return active_account, active_account.replace("_", " ").title()
 
-def get_order_info(order_id: str) -> Optional[Dict[str, Any]]:
+
+def get_order_info(order_id: str) -> dict[str, Any] | None:
     """
     Get detailed information about a specific order.
-    
+
     Args:
         order_id (str): The Alpaca order ID
-        
+
     Returns:
-        Optional[Dict]: Order information including status, filled quantity, 
+        Optional[Dict]: Order information including status, filled quantity,
                        filled price, and other relevant details
     """
     client = cast(TradingClient, get_alpaca_client())
@@ -86,21 +90,21 @@ def get_order_info(order_id: str) -> Optional[Dict[str, Any]]:
         _, account_nickname = _get_active_account_context()
         order = cast(OrderData, client.get_order_by_id(order_id))
         return {
-            'account': account_nickname,  # Add account nickname to response
-            'id': str(order.id),
-            'status': order.status,
-            'filled_qty': order.filled_qty,
-            'filled_avg_price': order.filled_avg_price,
-            'created_at': order.created_at,
-            'updated_at': order.updated_at,
-            'submitted_at': order.submitted_at,
-            'filled_at': order.filled_at,
-            'expired_at': order.expired_at,
-            'canceled_at': order.canceled_at,
-            'failed_at': order.failed_at,
-            'replaced_at': order.replaced_at,
-            'replaced_by': order.replaced_by,
-            'replaces': order.replaces
+            "account": account_nickname,  # Add account nickname to response
+            "id": str(order.id),
+            "status": order.status,
+            "filled_qty": order.filled_qty,
+            "filled_avg_price": order.filled_avg_price,
+            "created_at": order.created_at,
+            "updated_at": order.updated_at,
+            "submitted_at": order.submitted_at,
+            "filled_at": order.filled_at,
+            "expired_at": order.expired_at,
+            "canceled_at": order.canceled_at,
+            "failed_at": order.failed_at,
+            "replaced_at": order.replaced_at,
+            "replaced_by": order.replaced_by,
+            "replaces": order.replaces,
         }
     except ValueError as config_error:
         logging.error(str(config_error))
@@ -111,43 +115,45 @@ def get_order_info(order_id: str) -> Optional[Dict[str, Any]]:
         display.error(f"Error getting order info: {str(e)}")
         return None
 
-def get_position_info(symbol: str) -> Optional[Dict[str, Any]]:
+
+def get_position_info(symbol: str) -> dict[str, Any] | None:
     """
     Get detailed information about a specific position.
-    
+
     Args:
         symbol (str): The symbol of the position (e.g., 'AAPL_123456C00380000')
-        
+
     Returns:
-        Optional[Dict]: Position information including quantity, 
+        Optional[Dict]: Position information including quantity,
                        current price, and other relevant details
     """
     client = cast(TradingClient, get_alpaca_client())
     try:
         position = cast(PositionData, client.get_open_position(symbol))
         return {
-            'symbol': position.symbol,
-            'qty': position.qty,
-            'avg_entry_price': position.avg_entry_price,
-            'current_price': position.current_price,
-            'lastday_price': position.lastday_price,
-            'unrealized_pl': position.unrealized_pl,
-            'unrealized_plpc': position.unrealized_plpc,
-            'market_value': position.market_value,
-            'cost_basis': position.cost_basis
+            "symbol": position.symbol,
+            "qty": position.qty,
+            "avg_entry_price": position.avg_entry_price,
+            "current_price": position.current_price,
+            "lastday_price": position.lastday_price,
+            "unrealized_pl": position.unrealized_pl,
+            "unrealized_plpc": position.unrealized_plpc,
+            "market_value": position.market_value,
+            "cost_basis": position.cost_basis,
         }
     except Exception as e:
         logging.error(f"Error getting position info: {str(e)}")
         display.error(f"Error getting position info: {str(e)}")
         return None
 
-def get_all_orders(status: str = 'open') -> Optional[Dict[str, Dict[str, Any]]]:
+
+def get_all_orders(status: str = "open") -> dict[str, dict[str, Any]] | None:
     """
     Get all orders with a specific status.
-    
+
     Args:
         status (str): Order status to filter by ('open', 'closed', 'all')
-        
+
     Returns:
         Optional[Dict]: Dictionary of order IDs mapping to their information
     """
@@ -155,19 +161,19 @@ def get_all_orders(status: str = 'open') -> Optional[Dict[str, Dict[str, Any]]]:
     try:
         # The new API doesn't use status as a parameter
         # Instead, we should filter the results after getting them
-        orders: List[OrderData] = cast(List[OrderData], list(client.get_orders()))
-        
+        orders: list[OrderData] = cast(list[OrderData], list(client.get_orders()))
+
         # Filter orders based on status parameter
-        if status != 'all':
+        if status != "all":
             orders = [order for order in orders if order.status == status]
-            
+
         return {
             str(order.id): {
-                'symbol': order.symbol,
-                'status': order.status,
-                'filled_qty': order.filled_qty,
-                'filled_avg_price': order.filled_avg_price,
-                'created_at': order.created_at
+                "symbol": order.symbol,
+                "status": order.status,
+                "filled_qty": order.filled_qty,
+                "filled_avg_price": order.filled_avg_price,
+                "created_at": order.created_at,
             }
             for order in orders
         }
@@ -176,23 +182,24 @@ def get_all_orders(status: str = 'open') -> Optional[Dict[str, Dict[str, Any]]]:
         display.error(f"Error getting orders: {str(e)}")
         return None
 
-def get_all_positions() -> Optional[Dict[str, Dict[str, Any]]]:
+
+def get_all_positions() -> dict[str, dict[str, Any]] | None:
     """
     Get information about all open positions.
-    
+
     Returns:
         Optional[Dict]: Dictionary of symbols mapping to their position information
     """
     client = cast(TradingClient, get_alpaca_client())
     try:
-        positions: List[PositionData] = cast(List[PositionData], list(client.get_all_positions()))
+        positions: list[PositionData] = cast(list[PositionData], list(client.get_all_positions()))
         return {
             position.symbol: {
-                'qty': position.qty,
-                'avg_entry_price': position.avg_entry_price,
-                'current_price': position.current_price,
-                'unrealized_pl': position.unrealized_pl,
-                'market_value': position.market_value
+                "qty": position.qty,
+                "avg_entry_price": position.avg_entry_price,
+                "current_price": position.current_price,
+                "unrealized_pl": position.unrealized_pl,
+                "market_value": position.market_value,
             }
             for position in positions
         }
@@ -201,7 +208,8 @@ def get_all_positions() -> Optional[Dict[str, Dict[str, Any]]]:
         display.error(f"Error getting positions: {str(e)}")
         return None
 
-def test_alpaca_connection() -> Tuple[bool, str]:
+
+def test_alpaca_connection() -> tuple[bool, str]:
     """Test the connection to the Alpaca API and return debug info."""
     client = cast(TradingClient, get_alpaca_client())
     try:
@@ -209,20 +217,15 @@ def test_alpaca_connection() -> Tuple[bool, str]:
     except ValueError as config_error:
         return False, f"[DEBUG] {config_error}"
 
-    debug_message = (
-        "[DEBUG] test_alpaca_connection() "
-        f"using active_account: '{active_account}' ({account_nickname})\n"
-    )
+    debug_message = f"[DEBUG] test_alpaca_connection() using active_account: '{active_account}' ({account_nickname})\n"
     try:
         account = cast(AccountData, client.get_account())
-        debug_message += (
-            "[DEBUG] Returned account.status: "
-            f"{account.status}, buying power: {account.buying_power}"
-        )
+        debug_message += f"[DEBUG] Returned account.status: {account.status}, buying power: {account.buying_power}"
         return True, debug_message
     except Exception as e:
         debug_message += f"[DEBUG] test_alpaca_connection() failed with error: {str(e)}"
         return False, debug_message
+
 
 def main():
     """Main function to test the Alpaca info retrieval functions"""
@@ -238,43 +241,44 @@ def main():
 
     # Get base plays directory using account-aware, exe-aware paths
     from goldflipper.utils.exe_utils import get_plays_dir
+
     base_dir = str(get_plays_dir())
-    folders = ['new', 'pending-opening', 'open', 'pending-closing', 'closed', 'expired']
+    folders = ["new", "pending-opening", "open", "pending-closing", "closed", "expired"]
 
     display.header("Checking Plays Status...")
-    
+
     for folder in folders:
         folder_path = os.path.join(base_dir, folder)
         if not os.path.exists(folder_path):
             continue
-            
+
         display.header(f"\nChecking {folder.upper()} folder")
-        
+
         # Get all JSON files in the folder
-        play_files = [f for f in os.listdir(folder_path) if f.endswith('.json')]
-        
+        play_files = [f for f in os.listdir(folder_path) if f.endswith(".json")]
+
         if not play_files:
             display.info(f"No plays found in {folder}")
             continue
-            
+
         for play_file in play_files:
             file_path = os.path.join(folder_path, play_file)
             try:
-                with open(file_path, 'r') as f:
+                with open(file_path) as f:
                     play = json.load(f)
-                
+
                 # Create a visual separator for each play
                 display.success("=" * SEP_LENGTH)  # Green top border
                 display.header(f"Play: {play.get('play_name', play_file)}")
                 display.success("-" * SEP_LENGTH)  # Green separator
-                
+
                 # Check if play has status and order_id
-                if 'status' in play:
+                if "status" in play:
                     # Check for main order_id
-                    if play['status'].get('order_id'):
-                        order_id = play['status']['order_id']
+                    if play["status"].get("order_id"):
+                        order_id = play["status"]["order_id"]
                         display.info(f"Main Order ID: {order_id}")
-                        
+
                         order_info = get_order_info(order_id)
                         if order_info:
                             for key, value in order_info.items():
@@ -282,12 +286,12 @@ def main():
                                 display.info(f"{key_str:<30} {value}")
                         else:
                             display.warning("No main order information found")
-                    
+
                     # Check for closing_order_id
-                    if play['status'].get('closing_order_id'):
-                        closing_order_id = play['status']['closing_order_id']
+                    if play["status"].get("closing_order_id"):
+                        closing_order_id = play["status"]["closing_order_id"]
                         display.info(f"\nClosing Order ID: {closing_order_id}")
-                        
+
                         closing_order_info = get_order_info(closing_order_id)
                         if closing_order_info:
                             for key, value in closing_order_info.items():
@@ -295,12 +299,12 @@ def main():
                                 display.info(f"{key_str:<30} {value}")
                         else:
                             display.warning("No closing order information found")
-                            
+
                     # Check for contingency_order_id
-                    if play['status'].get('contingency_order_id'):
-                        contingency_order_id = play['status']['contingency_order_id']
+                    if play["status"].get("contingency_order_id"):
+                        contingency_order_id = play["status"]["contingency_order_id"]
                         display.info(f"\nContingency Order ID: {contingency_order_id}")
-                        
+
                         contingency_order_info = get_order_info(contingency_order_id)
                         if contingency_order_info:
                             for key, value in contingency_order_info.items():
@@ -308,17 +312,15 @@ def main():
                                 display.info(f"{key_str:<30} {value}")
                         else:
                             display.warning("No contingency order information found")
-                            
-                    if not any([play['status'].get('order_id'),
-                              play['status'].get('closing_order_id'),
-                              play['status'].get('contingency_order_id')]):
+
+                    if not any([play["status"].get("order_id"), play["status"].get("closing_order_id"), play["status"].get("contingency_order_id")]):
                         display.info("\nNo order IDs found in play")
                 else:
                     display.info("\nNo status information found in play")
-                
+
                 # Close the play card
                 display.success("=" * SEP_LENGTH + "\n")  # Green bottom border
-                    
+
             except Exception as e:
                 display.error(f"Error processing {play_file}: {str(e)}")
                 continue
@@ -342,14 +344,16 @@ def main():
     print("\n  Press Enter to exit...")
     try:
         input()
-    except:
+    except Exception:
         pass
+
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception as e:
+    except Exception:
         import traceback
+
         print("\n" + "=" * 50)
         print("  ERROR: Script crashed!")
         print("=" * 50)
@@ -357,5 +361,5 @@ if __name__ == "__main__":
         print("\n  Press Enter to exit...")
         try:
             input()
-        except:
+        except Exception:
             pass

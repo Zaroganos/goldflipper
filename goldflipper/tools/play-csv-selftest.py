@@ -1,22 +1,21 @@
-import os
 import csv
+import os
 import sys
-from datetime import datetime
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
 from goldflipper.tools.play_csv_ingestion_tool import (  # type: ignore
-    CALLS_START,
     CALLS_END,
     CALLS_ENTRY,
+    CALLS_START,
     PUTS_ENTRY,
-    is_data_row,
     build_composite_headers,
-    find_strike_index,
-    detect_puts_start,
     create_play_from_data,
+    detect_puts_start,
+    find_strike_index,
+    is_data_row,
 )
 
 
@@ -34,7 +33,7 @@ def _col_letter(idx: int) -> str:
     while idx:
         idx, rem = divmod(idx - 1, 26)
         letters.append(chr(65 + rem))
-    return ''.join(reversed(letters))
+    return "".join(reversed(letters))
 
 
 def print_column_letter_map(calls_start: int, puts_start: int) -> None:
@@ -44,18 +43,26 @@ def print_column_letter_map(calls_start: int, puts_start: int) -> None:
     print(f"  symbol @ {_col_letter(calls_start + CALLS_ENTRY['symbol'])}")
     print(f"  expiration_date @ {_col_letter(calls_start + CALLS_ENTRY['expiration_date'])}")
     print(f"  buy order_type @ {_col_letter(calls_start + CALLS_ENTRY['order_type'])}")
-    print(f"  TP premium % @ {_col_letter(calls_start + 16)}  TP stock % @ {_col_letter(calls_start + 17)}  Trailing @ {_col_letter(calls_start + 18)}")
-    print(f"  Sell order_type @ {_col_letter(calls_start + 20)}  SL price @ {_col_letter(calls_start + 21)}  SL prem % @ {_col_letter(calls_start + 22)}")
+    print(
+        f"  TP premium % @ {_col_letter(calls_start + 16)}  TP stock % @ {_col_letter(calls_start + 17)}  Trailing @ {_col_letter(calls_start + 18)}"
+    )
+    print(
+        f"  Sell order_type @ {_col_letter(calls_start + 20)}  "
+        f"SL price @ {_col_letter(calls_start + 21)}  "
+        f"SL prem % @ {_col_letter(calls_start + 22)}"
+    )
     # Puts mapping
     print(" Puts:")
     print(f"  symbol @ {_col_letter(puts_start + PUTS_ENTRY['symbol'])}")
     print(f"  expiration_date @ {_col_letter(puts_start + PUTS_ENTRY['expiration_date'])}")
     print(f"  buy order_type @ {_col_letter(puts_start + PUTS_ENTRY['order_type'])}")
     print(f"  TP premium % @ {_col_letter(puts_start + 16)}  TP stock % @ {_col_letter(puts_start + 17)}  Trailing @ {_col_letter(puts_start + 18)}")
-    print(f"  Sell order_type @ {_col_letter(puts_start + 19)}  SL price @ {_col_letter(puts_start + 21)}  SL prem % @ {_col_letter(puts_start + 22)}")
+    print(
+        f"  Sell order_type @ {_col_letter(puts_start + 19)}  SL price @ {_col_letter(puts_start + 21)}  SL prem % @ {_col_letter(puts_start + 22)}"
+    )
 
 
-def run_self_test(template_path: str = None, max_rows: int = 25) -> None:
+def run_self_test(template_path: str | None = None, max_rows: int = 25) -> None:
     if not template_path:
         template_path = os.path.join(project_root, "goldflipper", "strategy", "api_template_trailing_edition.csv")
 
@@ -100,7 +107,8 @@ def run_self_test(template_path: str = None, max_rows: int = 25) -> None:
             play_calls, errors_calls = create_play_from_data("calls", row, calls_headers, CALLS_START, strike_calls, i)
             if play_calls:
                 enabled, pct = _extract_trailing_summary(play_calls)
-                print(f"Row {i} Calls: symbol={play_calls.get('symbol')} trailing={'on' if enabled else 'off'} activation_pct={pct if pct else 'default' if enabled else '-'}")
+                activation = pct if pct else ("default" if enabled else "-")
+                print(f"Row {i} Calls: symbol={play_calls.get('symbol')} trailing={'on' if enabled else 'off'} activation_pct={activation}")
             for err in errors_calls:
                 print(f"[SELF-TEST][WARN] {err}")
             examined += 1
@@ -109,7 +117,8 @@ def run_self_test(template_path: str = None, max_rows: int = 25) -> None:
             play_puts, errors_puts = create_play_from_data("puts", row, puts_headers, dynamic_puts_start, strike_puts, i)
             if play_puts:
                 enabled, pct = _extract_trailing_summary(play_puts)
-                print(f"Row {i} Puts: symbol={play_puts.get('symbol')} trailing={'on' if enabled else 'off'} activation_pct={pct if pct else 'default' if enabled else '-'}")
+                activation = pct if pct else ("default" if enabled else "-")
+                print(f"Row {i} Puts: symbol={play_puts.get('symbol')} trailing={'on' if enabled else 'off'} activation_pct={activation}")
             for err in errors_puts:
                 print(f"[SELF-TEST][WARN] {err}")
 

@@ -32,9 +32,7 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
             self._setup_logging()
 
         except Exception as e:
-            servicemanager.LogErrorMsg(
-                f"Service initialization failed: {str(e)}\n{traceback.format_exc()}"
-            )
+            servicemanager.LogErrorMsg(f"Service initialization failed: {str(e)}\n{traceback.format_exc()}")
             raise
 
     def _setup_logging(self):
@@ -54,9 +52,7 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
             win32event.SetEvent(self.stop_event)
             self.running = False
         except Exception as e:
-            self.logger.error(
-                f"Error during service stop: {str(e)}\n{traceback.format_exc()}"
-            )
+            self.logger.error(f"Error during service stop: {str(e)}\n{traceback.format_exc()}")
             raise
 
     def SvcDoRun(self):
@@ -83,7 +79,7 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
         try:
             self.logger.info("Initializing main service components")
             from goldflipper.config.config import config
-            from goldflipper.core import monitor_plays_continuously
+            from goldflipper.run import run_trading_system
             from goldflipper.watchdog.watchdog_manager import WatchdogManager
 
             # Check if watchdog is enabled in config
@@ -120,13 +116,11 @@ class GoldflipperService(win32serviceutil.ServiceFramework):
                     if watchdog:
                         watchdog.update_heartbeat()
 
-                    monitor_plays_continuously()
+                    run_trading_system(console_mode=False)
 
                     win32event.WaitForSingleObject(self.stop_event, 30000)
                 except Exception as e:
-                    error_msg = (
-                        f"Error in main loop: {str(e)}\n{traceback.format_exc()}"
-                    )
+                    error_msg = f"Error in main loop: {str(e)}\n{traceback.format_exc()}"
                     self.logger.error(error_msg)
                     servicemanager.LogErrorMsg(error_msg)
                     time.sleep(10)
@@ -147,7 +141,5 @@ if __name__ == "__main__":
         else:
             win32serviceutil.HandleCommandLine(GoldflipperService)
     except Exception as e:
-        servicemanager.LogErrorMsg(
-            f"Service host error: {str(e)}\n{traceback.format_exc()}"
-        )
+        servicemanager.LogErrorMsg(f"Service host error: {str(e)}\n{traceback.format_exc()}")
         raise

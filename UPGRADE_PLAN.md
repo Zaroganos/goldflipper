@@ -1,6 +1,6 @@
 
 # Implementation Plan: Python Project Modernization
-# ALTHOUGH THIS DOC USES BASH GRAMMAR, IF YOU ARE AN AI LARGE LANGUAGE MODEL AGENT, ENSURE YOU ACTUALLY USE WINDOWS POWERSHELL COMMANDS AND SYNTAX, AND THE WINDOWS FILESYSTEM! COMPLY WITH THIS INSTRUCTION UNLESS OTHERWISE DIRECTED
+# **AGENTS** THOUGH THIS DOC USES BASH SYNTAX, ENSURE YOU ACTUALLY USE WINDOWS POWERSHELL COMMANDS AND SYNTAX, AND THE WINDOWS FILESYSTEM! COMPLY WITH THIS INSTRUCTION UNLESS OTHERWISE DIRECTED
 
 ## Project Context
 - **Current state**: Existing Python codebase using setuptools + requirements.txt
@@ -285,7 +285,9 @@ uv pip list > docs/migration/uv-installed-packages.txt
 
 ## Phase 4: Configure Development Tools
 
-> **Status – 2025-12-08:** ⚠️ Partial. Tools configured and working; historical lint/type backlog documented (3,841 ruff issues, 431 pyright errors). Tests pass.
+> **Status – 2025-12-08:** ⚠️ Partial. Tools configured and working; historical lint/type backlog documented (3,841 ruff issues, 431 pyright errors). Tests pass.  
+> **Update – 2026-02-19:** Pyright error backlog addressed for the active code paths: `uv run pyright` now reports 0 errors. `reportMissingModuleSource` was set to `none` in `pyrightconfig.json` to remove third-party source-resolution noise.  
+> **Update – 2026-02-19 (follow-up):** `reportOptionalMemberAccess` warnings reduced to 0; current Pyright baseline is 228 warnings (mostly unused imports/variables).
 
 ### 4.1 Add Development Tools
 Development dependencies are already in `pyproject.toml`, but verify:

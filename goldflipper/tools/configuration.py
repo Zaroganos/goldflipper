@@ -6,9 +6,10 @@ import sys
 import tempfile
 import time
 import tkinter as tk
+from collections.abc import Sequence
 from contextlib import suppress
 from tkinter import messagebox, ttk
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
@@ -56,9 +57,7 @@ class CollapsibleSection(ttk.Frame):
         )
         self.toggle_button.grid(row=0, column=0, padx=(2, 6))
 
-        ttk.Label(header, text=title, font=("Segoe UI", 11, "bold")).grid(
-            row=0, column=1, sticky="w"
-        )
+        ttk.Label(header, text=title, font=("Segoe UI", 11, "bold")).grid(row=0, column=1, sticky="w")
 
         self.body = ttk.Frame(self)
         self.body.grid(row=1, column=0, sticky="ew")
@@ -103,8 +102,8 @@ class SettingsEditor:
         self.root.minsize(960, 600)
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
-        self.fields: List[Dict[str, Any]] = []
-        self.sections: List[CollapsibleSection] = []
+        self.fields: list[dict[str, Any]] = []
+        self.sections: list[CollapsibleSection] = []
 
         self.style = ttk.Style()
         self.style.configure(
@@ -121,7 +120,7 @@ class SettingsEditor:
         self.root.mainloop()
 
     def _load_settings(self) -> CommentedMap:
-        with open(self.settings_path, "r", encoding="utf-8") as handle:
+        with open(self.settings_path, encoding="utf-8") as handle:
             data = self.yaml.load(handle)  # type: ignore[assignment]
         if data is None:
             data = CommentedMap()
@@ -145,12 +144,7 @@ class SettingsEditor:
         button_bar.pack(anchor="w", pady=(4, 2))
 
         button_kwargs = {"padx": (0, 6), "pady": 2}
-        ttk.Button(
-            button_bar,
-            text="Expand All",
-            width=15,
-            command=self._expand_all
-        ).pack(side="left", **button_kwargs)
+        ttk.Button(button_bar, text="Expand All", width=15, command=self._expand_all).pack(side="left", **button_kwargs)
         ttk.Button(
             button_bar,
             text="Collapse All",
@@ -218,12 +212,8 @@ class SettingsEditor:
         button_row.grid(row=container_row + 1, column=0, sticky="ew", padx=16, pady=(0, 12))
         button_row.columnconfigure(0, weight=1)
 
-        ttk.Button(button_row, text="Save Changes", command=self._save).grid(
-            row=0, column=1, padx=4
-        )
-        ttk.Button(button_row, text="Close", command=self.root.destroy).grid(
-            row=0, column=2, padx=4
-        )
+        ttk.Button(button_row, text="Save Changes", command=self._save).grid(row=0, column=1, padx=4)
+        ttk.Button(button_row, text="Close", command=self.root.destroy).grid(row=0, column=2, padx=4)
 
     def _focus_window(self) -> None:
         try:
@@ -363,11 +353,11 @@ class SettingsEditor:
     def _add_comment_label(
         self,
         parent: tk.Misc,
-        comments: List[str],
-        padding: Tuple[int, int, int, int] | None = None,
+        comments: list[str],
+        padding: tuple[int, int, int, int] | None = None,
         *,
         use_grid: bool = False,
-        grid_kwargs: Dict[str, Any] | None = None,
+        grid_kwargs: dict[str, Any] | None = None,
     ) -> None:
         if not comments:
             return
@@ -394,27 +384,27 @@ class SettingsEditor:
                 return type(item)
         return str
 
-    def _extract_document_comments(self) -> List[str]:
+    def _extract_document_comments(self) -> list[str]:
         ca = getattr(self.config_data, "ca", None)
         if not ca:
             return []
         comments = self._flatten_comment_tokens(getattr(ca, "comment", None))
         return self._filter_doc_comment_lines(comments)
 
-    def _get_comments(self, container: CommentedMap, key: str) -> List[str]:
+    def _get_comments(self, container: CommentedMap, key: str) -> list[str]:
         ca = getattr(container, "ca", None)
         if not ca:
             return []
         meta = ca.items.get(key)
         if not meta:
             return []
-        comments: List[str] = []
+        comments: list[str] = []
         for item in meta:
             comments.extend(self._flatten_comment_tokens(item))
         return [line for line in comments if line]
 
-    def _flatten_comment_tokens(self, token: Any) -> List[str]:
-        lines: List[str] = []
+    def _flatten_comment_tokens(self, token: Any) -> list[str]:
+        lines: list[str] = []
         if token is None:
             return lines
         if isinstance(token, list):
@@ -455,9 +445,9 @@ class SettingsEditor:
         for section in self.sections:
             section.collapse()
 
-    def _filter_doc_comment_lines(self, lines: List[str]) -> List[str]:
+    def _filter_doc_comment_lines(self, lines: list[str]) -> list[str]:
         """Remove redundant section headings from the document-level comments."""
-        filtered: List[str] = []
+        filtered: list[str] = []
         for line in lines:
             normalized = line.strip().lower()
             if normalized.endswith("settings"):
@@ -493,9 +483,7 @@ class SettingsEditor:
                 raw_content = widget.get("1.0", "end-1c")
                 lines = [line.strip() for line in raw_content.splitlines() if line.strip()]
                 element_type = field["element_type"]
-                converted = CommentedSeq(
-                    [self._convert_scalar(line, element_type) for line in lines]
-                )
+                converted = CommentedSeq([self._convert_scalar(line, element_type) for line in lines])
                 container[key] = converted
 
     def _convert_scalar(self, raw_value: str, value_type: type) -> Any:
@@ -528,18 +516,14 @@ class SettingsEditor:
             try:
                 lock_fd = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
                 break
-            except FileExistsError:
+            except FileExistsError as e:
                 if time.monotonic() - start_time >= LOCK_TIMEOUT_SECONDS:
-                    raise SettingsLockError(
-                        f"Could not obtain lock on settings file within {LOCK_TIMEOUT_SECONDS} seconds."
-                    )
+                    raise SettingsLockError(f"Could not obtain lock on settings file within {LOCK_TIMEOUT_SECONDS} seconds.") from e
                 time.sleep(LOCK_POLL_SECONDS)
 
         try:
             dir_name = os.path.dirname(self.settings_path)
-            with tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", delete=False, dir=dir_name, suffix=".tmp"
-            ) as temp_file:
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=dir_name, suffix=".tmp") as temp_file:
                 self.yaml.dump(self.config_data, temp_file)
                 temp_name = temp_file.name
             os.replace(temp_name, self.settings_path)
@@ -551,13 +535,13 @@ class SettingsEditor:
 
 def open_settings() -> bool:
     """Launch the interactive settings editor.
-    
+
     Uses exe-aware path utilities to properly resolve settings.yaml location
     in both frozen (exe) and source modes.
     """
     # Use exe-aware path utilities for frozen mode compatibility
     from goldflipper.utils.exe_utils import get_settings_path, get_settings_template_path
-    
+
     settings_path = str(get_settings_path())
     template_path = str(get_settings_template_path())
 
@@ -576,11 +560,11 @@ def open_settings() -> bool:
 
     return True
 
-    
+
 def main() -> None:
     if not open_settings():
         sys.exit(1)
-    
+
 
 if __name__ == "__main__":
-    main() 
+    main()

@@ -1,9 +1,7 @@
 """Order management tools — place, cancel, status, history, preview."""
 
-from typing import Optional
-
-from goldflipper.mcp_server.server import mcp
 from goldflipper.mcp_server.context import ctx
+from goldflipper.mcp_server.server import mcp
 
 
 @mcp.tool
@@ -40,7 +38,7 @@ def get_order_status(order_id: str) -> dict:
 
 
 @mcp.tool
-def get_order_history(limit: int = 20, status: Optional[str] = None, symbol: Optional[str] = None) -> dict:
+def get_order_history(limit: int = 20, status: str | None = None, symbol: str | None = None) -> dict:
     """Get recent order history from Alpaca.
 
     Args:
@@ -51,8 +49,8 @@ def get_order_history(limit: int = 20, status: Optional[str] = None, symbol: Opt
     Returns:
         Dict with list of order summaries.
     """
-    from alpaca.trading.requests import GetOrdersRequest
     from alpaca.trading.enums import QueryOrderStatus
+    from alpaca.trading.requests import GetOrdersRequest
 
     limit = min(max(1, limit), 500)
 
@@ -74,16 +72,18 @@ def get_order_history(limit: int = 20, status: Optional[str] = None, symbol: Opt
 
     order_list = []
     for o in orders:
-        order_list.append({
-            "order_id": str(o.id),
-            "symbol": str(o.symbol),
-            "side": str(o.side),
-            "type": str(o.type),
-            "qty": str(o.qty),
-            "filled_qty": str(o.filled_qty),
-            "status": str(o.status),
-            "created_at": str(o.created_at) if o.created_at else None,
-        })
+        order_list.append(
+            {
+                "order_id": str(o.id),
+                "symbol": str(o.symbol),
+                "side": str(o.side),
+                "type": str(o.type),
+                "qty": str(o.qty),
+                "filled_qty": str(o.filled_qty),
+                "status": str(o.status),
+                "created_at": str(o.created_at) if o.created_at else None,
+            }
+        )
 
     return {"count": len(order_list), "orders": order_list}
 
@@ -205,8 +205,8 @@ def trade_place_order(
     Returns:
         Preview of the order (confirm=False) or order result (confirm=True).
     """
-    from goldflipper.strategy.shared.order_executor import OrderExecutor
     from goldflipper.strategy.base import OrderAction
+    from goldflipper.strategy.shared.order_executor import OrderExecutor
 
     trade_type = trade_type.upper()
     if trade_type not in ("CALL", "PUT"):
@@ -265,21 +265,17 @@ def trade_place_order(
 
     # Execute the order
     try:
-        is_entry = order_action.is_buy() if action in ("BTO", "STO") else not order_action.is_buy()
+        order_action.is_buy() if action in ("BTO", "STO") else not order_action.is_buy()
 
         if action in ("BTO", "STO"):
-            order_req, is_limit = executor.create_entry_order(
-                contract_symbol, contracts, order_type, quote, action=order_action
-            )
+            order_req, is_limit = executor.create_entry_order(contract_symbol, contracts, order_type, quote, action=order_action)
         else:
             fallback_price = quote.get("last", 0.0)
-            order_req, is_limit = executor.create_exit_order(
-                contract_symbol, contracts, order_type, quote, fallback_price, action=order_action
-            )
+            order_req, is_limit = executor.create_exit_order(contract_symbol, contracts, order_type, quote, fallback_price, action=order_action)
 
         if order_req is None:
             # Market exit — use close_position
-            result = executor.close_position_market(contract_symbol, contracts)
+            executor.close_position_market(contract_symbol, contracts)
             return {
                 "order_placed": True,
                 "method": "close_position_market",
@@ -344,7 +340,7 @@ def trade_cancel_order(order_id: str, confirm: bool = False) -> dict:
 
 
 @mcp.tool
-def trade_close_position(symbol: str, qty: Optional[int] = None, confirm: bool = False) -> dict:
+def trade_close_position(symbol: str, qty: int | None = None, confirm: bool = False) -> dict:
     """Close an open position (partial or full).
 
     This is a Tier 3 operation. With confirm=False (default), returns a preview.

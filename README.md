@@ -21,13 +21,13 @@ Goldflipper Classic is a rules-based semi-autonomous trading system developed in
 
 Before you start, ensure you have the following:
 
-- **Alpaca Markets account** for brokerage access; multi-broker support is planned with v2
-- **Windows OS** (required for service functionality and batch files); multi-OS support is planned with v2
-- **Git** (required for cloning the repository and keeping it up to date)
-- **Python 3.10 or higher** (Python 3.12 recommended)
-- **Python libraries** (see Installation section); strongly recommended to use a virtual environment to avoid dependency conflicts. Consider using venv, Poetry, or uv as well (directions to be added in time)
-- **Market Data Provider account(s)** (required if not using market data from brokerage):
-  - Yahoo Finance (free, built-in support via yfinance)
+- **Alpaca Markets account** for brokerage access; multi-broker support is in development
+- **Windows OS** Windows 10 / 11 required at this time; cross-OS support is in development
+- **Git** required for cloning the repository and keeping it up to date
+- **Python 3.12** or higher required
+- **Python libraries** (see Installation section); strongly recommended to use a virtual environment to avoid dependency conflicts. Consider using venv, Poetry, or uv as well. Default will use uv venv. Further documentation to be added in due time.
+- **Market Data Provider account(s)** (required if not using market data from brokerage or from premium subscription):
+  - Yahoo Finance (free, built-in support via yfinance) - no signup required
 
 ### Installation
 
@@ -35,11 +35,13 @@ Before you start, ensure you have the following:
 
 For a professional installation experience with Windows integration:
 
-1. Download the latest `goldflipper-X.Y.Z-x64.msi` from the [Releases](https://github.com/Zaroganos/goldflipper/releases) page
-2. Run the installer and follow the wizard
-3. Launch Goldflipper from the Start Menu or desktop shortcut
+1. Download the latest installer `goldflipper-0.2.5-x64.msi` from either the [Releases](https://github.com/Zaroganos/goldflipper/releases) page directly, or;
+2. Run the one-liner bootstrap command provided to you (if you have been given internal QA testing authorization) in PowerShell by pressing `Win+X` and then `i`
+3. Run the installer and follow the wizard
+4. Launch Goldflipper from the Start Menu or desktop shortcut
 
 The MSI installer provides:
+
 - Program Files installation with proper Windows integration
 - Start Menu and Desktop shortcuts
 - Add/Remove Programs entry with uninstall support
@@ -56,6 +58,7 @@ iwr -useb https://raw.githubusercontent.com/Zaroganos/goldflipper/main/bootstrap
 ```
 
 The bootstrap script will:
+
 - Check for and install Git and Python if needed
 - Clone/update the repository to `%USERPROFILE%\goldflipper`
 - Create a virtual environment
@@ -65,17 +68,20 @@ The bootstrap script will:
 #### Manual Installation
 
 1. **Clone the repository:**
+
 ```cmd
 git clone https://github.com/Zaroganos/goldflipper.git
 cd goldflipper
 ```
 
 2. **Install Python dependencies:**
+
 ```cmd
 pip install -r requirements.txt
 ```
 
 **Note**: You can also install in development mode using setup.py via:
+
 ```cmd
 pip install -e . --pre
 ```

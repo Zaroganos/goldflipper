@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "goldflipper"
-version = "0.2.3-beta"
+version = "0.2.5"
 description = "A semi-autonomous options trading system on Alpaca."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -82,6 +82,24 @@ select = [
     "NPY201",
 ]
 ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"goldflipper/chart/chart_viewer.py" = ["E402"]
+"goldflipper/data/market/providers/marketdataapp_test.py" = ["E402"]
+"goldflipper/run.py" = ["E402"]
+"goldflipper/run_multi.py" = ["E402"]
+"goldflipper/startup_test.py" = ["E402"]
+"goldflipper/tools/auto_play_creator.py" = ["E402"]
+"goldflipper/tools/multi_market_data.py" = ["E402"]
+"goldflipper/tools/option_data_fetcher.py" = ["E402"]
+"goldflipper/tools/options-data.py" = ["E402"]
+"goldflipper/tools/play-csv-selftest.py" = ["E402"]
+"goldflipper/tools/play_creator_gui.py" = ["E402"]
+"goldflipper/tools/play_csv_ingestion_multitool.py" = ["E402"]
+"goldflipper/tools/play_csv_ingestion_tool.py" = ["E402"]
+"goldflipper/tools/system_status.py" = ["E402"]
+"goldflipper/trade_logging/data_backfill_helper.py" = ["E402"]
+"goldflipper/trade_logging/trade_logger_ui.py" = ["E402"]
 
 [tool.ruff.format]
 quote-style = "double"

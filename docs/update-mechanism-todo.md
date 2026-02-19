@@ -15,7 +15,7 @@ Completed in a prior session:
 **Nodes to build in n8n:**
 
 1. **Webhook trigger** (POST `/goldflipper-release`)
-   - Receives: `{ "version": "0.2.4", "notes": "...", "msi_path": "C:\\...\\goldflipper-0.2.4-x64.msi" }`
+   - Receives: `{ "version": "0.2.5", "notes": "...", "msi_path": "C:\\...\\goldflipper-0.2.5-x64.msi" }`
    - Or: trigger manually from n8n UI after each build
 
 2. **Read MSI file** — `Read Binary File` node
@@ -192,9 +192,9 @@ irm 'https://cloud.zimerguz.net/s/558TjEgMCdEjaLN/download' | iex
 **version.json schema** (lives at `Distribution/<channel>/version.json`, served via WebDAV):
 ```json
 {
-  "version":      "0.2.3",
-  "download_url": "https://cloud.zimerguz.net/public.php/webdav/goldflipper-0.2.3-x64.msi",
-  "portable_url": "https://cloud.zimerguz.net/public.php/webdav/goldflipper-0.2.3-portable.exe",
+  "version":      "0.2.5",
+  "download_url": "https://cloud.zimerguz.net/public.php/webdav/goldflipper-0.2.5-x64.msi",
+  "portable_url": "https://cloud.zimerguz.net/public.php/webdav/goldflipper-0.2.5-portable.exe",
   "notes":        "Human-readable release notes"
 }
 ```

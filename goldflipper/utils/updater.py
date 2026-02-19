@@ -8,14 +8,15 @@ never blocks TUI startup.
 Expected version.json schema
 -----------------------------
 {
-    "version":      "0.2.4",
-    "download_url": "https://nextcloud.example.com/.../goldflipper-0.2.4-x64.msi",
+    "version":      "0.2.5",
+    "download_url": "https://nextcloud.example.com/.../goldflipper-0.2.5-x64.msi",
     "notes":        "Brief human-readable release notes"
 }
 
 The URL is set in settings.yaml under update_check.url.  Leave it blank to
 disable update checking entirely.
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,9 +29,11 @@ log = logging.getLogger(__name__)
 # Data
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class UpdateInfo:
     """Result of a completed update check."""
+
     current_version: str
     latest_version: str
     download_url: str
@@ -41,6 +44,7 @@ class UpdateInfo:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _parse_semver(version: str) -> tuple[int, ...]:
     """
@@ -65,11 +69,13 @@ def _get_current_version() -> str:
     """
     try:
         from goldflipper import __version__  # type: ignore[attr-defined]
+
         return __version__
     except Exception:
         pass
     try:
         from importlib.metadata import version
+
         return version("goldflipper")
     except Exception:
         pass
@@ -79,6 +85,7 @@ def _get_current_version() -> str:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def check_for_update(url: str, timeout: float = 5.0) -> UpdateInfo | None:
     """
@@ -92,6 +99,7 @@ def check_for_update(url: str, timeout: float = 5.0) -> UpdateInfo | None:
 
     try:
         import requests
+
         resp = requests.get(url.strip(), timeout=timeout)
         resp.raise_for_status()
         data = resp.json()

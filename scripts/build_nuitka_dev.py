@@ -15,9 +15,9 @@ Speed gains:
 
 Run with: uv run python scripts/build_nuitka_dev.py
 """
+
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -36,15 +36,15 @@ ENTRY_POINT_CANDIDATES = [
 # copied as data files. CRITICAL for dynamic imports via importlib.
 # ============================================================================
 PACKAGES_TO_COMPILE = [
-    "goldflipper",                 # Root package (core.py, run.py, alpaca_client.py, etc.)
-    "goldflipper.config",          # Configuration module (CRITICAL for settings loading)
-    "goldflipper.data",            # Data modules (greeks, indicators, market)
-    "goldflipper.tools",           # All tool modules (GUI, CLI tools)
-    "goldflipper.chart",           # Chart viewer module
-    "goldflipper.trade_logging",   # Trade logger module
-    "goldflipper.strategy",        # Strategy modules (runners, shared, playbooks loader)
-    "goldflipper.utils",           # Utility modules
-    "goldflipper.watchdog",        # Watchdog module
+    "goldflipper",  # Root package (core.py, run.py, alpaca_client.py, etc.)
+    "goldflipper.config",  # Configuration module (CRITICAL for settings loading)
+    "goldflipper.data",  # Data modules (greeks, indicators, market)
+    "goldflipper.tools",  # All tool modules (GUI, CLI tools)
+    "goldflipper.chart",  # Chart viewer module
+    "goldflipper.trade_logging",  # Trade logger module
+    "goldflipper.strategy",  # Strategy modules (runners, shared, playbooks loader)
+    "goldflipper.utils",  # Utility modules
+    "goldflipper.watchdog",  # Watchdog module
 ]
 
 # ============================================================================
@@ -54,16 +54,12 @@ PACKAGES_TO_COMPILE = [
 DATA_MAPPINGS = [
     # Config directory (settings.yaml excluded below)
     (PROJECT_ROOT / "goldflipper" / "config", "goldflipper/config"),
-    
     # Reference data (CSV files)
     (PROJECT_ROOT / "goldflipper" / "reference", "goldflipper/reference"),
-    
     # Tool templates (JSON play templates)
     (PROJECT_ROOT / "goldflipper" / "tools" / "templates", "goldflipper/tools/templates"),
-    
     # Strategy playbooks (YAML configs for momentum, sell_puts, etc.)
     (PROJECT_ROOT / "goldflipper" / "strategy" / "playbooks", "goldflipper/strategy/playbooks"),
-    
     # Application icon
     (PROJECT_ROOT / "goldflipper.ico", "goldflipper.ico"),
 ]
@@ -73,12 +69,12 @@ DATA_MAPPINGS = [
 # These patterns exclude gitignored or user-specific files from bundling.
 # ============================================================================
 DATA_EXCLUDE_PATTERNS = [
-    "**/settings.yaml",      # User-specific config (created on first run)
-    "**/*.log",              # Log files
-    "**/*.bak",              # Backup files
-    "**/*.old",              # Old leftover files
-    "**/*.tmp",              # Temp files
-    "**/__pycache__/**",     # Python cache
+    "**/settings.yaml",  # User-specific config (created on first run)
+    "**/*.log",  # Log files
+    "**/*.bak",  # Backup files
+    "**/*.old",  # Old leftover files
+    "**/*.tmp",  # Temp files
+    "**/__pycache__/**",  # Python cache
 ]
 
 OUTPUT_DIR = PROJECT_ROOT / "dist"
@@ -93,10 +89,7 @@ def build() -> None:
     )
     if entry_point is None:
         joined = "\n - ".join(str(p) for p in ENTRY_POINT_CANDIDATES)
-        raise FileNotFoundError(
-            "None of the entry point candidates exist:\n"
-            f" - {joined}"
-        )
+        raise FileNotFoundError(f"None of the entry point candidates exist:\n - {joined}")
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -113,11 +106,7 @@ def build() -> None:
         if not src.exists():
             print(f"[WARN] Data path missing, skipping: {src}")
             continue
-        flag = (
-            f"--include-data-dir={src}={dest}"
-            if src.is_dir()
-            else f"--include-data-files={src}={dest}"
-        )
+        flag = f"--include-data-dir={src}={dest}" if src.is_dir() else f"--include-data-files={src}={dest}"
         data_flags.append(flag)
         print(f"[INFO] Including data: {src} -> {dest}")
 
@@ -125,7 +114,7 @@ def build() -> None:
     cpu_count = 16
     # os.cpu_count() or 4
     # replace `16` with above line to restore typical function
-    
+
     # Path to application icon
     icon_path = PROJECT_ROOT / "goldflipper.ico"
 
@@ -144,23 +133,23 @@ def build() -> None:
         # ======================================================================
         # DEV BUILD SPEED OPTIMIZATIONS
         # ======================================================================
-        "--lto=no",                      # Skip Link Time Optimization (big speedup)
-        "--onefile-no-compression",      # Skip zstd compression (bigger exe, faster build)
-        f"--jobs={cpu_count}",           # Use all CPU cores
-        "--assume-yes-for-downloads",    # No interactive prompts
+        "--lto=no",  # Skip Link Time Optimization (big speedup)
+        "--onefile-no-compression",  # Skip zstd compression (bigger exe, faster build)
+        f"--jobs={cpu_count}",  # Use all CPU cores
+        "--assume-yes-for-downloads",  # No interactive prompts
         # CRITICAL: Allow the exe to launch itself with custom arguments (--tool)
         "--no-deployment-flag=self-execution",
     ]
-    
+
     # Windows icon for the executable
     if icon_path.exists():
         cmd.append(f"--windows-icon-from-ico={icon_path}")
-    
+
     # Add exclusion patterns for gitignored/user-specific files
     for pattern in DATA_EXCLUDE_PATTERNS:
         cmd.append(f"--noinclude-data-files={pattern}")
         print(f"[INFO] Excluding data pattern: {pattern}")
-    
+
     # Add package compilation flags BEFORE data flags
     cmd.extend(package_flags)
     cmd.extend(data_flags)

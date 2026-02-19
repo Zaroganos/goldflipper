@@ -518,7 +518,7 @@ wheels = [
 
 [[package]]
 name = "goldflipper"
-version = "0.2.3b0"
+version = "0.2.5"
 source = { editable = "." }
 dependencies = [
     { name = "alpaca-py" },

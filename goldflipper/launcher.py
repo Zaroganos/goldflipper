@@ -6,16 +6,15 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Import exe-aware path utilities
 from goldflipper.utils.exe_utils import (
-    is_frozen,
-    get_settings_path,
-    get_settings_template_path,
+    debug_paths,
     get_config_dir,
     get_executable_dir,
-    debug_paths,
+    get_settings_path,
+    get_settings_template_path,
+    is_frozen,
 )
 
 LOGGER = logging.getLogger("goldflipper.launcher")
@@ -33,24 +32,24 @@ def _print_startup_debug() -> None:
         print(f"  is_frozen: {frozen}")
         print(f"  sys.executable: {sys.executable}")
         print(f"  sys.argv[0]: {sys.argv[0] if sys.argv else 'N/A'}")
-        
+
         settings_path = get_settings_path()
         print(f"  config_dir: {get_config_dir()}")
         print(f"  settings_path: {settings_path}")
         print(f"  settings_exists: {settings_path.exists()}")
-        
+
         # Show full debug paths only if GOLDFLIPPER_DEBUG or frozen
-        if os.environ.get('GOLDFLIPPER_DEBUG') or frozen:
+        if os.environ.get("GOLDFLIPPER_DEBUG") or frozen:
             paths = debug_paths()
             print()
             print("  [Full Path Debug]")
             for key, value in paths.items():
                 # Highlight critical issues
-                if key.endswith('_exists') and value is False:
+                if key.endswith("_exists") and value is False:
                     print(f"  {key}: {value}  <-- WARNING: File missing!")
                 else:
                     print(f"  {key}: {value}")
-        
+
         # Additional critical checks
         if not settings_path.exists():
             template_path = get_settings_template_path()
@@ -64,6 +63,7 @@ def _print_startup_debug() -> None:
     except Exception as e:
         print(f"  ERROR getting debug paths: {e}")
         import traceback
+
         traceback.print_exc()
     print("=" * 60)
     print()
@@ -71,7 +71,7 @@ def _print_startup_debug() -> None:
 
 def _settings_path() -> Path:
     """Return the canonical path to the primary settings file.
-    
+
     In frozen (exe) mode: returns path NEXT TO the exe (persistent).
     In source mode: returns path in goldflipper/config/.
     """
@@ -80,7 +80,6 @@ def _settings_path() -> Path:
 
 def _get_setup_marker_path() -> Path:
     """Get path to the setup completion marker file."""
-    from goldflipper.utils.exe_utils import get_executable_dir
     return get_executable_dir() / ".setup_complete"
 
 
@@ -110,7 +109,7 @@ def _run_first_run_setup(force: bool) -> bool:
         return False
 
     print("[Launcher] Launching first-run setup wizard...")
-    
+
     try:
         from goldflipper.first_run_setup import FirstRunSetup
     except Exception as exc:  # pragma: no cover - defensive
@@ -129,9 +128,10 @@ def _run_first_run_setup(force: bool) -> bool:
         # Mark setup as complete so wizard doesn't show on every launch
         marker_file.touch()
         print(f"[Launcher] Setup complete - marker created at {marker_file}")
-        
+
         # Reload config after wizard creates/modifies settings
         from goldflipper.config.config import reload_config
+
         reload_config()
         print("[Launcher] Config reloaded after setup")
     except Exception as exc:  # pragma: no cover - GUI loop exceptions
@@ -146,25 +146,26 @@ def _run_first_run_setup(force: bool) -> bool:
 
 def _configure_terminal_for_textual() -> None:
     """Configure terminal environment for optimal Textual rendering.
-    
+
     This helps with conhost (legacy Windows console) which has limited
     Unicode rendering compared to Windows Terminal.
     """
     import os
-    
+
     # Force color output even if terminal detection fails
     os.environ.setdefault("FORCE_COLOR", "1")
-    
+
     # Ensure proper color mode (truecolor if supported)
     os.environ.setdefault("COLORTERM", "truecolor")
-    
+
     # On Windows, set PYTHONIOENCODING to UTF-8 for consistent encoding
     if os.name == "nt":
         os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-        
+
         # Enable VT processing for ANSI escape codes in conhost
         try:
             import ctypes
+
             kernel32 = ctypes.windll.kernel32
             # Get stdout handle
             STD_OUTPUT_HANDLE = -11
@@ -185,11 +186,11 @@ def _launch_tui() -> None:
 
     # Configure terminal for optimal Textual rendering (especially in conhost)
     _configure_terminal_for_textual()
-    
+
     # Resize terminal window before Textual takes over (Windows only)
     # Note: launch_goldflipper.bat handles this more reliably for batch launches
     resize_terminal(120, 40)
-    
+
     app = GoldflipperTUI()
     app.run()
 
@@ -197,10 +198,10 @@ def _launch_tui() -> None:
 def _run_tool(tool_name: str) -> int:
     """
     Run a specific tool directly.
-    
+
     This allows the exe to be launched with --tool <name> to run a specific
     tool in its own process (essential for Tkinter GUI tools).
-    
+
     Supported tools:
     - play_creator_gui: Tkinter GUI for creating plays
     - configuration: Settings editor
@@ -213,66 +214,67 @@ def _run_tool(tool_name: str) -> int:
     - get_alpaca_info: Alpaca account info
     """
     print(f"[Launcher] Running tool: {tool_name}")
-    
+
     # Map tool names to module paths and entry functions
     TOOL_MAP = {
-        'play_creator_gui': ('goldflipper.tools.play_creator_gui', 'main'),
-        'configuration': ('goldflipper.tools.configuration', 'main'),
-        'view_plays': ('goldflipper.tools.view_plays', 'main'),
-        'system_status': ('goldflipper.tools.system_status', 'check_system_status'),
-        'option_data_fetcher': ('goldflipper.tools.option_data_fetcher', 'main'),
-        'auto_play_creator': ('goldflipper.tools.auto_play_creator', 'main'),
-        'play_creation_tool': ('goldflipper.tools.play_creation_tool', 'main'),
-        'chart_viewer': ('goldflipper.chart.chart_viewer', 'main'),
-        'trade_logger': ('goldflipper.trade_logging.trade_logger_ui', 'main'),
-        'get_alpaca_info': ('goldflipper.tools.get_alpaca_info', 'main'),
+        "play_creator_gui": ("goldflipper.tools.play_creator_gui", "main"),
+        "configuration": ("goldflipper.tools.configuration", "main"),
+        "view_plays": ("goldflipper.tools.view_plays", "main"),
+        "system_status": ("goldflipper.tools.system_status", "check_system_status"),
+        "option_data_fetcher": ("goldflipper.tools.option_data_fetcher", "main"),
+        "auto_play_creator": ("goldflipper.tools.auto_play_creator", "main"),
+        "play_creation_tool": ("goldflipper.tools.play_creation_tool", "main"),
+        "chart_viewer": ("goldflipper.chart.chart_viewer", "main"),
+        "trade_logger": ("goldflipper.trade_logging.trade_logger_ui", "main"),
+        "get_alpaca_info": ("goldflipper.tools.get_alpaca_info", "main"),
     }
-    
+
     if tool_name not in TOOL_MAP:
         print(f"[ERROR] Unknown tool: {tool_name}")
         print(f"[ERROR] Available tools: {', '.join(TOOL_MAP.keys())}")
         return 1
-    
+
     module_path, entry_func = TOOL_MAP[tool_name]
-    
+
     try:
         print(f"[Launcher] Importing {module_path}")
         module = importlib.import_module(module_path)
-        
+
         if hasattr(module, entry_func):
             print(f"[Launcher] Calling {entry_func}()")
             getattr(module, entry_func)()
-        elif hasattr(module, 'run'):
-            print(f"[Launcher] Calling run()")
+        elif hasattr(module, "run"):
+            print("[Launcher] Calling run()")
             module.run()
-        elif hasattr(module, 'main'):
-            print(f"[Launcher] Calling main()")
+        elif hasattr(module, "main"):
+            print("[Launcher] Calling main()")
             module.main()
         else:
-            print(f"[Launcher] No entry function found, module may run on import")
-        
+            print("[Launcher] No entry function found, module may run on import")
+
         return 0
     except Exception as e:
         import traceback
-        print(f"\n{'='*60}")
+
+        print(f"\n{'=' * 60}")
         print(f"[ERROR] Failed to run tool: {tool_name}")
         print(f"[ERROR] Module: {module_path}")
         print(f"[ERROR] Exception: {e}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         traceback.print_exc()
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         input("\nPress Enter to exit...")
         return 1
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """
     Entry point for the packaged Goldflipper desktop experience.
 
     - Runs the onboarding wizard on the very first launch.
     - Falls back to the existing configuration afterwards.
     - Starts the Textual TUI by default.
-    
+
     Special exe-mode arguments:
     - --trading-mode: Run the trading system directly (for spawned processes)
     - --service-install: Install the Windows service
@@ -280,7 +282,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     """
     # Print debug info at startup (always in frozen mode, or when GOLDFLIPPER_DEBUG is set)
     _print_startup_debug()
-    
+
     parser = argparse.ArgumentParser(description="Goldflipper Desktop Launcher")
     parser.add_argument(
         "--force-setup",
@@ -323,46 +325,52 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Handle special exe-mode arguments
     if args.tool:
         return _run_tool(args.tool)
-    
+
     if args.trading_mode:
         # CRITICAL DEBUG: Print sys.argv and is_frozen BEFORE importing run module
         # This helps diagnose path resolution issues in subprocess
-        print(f"\n[TRADING MODE DEBUG]")
+        print("\n[TRADING MODE DEBUG]")
         print(f"  sys.argv = {sys.argv}")
         print(f"  sys.argv[0] = {sys.argv[0] if sys.argv else 'EMPTY'}")
         print(f"  is_frozen() = {is_frozen()}")
         print(f"  get_settings_path() = {get_settings_path()}")
         print(f"  settings exists = {get_settings_path().exists()}")
         print()
-        
+
         LOGGER.info("Trading mode requested; launching trading system directly.")
         try:
             from goldflipper.run import run_trading_system
+
             run_trading_system(console_mode=True)
             return 0
         except Exception as e:
             import traceback
-            print(f"\n{'='*60}")
-            print(f"[ERROR] Trading system suffered a fatal error!")
+
+            print(f"\n{'=' * 60}")
+            print("[ERROR] Trading system suffered a fatal error!")
             print(f"[ERROR] Exception: {e}")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
             traceback.print_exc()
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
             input("\nPress Enter to exit...")
             return 1
-    
+
     if args.service_install:
         LOGGER.info("Service installation requested.")
         import win32serviceutil
+
         from goldflipper.run import GoldflipperService
-        win32serviceutil.HandleCommandLine(GoldflipperService, argv=['', '--startup', 'auto', 'install'])
+
+        win32serviceutil.HandleCommandLine(GoldflipperService, argv=["", "--startup", "auto", "install"])
         return 0
-    
+
     if args.service_remove:
         LOGGER.info("Service removal requested.")
         import win32serviceutil
+
         from goldflipper.run import GoldflipperService
-        win32serviceutil.HandleCommandLine(GoldflipperService, argv=['', 'remove'])
+
+        win32serviceutil.HandleCommandLine(GoldflipperService, argv=["", "remove"])
         return 0
 
     # Normal TUI launch flow
@@ -386,4 +394,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover - script entry point
     raise SystemExit(main())
-

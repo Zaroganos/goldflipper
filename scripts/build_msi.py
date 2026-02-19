@@ -16,6 +16,7 @@ Prerequisites:
     4. Nuitka build done    → uv run python scripts/build_nuitka.py
        (or pass --skip-nuitka if dist/goldflipper.exe already exists)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,6 +29,7 @@ from pathlib import Path
 
 try:
     from PIL import Image, ImageDraw, ImageFont
+
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -47,12 +49,13 @@ DIALOG_PATH = PROJECT_ROOT / "installer" / "dialog.bmp"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _generate_gradient(width: int, height: int, start_color: tuple, end_color: tuple) -> Image.Image:
     """Generate a vertical gradient image."""
-    base = Image.new('RGB', (width, height), start_color)
-    top = Image.new('RGB', (width, height), start_color)
-    bottom = Image.new('RGB', (width, height), end_color)
-    mask = Image.new('L', (width, height))
+    base = Image.new("RGB", (width, height), start_color)
+    Image.new("RGB", (width, height), start_color)
+    bottom = Image.new("RGB", (width, height), end_color)
+    mask = Image.new("L", (width, height))
     mask_data = []
     for y in range(height):
         mask_data.extend([int(255 * (y / height))] * width)
@@ -71,13 +74,13 @@ def _generate_installer_images() -> None:
         return
 
     print("[INFO] Generating installer images...")
-    
+
     # Goldflipper Brand Colors (Dark Blue/Gold theme)
     # Dark Blue: #001f3f (0, 31, 63) -> #001122 (0, 17, 34)
     start_color = (0, 31, 63)
     end_color = (0, 10, 20)
-    text_color = (255, 215, 0) # Gold
-    
+    text_color = (255, 215, 0)  # Gold
+
     # 1. Top Banner (493 x 58)
     if not BANNER_PATH.exists():
         banner = _generate_gradient(493, 58, start_color, end_color)
@@ -85,9 +88,9 @@ def _generate_installer_images() -> None:
         # Simple text for now
         try:
             font = ImageFont.truetype("arial.ttf", 24)
-        except IOError:
+        except OSError:
             font = None
-            
+
         text = "Goldflipper Setup"
         draw.text((20, 15), text, fill=text_color, font=font)
         banner.save(BANNER_PATH)
@@ -98,21 +101,21 @@ def _generate_installer_images() -> None:
     if not DIALOG_PATH.exists():
         dialog = _generate_gradient(493, 312, start_color, end_color)
         draw = ImageDraw.Draw(dialog)
-        
+
         # Draw some "tech" lines or simple decoration
         for i in range(0, 493, 20):
             draw.line([(i, 0), (0, i)], fill=(0, 40, 80), width=1)
-            
+
         try:
             font_large = ImageFont.truetype("arial.ttf", 36)
             font_small = ImageFont.truetype("arial.ttf", 14)
-        except IOError:
+        except OSError:
             font_large = None
             font_small = None
-            
+
         draw.text((30, 130), "Goldflipper", fill=text_color, font=font_large)
         draw.text((30, 180), "Multi-Strategy Options Trading", fill=(200, 200, 200), font=font_small)
-        
+
         dialog.save(DIALOG_PATH)
         print(f"[INFO] Created {DIALOG_PATH}")
 
@@ -121,14 +124,14 @@ def _find_signtool() -> Path | None:
     """Locate signtool.exe (duplicated logic from build_nuitka.py)."""
     if shutil.which("signtool"):
         return Path(shutil.which("signtool"))
-        
+
     kits_root = Path(r"C:\Program Files (x86)\Windows Kits\10\bin")
     if not kits_root.exists():
         return None
-        
+
     versions = [e for e in kits_root.iterdir() if e.is_dir() and e.name.startswith("10.")]
     versions.sort(key=lambda p: [int(x) for x in p.name.split(".")], reverse=True)
-    
+
     for v in versions:
         for arch in ["x64", "x86"]:
             candidate = v / arch / "signtool.exe"
@@ -142,7 +145,7 @@ def _sign_msi(msi_path: Path) -> None:
     print("\n" + "-" * 60)
     print("  MSI SIGNING")
     print("-" * 60)
-    
+
     signtool = _find_signtool()
     if not signtool:
         print("[WARN] signtool.exe not found. Skipping MSI signing.")
@@ -155,27 +158,20 @@ def _sign_msi(msi_path: Path) -> None:
     try:
         # Reuse existing cert setup logic
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps_script)],
-            capture_output=True, text=True, check=True
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps_script)], capture_output=True, text=True, check=True
         )
         lines = result.stdout.strip().splitlines()
-        thumbprint = next((l.split(":")[-1].strip() for l in lines if "Certificate found:" in l), None)
-        
+        thumbprint = next((line.split(":")[-1].strip() for line in lines if "Certificate found:" in line), None)
+
         if not thumbprint:
             print("[WARN] No certificate thumbprint found.")
             return
 
-        cmd = [
-            str(signtool), "sign",
-            "/sha1", thumbprint,
-            "/fd", "SHA256",
-            "/t", "http://timestamp.digicert.com",
-            str(msi_path)
-        ]
-        
+        cmd = [str(signtool), "sign", "/sha1", thumbprint, "/fd", "SHA256", "/t", "http://timestamp.digicert.com", str(msi_path)]
+
         subprocess.run(cmd, check=True, capture_output=True)
         print(f"[SUCCESS] Signed MSI: {msi_path.name}")
-        
+
     except Exception as e:
         print(f"[ERROR] MSI signing failed: {e}")
 
@@ -193,7 +189,7 @@ def _read_version() -> str:
         raise ValueError("Could not find 'version' in pyproject.toml")
 
     raw = match.group(1)
-    # Strip pre-release / build metadata (e.g. "0.2.3-beta" → "0.2.3")
+    # Strip pre-release / build metadata (e.g. "0.2.5-beta" → "0.2.5")
     numeric = re.match(r"(\d+\.\d+\.\d+(?:\.\d+)?)", raw)
     if not numeric:
         raise ValueError(f"Version '{raw}' does not start with a numeric X.Y.Z pattern")
@@ -238,7 +234,9 @@ def _check_wix(wix_path: str | None) -> bool:
     try:
         result = subprocess.run(
             [wix_path, "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -250,7 +248,9 @@ def _check_wix_ui_extension(wix_path: str) -> bool:
     try:
         result = subprocess.run(
             [wix_path, "extension", "list"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return "WixToolset.UI.wixext" in result.stdout
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -283,6 +283,7 @@ def _print_prereq_help() -> None:
 # Build
 # ---------------------------------------------------------------------------
 
+
 def build_msi(
     arch: str = "x64",
     skip_nuitka: bool = False,
@@ -311,14 +312,10 @@ def build_msi(
     # 2. Check prerequisites
     # ------------------------------------------------------------------
     missing = []
-    
+
     # Generate installer images if PIL is available
     if PIL_AVAILABLE:
-        try:
-            from PIL import Image, ImageDraw, ImageFont
-            _generate_installer_images()
-        except ImportError:
-            pass
+        _generate_installer_images()
 
     if not _check_dotnet():
         missing.append(".NET SDK (dotnet CLI)")
@@ -363,7 +360,7 @@ def build_msi(
         raise SystemExit(1)
 
     print(f"[INFO] Source executable: {EXE_PATH}")
-    print(f"[INFO] Executable size: {EXE_PATH.stat().st_size / (1024*1024):.1f} MB")
+    print(f"[INFO] Executable size: {EXE_PATH.stat().st_size / (1024 * 1024):.1f} MB")
 
     # ------------------------------------------------------------------
     # 4. Verify WiX source and supporting files
@@ -391,13 +388,20 @@ def build_msi(
     DIST_DIR.mkdir(parents=True, exist_ok=True)
 
     cmd = [
-        wix_path, "build",
-        "-arch", arch,
-        "-ext", "WixToolset.UI.wixext",
-        "-d", f"ProductVersion={version}",
-        "-d", f"ProjectDir={PROJECT_ROOT}",
-        "-d", f"DistDir={DIST_DIR}",
-        "-o", str(msi_path),
+        wix_path,
+        "build",
+        "-arch",
+        arch,
+        "-ext",
+        "WixToolset.UI.wixext",
+        "-d",
+        f"ProductVersion={version}",
+        "-d",
+        f"ProjectDir={PROJECT_ROOT}",
+        "-d",
+        f"DistDir={DIST_DIR}",
+        "-o",
+        str(msi_path),
         str(WXS_SOURCE),
     ]
 
@@ -423,15 +427,15 @@ def build_msi(
         print(f"  Arch      : {arch}")
         print()
         print("  To install (GUI):")
-        print(f"    msiexec /i \"{msi_path}\"")
+        print(f'    msiexec /i "{msi_path}"')
         print()
         print("  To install silently:")
-        print(f"    msiexec /i \"{msi_path}\" /qn")
+        print(f'    msiexec /i "{msi_path}" /qn')
         print()
         print("  To uninstall silently:")
-        print(f"    msiexec /x \"{msi_path}\" /qn")
+        print(f'    msiexec /x "{msi_path}" /qn')
         print("=" * 60)
-        
+
         # Sign the MSI
         _sign_msi(msi_path)
     else:
@@ -450,6 +454,7 @@ def build_msi(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Build Goldflipper MSI installer (requires WiX Toolset v4+)",
@@ -466,7 +471,8 @@ def main() -> None:
         help="Skip the Nuitka build step (assumes dist/goldflipper.exe exists)",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         type=str,
         default=None,
         help="Override output path for the .msi file",

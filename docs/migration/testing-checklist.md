@@ -25,8 +25,9 @@
   - 2025-11-29: Fails; 80 files would be reformatted (legacy formatting backlog).
 - [ ] `uv run ruff check goldflipper tests` passes (or only known waivers).  
   - Fails with 3,841 issues (2,354 auto-fixable); backlog predates migration work.
-- [ ] `uv run pyright goldflipper` passes.  
-  - Fails with 431 errors; primarily due to untyped config/logging plumbing.
+- [x] `uv run pyright goldflipper` passes.  
+  - 2026-02-19: Passes with 0 errors (258 warnings total).
+  - `reportMissingModuleSource` warnings were reduced to 0 by updating `pyrightconfig.json`.
 - [x] `uv run pytest` passes or reports only acknowledged flaky tests.  
   - 2025-11-29: `tests/test_market_data.py::test_market_data` passed (warning from `websockets` deprecation only).
   - 2025-12-08: Full multi-strategy test suite passes (41 tests total):
@@ -63,7 +64,8 @@
 ## Observations / Notes
 
 - `uv run goldflipper --mode console` and first-run wizard verification require an interactive terminal/GUI; leaving for manual validation.
-- Ruff and Pyright failures reflect historical debt; documenting counts here rather than remediating immediately.
+- Ruff backlog still reflects historical debt; documenting counts here rather than remediating immediately.
+- Pyright error backlog is now resolved; remaining warnings are mostly unused imports/variables and optional-access cleanup.
 
 ## Recent Updates
 
@@ -71,5 +73,12 @@
 - Removed `fallback_to_legacy` config option from orchestrator.py, system_status.py, settings_template.yaml
 - Orchestration is now REQUIRED (no legacy fallback mode)
 - All 41 multi-strategy tests pass after cleanup
+
+### 2026-02-19: Pyright Stabilization
+- Fixed Pyright type errors across config, core strategy plumbing, providers, tooling scripts, and service wrapper.
+- `uv run pyright` now exits successfully with 0 errors.
+- Adjusted `pyrightconfig.json` to suppress `reportMissingModuleSource` noise from third-party packages.
+- Follow-up pass eliminated `reportOptionalMemberAccess` warnings (now 0 in that category).
+- Current Pyright baseline: 0 errors, 228 warnings.
 
 

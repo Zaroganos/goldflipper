@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from alpaca.trading.client import TradingClient
+
     from goldflipper.config.config import Config
     from goldflipper.data.market.manager import MarketDataManager
     from goldflipper.strategy.shared.play_manager import PlayManager
@@ -25,10 +26,10 @@ class MCPContext:
     """Lazy-initialized singleton holding shared resources for all MCP tools."""
 
     def __init__(self):
-        self._config: "Config | None" = None
-        self._market_data: "MarketDataManager | None" = None
-        self._alpaca_client: "TradingClient | None" = None
-        self._play_manager: "PlayManager | None" = None
+        self._config: Config | None = None
+        self._market_data: MarketDataManager | None = None
+        self._alpaca_client: TradingClient | None = None
+        self._play_manager: PlayManager | None = None
 
     @property
     def config(self) -> "Config":

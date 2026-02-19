@@ -1,7 +1,7 @@
 """System health and diagnostics tools."""
 
-from goldflipper.mcp_server.server import mcp
 from goldflipper.mcp_server.context import ctx
+from goldflipper.mcp_server.server import mcp
 
 
 @mcp.tool

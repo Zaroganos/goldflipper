@@ -87,10 +87,10 @@ Output: `dist/goldflipper-X.Y.Z-x64.msi`
 ```powershell
 wix build -arch x64 `
     -ext WixToolset.UI.wixext `
-    -d ProductVersion=0.2.3 `
+    -d ProductVersion=0.2.5 `
     -d ProjectDir=. `
     -d DistDir=dist `
-    -o dist\goldflipper-0.2.3-x64.msi `
+    -o dist\goldflipper-0.2.5-x64.msi `
     installer\goldflipper.wxs
 ```
 
@@ -99,25 +99,25 @@ wix build -arch x64 `
 ### GUI install (default)
 
 ```powershell
-msiexec /i dist\goldflipper-0.2.3-x64.msi
+msiexec /i dist\goldflipper-0.2.5-x64.msi
 ```
 
 ### Silent install
 
 ```powershell
-msiexec /i dist\goldflipper-0.2.3-x64.msi /qn
+msiexec /i dist\goldflipper-0.2.5-x64.msi /qn
 ```
 
 ### Silent install to custom directory
 
 ```powershell
-msiexec /i dist\goldflipper-0.2.3-x64.msi /qn INSTALLFOLDER="D:\MyApps\Goldflipper"
+msiexec /i dist\goldflipper-0.2.5-x64.msi /qn INSTALLFOLDER="D:\MyApps\Goldflipper"
 ```
 
 ### Uninstall
 
 ```powershell
-msiexec /x dist\goldflipper-0.2.3-x64.msi /qn
+msiexec /x dist\goldflipper-0.2.5-x64.msi /qn
 ```
 
 Or use **Add/Remove Programs** in Windows Settings.

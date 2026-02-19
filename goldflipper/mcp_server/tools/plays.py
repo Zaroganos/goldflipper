@@ -3,12 +3,10 @@
 import json
 import os
 from datetime import datetime
-from typing import Optional
 
-from goldflipper.mcp_server.server import mcp
 from goldflipper.mcp_server.context import ctx
+from goldflipper.mcp_server.server import mcp
 from goldflipper.strategy.shared.play_manager import PlayStatus
-
 
 # Map user-friendly status names to PlayStatus enum
 _STATUS_MAP = {
@@ -34,7 +32,7 @@ def _resolve_status(status: str) -> PlayStatus:
 
 
 @mcp.tool
-def list_plays(status: str, strategy: Optional[str] = None) -> dict:
+def list_plays(status: str, strategy: str | None = None) -> dict:
     """List play files with a given status.
 
     Args:
@@ -54,15 +52,17 @@ def list_plays(status: str, strategy: Optional[str] = None) -> dict:
 
     summaries = []
     for p in plays:
-        summaries.append({
-            "play_name": p.get("play_name", "unknown"),
-            "symbol": p.get("symbol", "?"),
-            "strategy": p.get("strategy", "?"),
-            "trade_type": p.get("trade_type", "?"),
-            "action": p.get("action", "?"),
-            "play_status": p.get("status", {}).get("play_status", "?"),
-            "file": os.path.basename(p.get("_play_file", "")),
-        })
+        summaries.append(
+            {
+                "play_name": p.get("play_name", "unknown"),
+                "symbol": p.get("symbol", "?"),
+                "strategy": p.get("strategy", "?"),
+                "trade_type": p.get("trade_type", "?"),
+                "action": p.get("action", "?"),
+                "play_status": p.get("status", {}).get("play_status", "?"),
+                "file": os.path.basename(p.get("_play_file", "")),
+            }
+        )
 
     return {"status": status, "count": len(summaries), "plays": summaries}
 
@@ -254,7 +254,7 @@ def modify_play(play_name: str, updates: str) -> dict:
 
     data = ctx.play_manager.load_play(file_path)
     if data is None:
-        return {"error": f"Failed to load play file"}
+        return {"error": "Failed to load play file"}
 
     changed = []
     for key, value in update_dict.items():

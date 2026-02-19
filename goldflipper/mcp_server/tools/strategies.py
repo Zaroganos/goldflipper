@@ -2,9 +2,8 @@
 
 import yaml
 
-from goldflipper.mcp_server.server import mcp
 from goldflipper.mcp_server.context import ctx
-
+from goldflipper.mcp_server.server import mcp
 
 # Known strategy config keys in settings.yaml
 _STRATEGY_KEYS = [
@@ -38,16 +37,20 @@ def list_strategies() -> dict:
     for key in _STRATEGY_KEYS:
         section = cfg.get(key, default={})
         if section:
-            strategies.append({
-                "config_key": key,
-                "enabled": section.get("enabled", False),
-            })
+            strategies.append(
+                {
+                    "config_key": key,
+                    "enabled": section.get("enabled", False),
+                }
+            )
         else:
-            strategies.append({
-                "config_key": key,
-                "enabled": False,
-                "note": "No config section found",
-            })
+            strategies.append(
+                {
+                    "config_key": key,
+                    "enabled": False,
+                    "note": "No config section found",
+                }
+            )
 
     return {
         "orchestration": orch,
@@ -89,7 +92,7 @@ def toggle_strategy(strategy_key: str, enabled: bool, confirm: bool = False) -> 
 
     settings_path = str(get_settings_path())
     try:
-        with open(settings_path, "r") as f:
+        with open(settings_path) as f:
             settings = yaml.safe_load(f) or {}
     except Exception as e:
         return {"error": f"Failed to load settings.yaml: {e}"}

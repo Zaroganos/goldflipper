@@ -1,19 +1,21 @@
-import os
-import sys
 import json
-import subprocess
+import os
 import platform
+import subprocess
+import sys
+
 import yaml
-from pathlib import Path
+from rich.text import Text
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Static, Button
 from textual.containers import Container, Horizontal
 from textual.widget import Widget
-from rich.text import Text
+from textual.widgets import Button, Footer, Header, Static
+
+from goldflipper.config.config import get_account_nickname, get_active_account_name
 
 # Import exe-aware path utilities
-from goldflipper.utils.exe_utils import get_plays_dir, get_plays_root, get_settings_path, get_tools_dir
-from goldflipper.config.config import get_active_account_name, get_account_nickname
+from goldflipper.utils.exe_utils import get_plays_dir, get_settings_path
+
 
 def open_file_explorer(path):
     """
@@ -26,6 +28,7 @@ def open_file_explorer(path):
     else:  # Linux
         subprocess.run(["xdg-open", path])
 
+
 def format_play_files(folder_path):
     """
     Formats and returns the play files in a given folder.
@@ -33,19 +36,22 @@ def format_play_files(folder_path):
     plays = []
     if os.path.exists(folder_path):
         for file in os.listdir(folder_path):
-            if file.endswith('.json'):
+            if file.endswith(".json"):
                 try:
                     full_path = os.path.join(folder_path, file)
-                    with open(full_path, 'r') as f:
+                    with open(full_path) as f:
                         play_data = json.load(f)
-                        plays.append({
-                            'filename': file,
-                            'filepath': full_path,  # Store full path for editing
-                            'data': play_data
-                        })
+                        plays.append(
+                            {
+                                "filename": file,
+                                "filepath": full_path,  # Store full path for editing
+                                "data": play_data,
+                            }
+                        )
                 except json.JSONDecodeError:
                     print(f"Error reading {file}")
     return plays
+
 
 def format_price_value(price_data, is_tp=True, play_status=None):
     """
@@ -56,106 +62,109 @@ def format_price_value(price_data, is_tp=True, play_status=None):
     """
     if not price_data or not play_status:  # Changed this check
         return "N/A"
-        
+
     displays = []
-    
+
     # Always show stock price target if present
-    if price_data.get('stock_price') is not None:
+    if price_data.get("stock_price") is not None:
         displays.append(f"${float(price_data['stock_price']):.2f}")
-    
+
     # For open/pending-closing/closed plays, show calculated target values
-    if play_status in ['OPEN', 'PENDING-CLOSING', 'CLOSED']:
+    if play_status in ["OPEN", "PENDING-CLOSING", "CLOSED"]:
         if is_tp:
-            if price_data.get('TP_option_prem') is not None:
+            if price_data.get("TP_option_prem") is not None:
                 displays.append(f"${float(price_data['TP_option_prem']):.2f}")
-            if price_data.get('TP_stock_price_target') is not None:
+            if price_data.get("TP_stock_price_target") is not None:
                 displays.append(f"${float(price_data['TP_stock_price_target']):.2f}")
         else:
-            if price_data.get('SL_option_prem') is not None:
+            if price_data.get("SL_option_prem") is not None:
                 displays.append(f"${float(price_data['SL_option_prem']):.2f}")
-            if price_data.get('SL_stock_price_target') is not None:
+            if price_data.get("SL_stock_price_target") is not None:
                 displays.append(f"${float(price_data['SL_stock_price_target']):.2f}")
-            
+
             # Handle contingency SL if present
-            if price_data.get('SL_type') == 'CONTINGENCY':
+            if price_data.get("SL_type") == "CONTINGENCY":
                 contingency_displays = []
-                if price_data.get('contingency_stock_price') is not None:
+                if price_data.get("contingency_stock_price") is not None:
                     contingency_displays.append(f"${float(price_data['contingency_stock_price']):.2f}")
-                if price_data.get('contingency_SL_option_prem') is not None:
+                if price_data.get("contingency_SL_option_prem") is not None:
                     contingency_displays.append(f"${float(price_data['contingency_SL_option_prem']):.2f}")
-                if price_data.get('contingency_SL_stock_price_target') is not None:
+                if price_data.get("contingency_SL_stock_price_target") is not None:
                     contingency_displays.append(f"${float(price_data['contingency_SL_stock_price_target']):.2f}")
-                
+
                 if contingency_displays:
                     displays.append("[white]→[/white] [red3]SL(C):[/red3] " + " | ".join(contingency_displays))
-    
+
     # For new/temp/pending-opening plays, show target conditions
     else:
         # Stock price percentage
-        if price_data.get('stock_price_pct') is not None:
+        if price_data.get("stock_price_pct") is not None:
             displays.append(f"{float(price_data['stock_price_pct']):.1f}%")
-        
+
         # Premium percentage
-        if price_data.get('premium_pct') is not None:
+        if price_data.get("premium_pct") is not None:
             displays.append(f"{float(price_data['premium_pct']):.0f}%")
-        
+
         # Handle contingency SL conditions if present
-        if not is_tp and price_data.get('SL_type') == 'CONTINGENCY':
+        if not is_tp and price_data.get("SL_type") == "CONTINGENCY":
             contingency_displays = []
-            if price_data.get('contingency_stock_price_pct') is not None:
+            if price_data.get("contingency_stock_price_pct") is not None:
                 contingency_displays.append(f"{float(price_data['contingency_stock_price_pct']):.1f}%")
-            if price_data.get('contingency_premium_pct') is not None:
+            if price_data.get("contingency_premium_pct") is not None:
                 contingency_displays.append(f"{float(price_data['contingency_premium_pct']):.0f}%")
-            
+
             if contingency_displays:
                 displays.append("[white]→[/white] [red3]SL(C):[/red3] " + " | ".join(contingency_displays))
-    
+
     return " | ".join(displays) if displays else "N/A"
+
 
 def format_date(date_str):
     """Convert YYYY-MM-DD to MM/DD/YYYY format."""
-    if date_str and date_str != 'N/A':
+    if date_str and date_str != "N/A":
         try:
-            year, month, day = date_str.split('-')
+            year, month, day = date_str.split("-")
             return f"{month}/{day}/{year}"
         except ValueError:
             return date_str
     return date_str
 
+
 class PlayCard(Widget):
     """
     A custom widget to display play details in a card format.
     """
+
     def __init__(self, play):
         super().__init__()
         self.play = play
 
     def compose(self) -> ComposeResult:
         with Horizontal():
-            data = self.play['data']
-            name = data.get('play_name', 'N/A')
-            entry_point = data.get('entry_point', {})
-            entry_price = float(entry_point.get('stock_price', 0.00))
-            strike_price = data.get('strike_price', 'N/A')
-            
+            data = self.play["data"]
+            name = data.get("play_name", "N/A")
+            entry_point = data.get("entry_point", {})
+            entry_price = float(entry_point.get("stock_price", 0.00))
+            strike_price = data.get("strike_price", "N/A")
+
             # Get play_status correctly from the status object
-            play_status = data.get('status', {}).get('play_status')
-            
+            play_status = data.get("status", {}).get("play_status")
+
             # Handle all price formats with the correct status
-            tp_value = format_price_value(data.get('take_profit', {}), is_tp=True, play_status=play_status)
-            sl_value = format_price_value(data.get('stop_loss', {}), is_tp=False, play_status=play_status)
-            
-            symbol = data.get('symbol', 'N/A')
-            contracts = data.get('contracts', 'N/A')
-            trade_type = data.get('trade_type', 'N/A')
-            creation_date = format_date(data.get('creation_date', 'N/A'))
-            play_expiration = format_date(data.get('play_expiration_date', 'N/A'))
-            expiration_date = format_date(data.get('expiration_date', 'N/A'))
-            strategy = data.get('strategy', 'Option Swings')
-            entry_order = data.get('entry_point', {}).get('order_type', 'N/A')
-            tp_order = data.get('take_profit', {}).get('order_type', 'N/A')
-            sl_order = data.get('stop_loss', {}).get('order_type', 'N/A')
-            sl_contingency_order = data.get('stop_loss', {}).get('order_type', 'N/A')
+            tp_value = format_price_value(data.get("take_profit", {}), is_tp=True, play_status=play_status)
+            sl_value = format_price_value(data.get("stop_loss", {}), is_tp=False, play_status=play_status)
+
+            symbol = data.get("symbol", "N/A")
+            contracts = data.get("contracts", "N/A")
+            trade_type = data.get("trade_type", "N/A")
+            creation_date = format_date(data.get("creation_date", "N/A"))
+            play_expiration = format_date(data.get("play_expiration_date", "N/A"))
+            expiration_date = format_date(data.get("expiration_date", "N/A"))
+            strategy = data.get("strategy", "Option Swings")
+            entry_order = data.get("entry_point", {}).get("order_type", "N/A")
+            tp_order = data.get("take_profit", {}).get("order_type", "N/A")
+            sl_order = data.get("stop_loss", {}).get("order_type", "N/A")
+            sl_contingency_order = data.get("stop_loss", {}).get("order_type", "N/A")
             if isinstance(sl_contingency_order, list) and len(sl_contingency_order) > 1:
                 sl_order = f"{sl_contingency_order[0]} [white]• SL(C):[/white] {sl_contingency_order[1]}"
 
@@ -174,8 +183,6 @@ class PlayCard(Widget):
                 f"[white]SL:[/white] {sl_order}\n"
                 f"[white]Created:[/white] {creation_date} [white]->[/white] "
                 f"[white]Play Exp.:[/white] {play_expiration}\n"
-
-
             ).strip()  # Strip leading/trailing whitespace from the string
 
             # Create a Text object from the stripped string
@@ -187,7 +194,7 @@ class PlayCard(Widget):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id.startswith("edit_"):
             # Use stored full path for editing
-            filepath = self.play.get('filepath', '')
+            filepath = self.play.get("filepath", "")
             if filepath:
                 self.launch_editor(filepath)
             else:
@@ -198,22 +205,23 @@ class PlayCard(Widget):
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             editor_path = os.path.join(current_dir, "play-edit-tool.py")
-            
-            if os.name == 'nt':  # Windows
-                cmd = [sys.executable, editor_path, '--file', filepath]
+
+            if os.name == "nt":  # Windows
+                cmd = [sys.executable, editor_path, "--file", filepath]
                 subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:  # Unix-like systems
-                subprocess.Popen(['gnome-terminal', '--', sys.executable, editor_path, '--file', filepath])
+                subprocess.Popen(["gnome-terminal", "--", sys.executable, editor_path, "--file", filepath])
         except Exception as e:
             self.app.notify(f"Error launching editor: {str(e)}", severity="error")
 
+
 class ViewPlaysApp(App):
-    CSS = '''
+    CSS = """
     Screen {
         align: center middle;
         background: #1b1b1b;
     }
-    
+
     #folder_button {
         dock: top;
         width: 100%;
@@ -225,11 +233,11 @@ class ViewPlaysApp(App):
         text-style: bold;
         layer: overlay;
     }
-    
+
     #folder_button:hover {
         background: #4b4b4b;
     }
-    
+
     #plays_container {
         overflow-y: auto;
         height: 100%;
@@ -237,7 +245,7 @@ class ViewPlaysApp(App):
         padding: 0;
         margin-top: 4;
     }
-    
+
     .play-card {
         width: 100%;
         border: solid gold;
@@ -246,14 +254,14 @@ class ViewPlaysApp(App):
         height: auto;
         background: #2b2b2b;
     }
-    
+
     .folder-title {
         content-align: center middle;
         color: #FFD700;
         height: 10;
         margin: 1 1 1 1;
     }
-    
+
     .edit-button {
         dock: left;
         width: 15;
@@ -261,11 +269,11 @@ class ViewPlaysApp(App):
         background: #3b3b3b;
         color: gold;
     }
-    
+
     .edit-button:hover {
         background: #4b4b4b;
     }
-    '''
+    """
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -285,16 +293,16 @@ class ViewPlaysApp(App):
     async def load_plays(self):
         # Load settings using exe-aware path
         config_path = str(get_settings_path())
-        with open(config_path, 'r') as f:
+        with open(config_path) as f:
             settings = yaml.safe_load(f)
-        
+
         # Get enabled folders from config
-        enabled_folders = settings['viewer']['enabled_folders']
-        folder_order = settings['viewer']['folder_order']
-        
+        enabled_folders = settings["viewer"]["enabled_folders"]
+        folder_order = settings["viewer"]["folder_order"]
+
         # Use folder_order for display, but only show enabled folders
         folders = [folder for folder in folder_order if folder in enabled_folders]
-        
+
         plays_container = self.query_one("#plays_container")
 
         while plays_container.children:
@@ -304,13 +312,10 @@ class ViewPlaysApp(App):
         # Get active account info for display
         active_account = get_active_account_name()
         account_nickname = get_account_nickname(active_account)
-        
+
         # Display account info
-        plays_container.mount(Static(
-            f"\n[bold cyan]Active Account:[/bold cyan] {account_nickname} ({active_account})\n",
-            classes="folder-title"
-        ))
-        
+        plays_container.mount(Static(f"\n[bold cyan]Active Account:[/bold cyan] {account_nickname} ({active_account})\n", classes="folder-title"))
+
         for folder in folders:
             # Use account-aware plays directory
             folder_path = str(get_plays_dir() / folder.lower())
@@ -327,10 +332,12 @@ class ViewPlaysApp(App):
                 play_card = PlayCard(play)
                 plays_container.mount(play_card)
 
+
 def main():
     """Entry point for launcher."""
     app = ViewPlaysApp()
     app.run()
+
 
 if __name__ == "__main__":
     main()

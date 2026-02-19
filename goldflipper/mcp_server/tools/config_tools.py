@@ -1,23 +1,22 @@
 """Configuration read/write tools for settings.yaml."""
 
-import os
-
 import yaml
 
-from goldflipper.mcp_server.server import mcp
 from goldflipper.mcp_server.context import ctx
+from goldflipper.mcp_server.server import mcp
 
 
 def _get_settings_path() -> str:
     """Get the path to settings.yaml."""
     from goldflipper.utils.exe_utils import get_settings_path
+
     return str(get_settings_path())
 
 
 def _load_settings() -> dict:
     """Load settings.yaml as a dict."""
     path = _get_settings_path()
-    with open(path, "r") as f:
+    with open(path) as f:
         return yaml.safe_load(f) or {}
 
 

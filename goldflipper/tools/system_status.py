@@ -6,14 +6,14 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-import psutil
-import json
-from datetime import datetime
 import subprocess
+
 import alpaca
+
 from goldflipper.alpaca_client import get_alpaca_client
-from goldflipper.config.config import config, get_active_account_name, get_account_nickname
+from goldflipper.config.config import config, get_account_nickname, get_active_account_name
 from goldflipper.utils.exe_utils import get_plays_dir
+
 
 def get_plays_count():
     """
@@ -21,17 +21,17 @@ def get_plays_count():
     Uses exe-aware path utilities for frozen mode compatibility.
     """
     plays_dir = get_plays_dir()  # Now returns account-aware path: plays/{account}/shared/
-    folders = ['new', 'temp', 'pending-opening', 'open', 'pending-closing', 'closed', 'expired']
+    folders = ["new", "temp", "pending-opening", "open", "pending-closing", "closed", "expired"]
     counts = {}
-    
+
     for folder in folders:
         folder_path = plays_dir / folder
         if folder_path.exists():
-            json_files = [f for f in os.listdir(folder_path) if f.endswith('.json')]
+            json_files = [f for f in os.listdir(folder_path) if f.endswith(".json")]
             counts[folder] = len(json_files)
         else:
             counts[folder] = 0
-    
+
     return counts
 
 
@@ -42,12 +42,8 @@ def get_active_account_info():
     account_name = get_active_account_name()
     nickname = get_account_nickname(account_name)
     plays_dir = str(get_plays_dir())
-    
-    return {
-        'name': account_name,
-        'nickname': nickname,
-        'plays_directory': plays_dir
-    }
+
+    return {"name": account_name, "nickname": nickname, "plays_directory": plays_dir}
 
 
 def get_orchestrator_status():
@@ -55,20 +51,15 @@ def get_orchestrator_status():
     Get the strategy orchestrator configuration and status.
     """
     try:
-        orch_config = config.get('strategy_orchestration', default={})
-        enabled = orch_config.get('enabled', False)
-        mode = orch_config.get('mode', 'sequential')
-        dry_run = orch_config.get('dry_run', False)
-        max_workers = orch_config.get('max_parallel_workers', 3)
-        
-        return {
-            'enabled': enabled,
-            'mode': mode,
-            'dry_run': dry_run,
-            'max_parallel_workers': max_workers
-        }
+        orch_config = config.get("strategy_orchestration", default={})
+        enabled = orch_config.get("enabled", False)
+        mode = orch_config.get("mode", "sequential")
+        dry_run = orch_config.get("dry_run", False)
+        max_workers = orch_config.get("max_parallel_workers", 3)
+
+        return {"enabled": enabled, "mode": mode, "dry_run": dry_run, "max_parallel_workers": max_workers}
     except Exception as e:
-        return {'error': str(e)}
+        return {"error": str(e)}
 
 
 def get_enabled_strategies():
@@ -77,21 +68,21 @@ def get_enabled_strategies():
     """
     strategies = []
     strategy_configs = [
-        ('option_swings', 'options_swings'),  # (display_name, config_key)
-        ('momentum', 'momentum'),
-        ('sell_puts', 'sell_puts'),
-        ('spreads', 'spreads'),
-        ('option_swings_auto', 'option_swings_auto')
+        ("option_swings", "options_swings"),  # (display_name, config_key)
+        ("momentum", "momentum"),
+        ("sell_puts", "sell_puts"),
+        ("spreads", "spreads"),
+        ("option_swings_auto", "option_swings_auto"),
     ]
-    
+
     for display_name, config_key in strategy_configs:
         try:
             strat_config = config.get(config_key, default={})
-            if strat_config.get('enabled', False):
+            if strat_config.get("enabled", False):
                 strategies.append(display_name)
-        except:
+        except Exception:
             pass
-    
+
     return strategies
 
 
@@ -123,20 +114,20 @@ def check_system_status():
     print("\n" + "-" * 40)
     print("  Strategy Orchestrator Status")
     print("-" * 40)
-    
+
     orch_status = get_orchestrator_status()
-    if 'error' in orch_status:
+    if "error" in orch_status:
         print(f"  Error loading config: {orch_status['error']}")
     else:
-        status_str = "[ENABLED]" if orch_status['enabled'] else "[DISABLED]"
+        status_str = "[ENABLED]" if orch_status["enabled"] else "[DISABLED]"
         print(f"  Orchestration:      {status_str}")
         print(f"  Execution Mode:     {orch_status['mode'].upper()}")
-        if orch_status['mode'] == 'parallel':
+        if orch_status["mode"] == "parallel":
             print(f"  Max Workers:        {orch_status['max_parallel_workers']}")
-        
-        dry_run_str = "[YES - NO LIVE TRADES]" if orch_status['dry_run'] else "No"
+
+        dry_run_str = "[YES - NO LIVE TRADES]" if orch_status["dry_run"] else "No"
         print(f"  Dry-Run Mode:       {dry_run_str}")
-    
+
     # Enabled strategies
     enabled_strategies = get_enabled_strategies()
     print(f"\n  Enabled Strategies: {len(enabled_strategies)}")
@@ -152,11 +143,12 @@ def check_system_status():
     print("\n" + "-" * 40)
     print("  Plays Directory Status")
     print("-" * 40)
-    
+
     plays_counts = get_plays_count()
-    total_active = plays_counts.get('new', 0) + plays_counts.get('pending-opening', 0) + \
-                   plays_counts.get('open', 0) + plays_counts.get('pending-closing', 0)
-    
+    total_active = (
+        plays_counts.get("new", 0) + plays_counts.get("pending-opening", 0) + plays_counts.get("open", 0) + plays_counts.get("pending-closing", 0)
+    )
+
     print(f"  NEW:             {plays_counts.get('new', 0):>4} plays")
     print(f"  TEMP:            {plays_counts.get('temp', 0):>4} plays")
     print(f"  PENDING-OPENING: {plays_counts.get('pending-opening', 0):>4} plays")
@@ -164,7 +156,7 @@ def check_system_status():
     print(f"  PENDING-CLOSING: {plays_counts.get('pending-closing', 0):>4} plays")
     print(f"  CLOSED:          {plays_counts.get('closed', 0):>4} plays")
     print(f"  EXPIRED:         {plays_counts.get('expired', 0):>4} plays")
-    print(f"  " + "-" * 30)
+    print("  " + "-" * 30)
     print(f"  TOTAL ACTIVE:    {total_active:>4} plays")
 
     # ==========================================
@@ -174,16 +166,16 @@ def check_system_status():
     print("  Alpaca Python SDK Status")
     print("-" * 40)
     print(f"  Current alpaca-py version: {alpaca.__version__}")
-    
+
     # Ask user if they want to update
     print("\n  Would you like to update alpaca-py? (y/n): ", end="")
     try:
         response = input().strip().lower()
-        if response == 'y':
+        if response == "y":
             update_alpaca()
         else:
             print("  Skipping alpaca-py update.")
-    except:
+    except Exception:
         print("  Skipping alpaca-py update.")
 
     # ==========================================
@@ -192,10 +184,10 @@ def check_system_status():
     print("\n" + "-" * 40)
     print("  Trading Account Status")
     print("-" * 40)
-    
+
     try:
         trade_client = get_alpaca_client()
-        
+
         # Check trading account status
         acct = trade_client.get_account()
         print(f"  Account Status:         {acct.status}")
@@ -203,11 +195,11 @@ def check_system_status():
         print(f"  Options Buying Power:   ${float(acct.options_buying_power):,.2f}")
         print(f"  Options Approved Level: {acct.options_approved_level}")
         print(f"  Options Trading Level:  {acct.options_trading_level}")
-        
+
         # Check account configuration
         acct_config = trade_client.get_account_configurations()
         print(f"  Max Options Level:      {acct_config.max_options_trading_level}")
-        
+
     except Exception as e:
         print(f"  Error accessing Alpaca API: {e}")
 
@@ -217,25 +209,25 @@ def check_system_status():
     print("\n" + "=" * 60)
     print("  Finished Checking Status")
     print("=" * 60)
-    
+
     # Show any warnings
     warnings = []
-    if orch_status.get('dry_run', False):
+    if orch_status.get("dry_run", False):
         warnings.append("DRY-RUN MODE IS ACTIVE - No live trades will be executed!")
-    if not orch_status.get('enabled', False):
+    if not orch_status.get("enabled", False):
         warnings.append("Strategy orchestration is DISABLED - system will not run.")
     if total_active == 0:
         warnings.append("No active plays found.")
-    
+
     if warnings:
         print("\n  ⚠️  WARNINGS:")
         for w in warnings:
             print(f"    - {w}")
-    
+
     print("\n  Press Enter to exit...")
     try:
         input()
-    except:
+    except Exception:
         pass
 
 
