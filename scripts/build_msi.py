@@ -12,7 +12,9 @@ Usage:
 Prerequisites:
     1. .NET 6+ SDK          → https://dotnet.microsoft.com/download
     2. WiX v4+ .NET tool    → dotnet tool install --global wix
-    3. WiX UI extension     → wix extension add WixToolset.UI.wixext
+    3. WiX extensions:
+       - wix extension add WixToolset.UI.wixext
+       - wix extension add WixToolset.Util.wixext
     4. Nuitka build done    → uv run python scripts/build_nuitka.py
        (or pass --skip-nuitka if dist/goldflipper.exe already exists)
 """
@@ -43,6 +45,10 @@ PYPROJECT_PATH = PROJECT_ROOT / "pyproject.toml"
 
 BANNER_PATH = PROJECT_ROOT / "installer" / "banner.bmp"
 DIALOG_PATH = PROJECT_ROOT / "installer" / "dialog.bmp"
+REQUIRED_WIX_EXTENSIONS = (
+    "WixToolset.UI.wixext",
+    "WixToolset.Util.wixext",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -243,8 +249,8 @@ def _check_wix(wix_path: str | None) -> bool:
         return False
 
 
-def _check_wix_ui_extension(wix_path: str) -> bool:
-    """Return True if WixToolset.UI.wixext is installed."""
+def _get_missing_wix_extensions(wix_path: str) -> list[str]:
+    """Return required WiX extensions that are not currently installed."""
     try:
         result = subprocess.run(
             [wix_path, "extension", "list"],
@@ -252,9 +258,13 @@ def _check_wix_ui_extension(wix_path: str) -> bool:
             text=True,
             timeout=10,
         )
-        return "WixToolset.UI.wixext" in result.stdout
+        if result.returncode != 0:
+            return list(REQUIRED_WIX_EXTENSIONS)
+
+        output = result.stdout
+        return [extension for extension in REQUIRED_WIX_EXTENSIONS if extension not in output]
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+        return list(REQUIRED_WIX_EXTENSIONS)
 
 
 def _print_prereq_help() -> None:
@@ -270,8 +280,9 @@ def _print_prereq_help() -> None:
     print("  2. Install WiX Toolset v4+ as a .NET global tool:")
     print("     dotnet tool install --global wix")
     print()
-    print("  3. Add the WiX UI extension (install wizard dialogs):")
+    print("  3. Add required WiX extensions:")
     print("     wix extension add WixToolset.UI.wixext")
+    print("     wix extension add WixToolset.Util.wixext")
     print()
     print("  4. Build the Nuitka executable first:")
     print("     uv run python scripts/build_nuitka.py")
@@ -333,11 +344,13 @@ def build_msi(
         _print_prereq_help()
         raise SystemExit(1)
 
-    # Check WiX UI extension (non-fatal warning; build may still work
-    # if user added it at a different scope)
-    if not _check_wix_ui_extension(wix_path):  # type: ignore[arg-type]  # guarded by missing check above
-        print("[WARN] WixToolset.UI.wixext not found in global extension list.")
-        print("[WARN] If the build fails, run: wix extension add WixToolset.UI.wixext")
+    # Check required WiX extensions (non-fatal warning; build may still work
+    # if extensions are available in a different scope)
+    missing_extensions = _get_missing_wix_extensions(wix_path)  # type: ignore[arg-type]  # guarded by missing check above
+    if missing_extensions:
+        for extension in missing_extensions:
+            print(f"[WARN] {extension} not found in global extension list.")
+            print(f"[WARN] If the build fails, run: wix extension add {extension}")
         print()
 
     # ------------------------------------------------------------------
@@ -394,6 +407,8 @@ def build_msi(
         arch,
         "-ext",
         "WixToolset.UI.wixext",
+        "-ext",
+        "WixToolset.Util.wixext",
         "-d",
         f"ProductVersion={version}",
         "-d",
@@ -445,6 +460,7 @@ def build_msi(
         print()
         print("Common fixes:")
         print("  - Install WiX UI extension: wix extension add WixToolset.UI.wixext")
+        print("  - Install WiX Util extension: wix extension add WixToolset.Util.wixext")
         print("  - Ensure .NET 6+ SDK is installed")
         print("  - Verify dist/goldflipper.exe exists")
         raise SystemExit(result.returncode)

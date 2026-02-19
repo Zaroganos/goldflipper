@@ -8,7 +8,8 @@
 -->
 
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
     <!-- ================================================================
          Package Definition
@@ -41,6 +42,21 @@
         <Property Id="ARPHELPLINK" Value="https://github.com/Zaroganos/goldflipper/issues" />
 
         <!--
+            Close a running app instance before replacing files during install/upgrade.
+            This prevents "Error writing to file ... goldflipper.exe" when the old
+            executable is still running from a previous install.
+        -->
+        <util:CloseApplication
+            Id="CloseRunningGoldflipper"
+            Target="goldflipper.exe"
+            Description="Goldflipper is running. Please close it to continue setup."
+            PromptToContinue="yes"
+            CloseMessage="yes"
+            ElevatedCloseMessage="yes"
+            RebootPrompt="no"
+            Timeout="15" />
+
+        <!--
             WixUI_Advanced: shows a "Just me / Everyone" scope selection dialog.
 
             Just me   (per-user):    Installs to %LOCALAPPDATA%\Apps\Goldflipper\
@@ -56,6 +72,26 @@
                                      %LOCALAPPDATA%\Goldflipper\ when installed per-machine.
         -->
         <ui:WixUI Id="WixUI_Advanced" />
+
+        <!--
+            Launch Setup on Exit:
+            Adds a checkbox to the final "Finish" dialog to run the setup wizard.
+            We pass --skip-shortcut-option because the MSI already handles shortcuts.
+        -->
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Goldflipper Setup" />
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+
+        <CustomAction Id="LaunchApplication"
+                      FileKey="GoldflipperExe"
+                      ExeCommand="--setup-only --skip-shortcut-option"
+                      Execute="immediate"
+                      Return="asyncNoWait" />
+
+        <ui:Publish Dialog="ExitDialog"
+                    Control="Finish"
+                    Event="DoAction"
+                    Value="LaunchApplication"
+                    Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
 
         <!-- Folder name used by WixUI_Advanced scope dialog to build install paths -->
         <Property Id="ApplicationFolderName" Value="Goldflipper" />

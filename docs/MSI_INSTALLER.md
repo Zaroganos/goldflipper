@@ -40,12 +40,16 @@ Verify:
 wix --version
 ```
 
-### 3. WiX UI Extension
+### 3. WiX Extensions
 
-Provides the graphical install wizard (Welcome → License → Directory → Install):
+Required extensions:
+
+- `WixToolset.UI.wixext` for install wizard dialogs
+- `WixToolset.Util.wixext` for closing running app processes during upgrades
 
 ```powershell
 wix extension add WixToolset.UI.wixext
+wix extension add WixToolset.Util.wixext
 ```
 
 ### 4. Nuitka Build
@@ -87,6 +91,7 @@ Output: `dist/goldflipper-X.Y.Z-x64.msi`
 ```powershell
 wix build -arch x64 `
     -ext WixToolset.UI.wixext `
+    -ext WixToolset.Util.wixext `
     -d ProductVersion=0.2.5 `
     -d ProjectDir=. `
     -d DistDir=dist `
@@ -151,9 +156,11 @@ the application itself, not the MSI installer.
 ## Versioning & Upgrades
 
 - The MSI version is derived from `pyproject.toml` (pre-release suffixes stripped)
-- The `UpgradeCode` GUID is fixed across all versions — this enables seamless
+- The `UpgradeCode` GUID is fixed across all versions - this enables seamless
   major upgrades where a new version automatically replaces the old one
 - Downgrade attempts are blocked with an error message
+- During install/upgrade, MSI attempts to close a running `goldflipper.exe`
+  instance before replacing files
 
 ## Customisation
 

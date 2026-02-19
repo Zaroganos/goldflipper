@@ -19,11 +19,12 @@ from goldflipper.utils.exe_utils import (
 
 
 class FirstRunSetup:
-    def __init__(self):
+    def __init__(self, skip_shortcut_option: bool = False):
         # Import TkinterDnD2 for drag and drop support (optional)
         # In Nuitka onefile builds, the native tkdnd library may fail to load
         self.dnd_available = False
         self.DND_FILES = None
+        self.skip_shortcut_option = skip_shortcut_option
 
         try:
             from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -134,10 +135,14 @@ class FirstRunSetup:
             if not isinstance(widget, tk.Label) or widget.cget("text") != "Goldflipper Setup Wizard":
                 widget.destroy()
 
-        # Shortcut creation checkbox
-        self.create_shortcut_var = tk.BooleanVar(value=True)
-        shortcut_check = tk.Checkbutton(self.main_frame, text="Create Desktop shortcut", variable=self.create_shortcut_var)
-        shortcut_check.pack(pady=5)
+        # Shortcut creation checkbox (hidden if requested, e.g. during MSI install)
+        self.create_shortcut_var = tk.BooleanVar(value=not self.skip_shortcut_option)
+        if not self.skip_shortcut_option:
+            shortcut_check = tk.Checkbutton(self.main_frame, text="Create Desktop shortcut", variable=self.create_shortcut_var)
+            shortcut_check.pack(pady=5)
+        else:
+            # If skipping option, we definitely don't want to create it here either
+            self.create_shortcut_var.set(False)
 
         # Data directory frame (only show in frozen/exe mode)
         if is_frozen():

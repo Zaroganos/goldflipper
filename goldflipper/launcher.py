@@ -80,11 +80,15 @@ def _settings_path() -> Path:
 
 
 def _get_setup_marker_path() -> Path:
-    """Get path to the setup completion marker file."""
-    return get_executable_dir() / ".setup_complete"
+    """Get path to the setup completion marker file.
+    
+    We store this in the config directory because the executable directory
+    might be read-only (e.g. Program Files).
+    """
+    return get_config_dir() / ".setup_complete"
 
 
-def _run_first_run_setup(force: bool) -> bool:
+def _run_first_run_setup(force: bool, skip_shortcut_option: bool = False) -> bool:
     """
     Launch the first-run wizard when required.
 
@@ -103,6 +107,7 @@ def _run_first_run_setup(force: bool) -> bool:
     print(f"[Launcher] Settings file: {settings_file} (exists: {existed_before})")
     print(f"[Launcher] Setup marker: {marker_file} (exists: {setup_done_before})")
     print(f"[Launcher] force: {force}")
+    print(f"[Launcher] skip_shortcut_option: {skip_shortcut_option}")
 
     # Show wizard if: forced OR setup hasn't been completed yet
     if not force and setup_done_before:
@@ -119,13 +124,14 @@ def _run_first_run_setup(force: bool) -> bool:
         return False
 
     LOGGER.info(
-        "Launching first-run setup (force=%s, setup_done_before=%s, settings_existed=%s)",
+        "Launching first-run setup (force=%s, skip_shortcut=%s, setup_done_before=%s, settings_existed=%s)",
         force,
+        skip_shortcut_option,
         setup_done_before,
         existed_before,
     )
     try:
-        FirstRunSetup().run()
+        FirstRunSetup(skip_shortcut_option=skip_shortcut_option).run()
         # Mark setup as complete so wizard doesn't show on every launch
         marker_file.touch()
         print(f"[Launcher] Setup complete - marker created at {marker_file}")
@@ -300,6 +306,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Run the configuration wizard and exit without launching the TUI.",
     )
+    parser.add_argument(
+        "--skip-shortcut-option",
+        action="store_true",
+        help="Hide the shortcut creation option in the setup wizard (used by MSI).",
+    )
     # Exe-mode special arguments
     parser.add_argument(
         "--trading-mode",
@@ -377,7 +388,10 @@ def main(argv: list[str] | None = None) -> int:
     # Normal TUI launch flow
     settings_created = False
     if not args.skip_setup:
-        settings_created = _run_first_run_setup(force=args.force_setup)
+        settings_created = _run_first_run_setup(
+            force=args.force_setup,
+            skip_shortcut_option=args.skip_shortcut_option
+        )
 
     config_module = importlib.import_module("goldflipper.config.config")
     if settings_created:

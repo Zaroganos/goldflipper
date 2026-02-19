@@ -117,6 +117,7 @@ def _read_version() -> str:
 ### WiX Toolset Integration
 - Uses **WiX v4+** (modern .NET-based toolset)
 - **WixToolset.UI.wixext** extension for installer dialogs
+- **WixToolset.Util.wixext** extension for process handling (close running app on upgrade)
 - **Preprocessor Variables** for dynamic content:
   - `ProductVersion` - From pyproject.toml
   - `ProjectDir` - Root directory
@@ -194,6 +195,7 @@ uv run python scripts/build_msi.py --arch x64 --skip-nuitka --output custom.msi
 - **Downgrade Protection**: Error message when attempting downgrade
 - **Minor Updates**: Handled through major upgrade mechanism
 - **Patch Updates**: Supported through version increment
+- **Running Process Handling**: Installer prompts to close `goldflipper.exe` before replacing files
 
 ## Distribution Considerations
 
@@ -225,7 +227,10 @@ uv run python scripts/build_msi.py --arch x64 --skip-nuitka --output custom.msi
 
 ### Troubleshooting Common Issues
 1. **WiX Not Found** - Check .NET tools PATH
-2. **UI Extension Missing** - Run `wix extension add`
+2. **WiX Extension Missing** - Run:
+   `wix extension add WixToolset.UI.wixext`
+   and
+   `wix extension add WixToolset.Util.wixext`
 3. **Version Format Error** - Check pyproject.toml version
 4. **Missing Executable** - Run Nuitka build first
 5. **XML Parse Errors** - Check for illegal comment sequences
