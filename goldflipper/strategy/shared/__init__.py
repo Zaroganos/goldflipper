@@ -39,6 +39,13 @@ Note:
     that call these shared modules.
 """
 
+# Market Conditions exports
+from goldflipper.strategy.shared.market_conditions import (
+    evaluate_greek_conditions,
+    evaluate_volume_profile_condition,
+    evaluate_vwap_condition,
+)
+
 # Play Manager exports
 # Evaluation exports
 from goldflipper.strategy.shared.evaluation import (
@@ -84,6 +91,10 @@ from goldflipper.strategy.shared.play_manager import (
 )
 
 __all__ = [
+    # Market Conditions
+    "evaluate_vwap_condition",
+    "evaluate_volume_profile_condition",
+    "evaluate_greek_conditions",
     # Play Manager
     "PlayManager",
     "PlayStatus",

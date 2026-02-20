@@ -24,6 +24,7 @@ import sys
 import tkinter as tk
 from datetime import datetime, timedelta
 from enum import Enum
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
@@ -347,18 +348,33 @@ class PlayCreatorGUI:
         # Other Options Panel
         self._create_other_options_panel(middle_frame)
 
-        # Right column - Play Preview + Advanced Settings
+        # Right column - Play Preview + Plays Queue
         right_frame = ttk.Frame(self.main_frame)
         right_frame.grid(row=1, column=2, sticky="nsew", padx=5, pady=5)
         right_frame.columnconfigure(0, weight=1)
-        right_frame.rowconfigure(0, weight=1)  # Preview takes most height
-        right_frame.rowconfigure(1, weight=0)  # Advanced settings fixed height
+        right_frame.rowconfigure(0, weight=1)
 
-        # Validation & Preview Panel
-        self._create_preview_panel(right_frame)
+        # PanedWindow: preview (top) / plays queue (bottom) — user-resizable sash
+        self._right_paned = ttk.PanedWindow(right_frame, orient=tk.VERTICAL)
+        self._right_paned.grid(row=0, column=0, sticky="nsew")
 
-        # Advanced Settings Panel (below preview, for momentum strategy)
-        self._create_advanced_settings_panel(right_frame)
+        # Upper pane: Validation & Preview + Advanced Settings
+        upper_right = ttk.Frame(self._right_paned)
+        upper_right.columnconfigure(0, weight=1)
+        upper_right.rowconfigure(0, weight=1)  # Preview takes most height
+        upper_right.rowconfigure(1, weight=0)  # Advanced settings fixed height
+        self._right_paned.add(upper_right, weight=3)
+
+        self._create_preview_panel(upper_right)
+        self._create_advanced_settings_panel(upper_right)
+
+        # Lower pane: Plays Queue (TEMP / NEW / PENDING-OPENING)
+        lower_right = ttk.Frame(self._right_paned)
+        lower_right.columnconfigure(0, weight=1)
+        lower_right.rowconfigure(0, weight=1)
+        self._right_paned.add(lower_right, weight=1)
+
+        self._create_plays_list_panel(lower_right)
 
     def _create_header(self):
         """Create the header with title and option contract preview."""
@@ -1371,6 +1387,82 @@ class PlayCreatorGUI:
         # Initially hide (only show for momentum strategy)
         self.advanced_settings_frame.grid_remove()
 
+    def _create_plays_list_panel(self, parent):
+        """Create the plays queue panel (TEMP / NEW / PENDING-OPENING) in the lower right pane."""
+        frame = ttk.LabelFrame(parent, text="Plays Queue", padding="5")
+        frame.grid(row=0, column=0, sticky="nsew", pady=(0, 5))
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        tree_frame = ttk.Frame(frame)
+        tree_frame.grid(row=0, column=0, columnspan=2, sticky="nsew")
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
+        self.plays_tree = ttk.Treeview(
+            tree_frame,
+            columns=("symbol", "exp"),
+            show="tree headings",
+            height=6,
+        )
+        self.plays_tree.heading("#0", text="Play File")
+        self.plays_tree.heading("symbol", text="Sym")
+        self.plays_tree.heading("exp", text="Exp")
+        self.plays_tree.column("#0", width=150, stretch=True, minwidth=80)
+        self.plays_tree.column("symbol", width=50, stretch=False, minwidth=40)
+        self.plays_tree.column("exp", width=65, stretch=False, minwidth=55)
+
+        plays_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.plays_tree.yview)
+        self.plays_tree.configure(yscrollcommand=plays_scroll.set)
+        self.plays_tree.grid(row=0, column=0, sticky="nsew")
+        plays_scroll.grid(row=0, column=1, sticky="ns")
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=1, column=0, sticky="ew", pady=(3, 0))
+        ttk.Button(btn_frame, text="Refresh", command=self._refresh_plays_list).pack(side=tk.RIGHT)
+
+        self._refresh_plays_list()
+
+    def _refresh_plays_list(self):
+        """Refresh the plays queue treeview from TEMP, NEW, and PENDING-OPENING folders."""
+        if not hasattr(self, "plays_tree"):
+            return
+
+        for item in self.plays_tree.get_children():
+            self.plays_tree.delete(item)
+
+        self.plays_tree.tag_configure("folder", font=("Helvetica", 9, "bold"))
+
+        folders = [
+            ("TEMP", get_play_subdir("temp")),
+            ("NEW", get_play_subdir("new")),
+            ("PENDING-OPENING", get_play_subdir("pending-opening")),
+        ]
+
+        for folder_name, folder_path in folders:
+            folder_node = self.plays_tree.insert("", tk.END, text=folder_name, open=True, tags=("folder",))
+            try:
+                json_files = sorted(Path(folder_path).glob("*.json"))
+                if not json_files:
+                    self.plays_tree.insert(folder_node, tk.END, text="(empty)", values=("", ""))
+                    continue
+                for play_file in json_files:
+                    symbol = "--"
+                    exp = "--"
+                    try:
+                        with open(play_file, encoding="utf-8") as f:
+                            data = json.load(f)
+                        symbol = data.get("symbol", data.get("ticker", "--"))
+                        raw_exp = data.get("expiration_date", data.get("expiration", "--"))
+                        # Shorten to MM/DD for compactness
+                        if raw_exp and raw_exp != "--" and len(raw_exp) >= 5:
+                            exp = raw_exp[:5]
+                    except Exception:
+                        pass
+                    self.plays_tree.insert(folder_node, tk.END, text=play_file.stem[:24], values=(symbol, exp))
+            except Exception:
+                self.plays_tree.insert(folder_node, tk.END, text="(error reading folder)", values=("", ""))
+
     def _create_risk_summary_panel(self, parent):
         """Create the risk summary panel (below option chain)."""
         frame = ttk.LabelFrame(parent, text="Risk Summary", padding="10")
@@ -2356,12 +2448,42 @@ class PlayCreatorGUI:
         else:
             self._gtd_frame.grid_remove()
 
+    def _toggle_more_gtd_methods(self):
+        """Show/hide the expanded GTD methods section (below Theta Clip/Crush)."""
+        if self._gtd_more_frame.winfo_ismapped():
+            self._gtd_more_frame.pack_forget()
+            self._gtd_more_btn.config(text="▼  More GTD Methods")
+        else:
+            self._gtd_more_frame.pack(fill=tk.X, pady=(2, 0))
+            self._gtd_more_btn.config(text="▲  Fewer GTD Methods")
+
     def _build_gtd_methods_panel(self, parent):
-        """Build the collapsible panel with GTD method checkboxes and params."""
-        methods = [
+        """Build the collapsible panel with GTD method checkboxes and params.
+
+        Theta Clip / Theta Crush is shown first as the primary method.
+        All other methods are under a toggleable 'More GTD Methods' section.
+        """
+        # === PRIMARY METHOD: Theta Clip / Theta Crush ===
+        primary_frame = ttk.LabelFrame(parent, text="Primary Method", padding=4)
+        primary_frame.pack(fill=tk.X, pady=(0, 4))
+
+        theta_row = ttk.Frame(primary_frame)
+        theta_row.pack(fill=tk.X)
+        ttk.Checkbutton(theta_row, text="Theta Clip / Theta Crush", variable=self.gtd_theta_threshold_enabled).pack(side=tk.LEFT)
+        ttk.Label(theta_row, text="  Max theta %:", foreground="gray", font=("Helvetica", 8)).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Spinbox(theta_row, textvariable=self.gtd_theta_max_pct, from_=0.1, to=50.0, width=6, increment=0.5).pack(side=tk.LEFT, padx=2)
+
+        # === MORE METHODS TOGGLE ===
+        self._gtd_more_btn = ttk.Button(parent, text="▼  More GTD Methods", command=self._toggle_more_gtd_methods)
+        self._gtd_more_btn.pack(fill=tk.X, pady=(2, 0))
+
+        # === OTHER METHODS (hidden by default) ===
+        self._gtd_more_frame = ttk.Frame(parent)
+        # Not packed yet — shown/hidden by _toggle_more_gtd_methods
+
+        other_methods = [
             ("Max Hold Days", self.gtd_max_hold_days_enabled, [("Max days:", self.gtd_max_hold_days, 1, 365)]),
             ("DTE-Based Close", self.gtd_dte_close_enabled, [("Close at DTE:", self.gtd_dte_close_at, 0, 90)]),
-            ("Theta Decay Threshold", self.gtd_theta_threshold_enabled, [("Max theta %:", self.gtd_theta_max_pct, 0.1, 50.0)]),
             ("P/L Time Stop", self.gtd_pl_time_stop_enabled, [("Max days to TP:", self.gtd_pl_time_stop_days, 1, 90)]),
             (
                 "Profit Extension",
@@ -2380,8 +2502,8 @@ class PlayCreatorGUI:
             ("Half-Life", self.gtd_half_life_enabled, [("Fraction:", self.gtd_half_life_fraction, 0.1, 0.9)]),
         ]
 
-        for _idx, (label, enabled_var, params) in enumerate(methods):
-            method_frame = ttk.Frame(parent)
+        for _idx, (label, enabled_var, params) in enumerate(other_methods):
+            method_frame = ttk.Frame(self._gtd_more_frame)
             method_frame.pack(fill=tk.X, pady=1)
 
             ttk.Checkbutton(method_frame, text=label, variable=enabled_var).pack(side=tk.LEFT)

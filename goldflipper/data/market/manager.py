@@ -4,6 +4,10 @@ from typing import Any
 
 import yaml
 
+from goldflipper.data.indicators.vwap import VWAPCalculator
+from goldflipper.data.indicators.base import MarketData
+from goldflipper.data.indicators.volume_profile import VolumeProfileCalculator, VolumeProfileResult
+
 from goldflipper.utils.display import TerminalDisplay as display
 from goldflipper.utils.exe_utils import get_settings_path
 
@@ -137,7 +141,11 @@ class MarketDataManager:
                     "mid": mid,
                     "premium": last,  # Keep for backward compatibility, but will be replaced
                     "delta": float(row.get("delta", 0.0) or 0.0),
+                    "gamma": float(row.get("gamma", 0.0) or 0.0),
                     "theta": float(row.get("theta", 0.0) or 0.0),
+                    "vega": float(row.get("vega", 0.0) or 0.0),
+                    "rho": float(row.get("rho", 0.0) or 0.0),
+                    "implied_volatility": float(row.get("implied_volatility", 0.0) or row.get("iv", 0.0) or 0.0),
                     "volume": float(row.get("volume", 0.0) or 0.0),
                     "open_interest": float(row.get("open_interest", 0.0) or 0.0),
                 }
@@ -197,6 +205,152 @@ class MarketDataManager:
             return next_date
         except Exception as e:
             self.logger.error(f"Error getting next earnings date for {symbol}: {str(e)}")
+            return None
+
+    def get_bars(
+        self,
+        symbol: str,
+        interval: str = "4h",
+        lookback_days: int = 10,
+    ) -> "Any | None":
+        """
+        Fetch OHLCV bars for *symbol* at the given *interval*.
+
+        Results are cached per cycle using a key that includes symbol,
+        interval, and lookback window so different callers requesting
+        different resolutions each get their own cached copy.
+
+        Args:
+            symbol: Stock ticker (e.g. 'AAPL').
+            interval: Bar interval string understood by all providers
+                (e.g. '1m', '5m', '15m', '1h', '4h', '1d').
+            lookback_days: How many calendar days of history to request.
+
+        Returns:
+            pandas DataFrame with OHLCV columns, or None on failure.
+        """
+        try:
+            cache_key = f"bars:{symbol}:{interval}:{lookback_days}d"
+            if cached := self.cache.get(cache_key):
+                return cached
+
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=lookback_days)
+
+            self.logger.info(f"Fetching {interval} bars for {symbol} ({lookback_days}d)")
+            bars = self._try_providers("get_historical_data", symbol, start_date, end_date, interval)
+
+            if bars is not None and not bars.empty:
+                self.cache.set(cache_key, bars)
+                return bars
+
+            self.logger.warning(f"No {interval} bar data returned for {symbol}")
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error fetching bars for {symbol}: {e}")
+            return None
+
+    def get_vwap(
+        self,
+        symbol: str,
+        interval: str = "4h",
+        lookback_days: int = 5,
+        num_bands: int = 2,
+    ) -> "dict[str, Any] | None":
+        """
+        Compute VWAP and standard deviation bands for *symbol*.
+
+        Fetches OHLCV bars via get_bars() then runs VWAPCalculator.
+
+        Args:
+            symbol: Stock ticker.
+            interval: Bar interval (default '4h').
+            lookback_days: Bars window (default 5 days).
+            num_bands: Number of std-dev bands on each side (default 2).
+
+        Returns:
+            Dict with keys: vwap (float), std_dev (float),
+            upper_1/lower_1 … upper_N/lower_N (float), or None on failure.
+        """
+        try:
+            bars = self.get_bars(symbol, interval, lookback_days)
+            if bars is None or bars.empty:
+                return None
+
+            # Normalise column names
+            bars.columns = [str(c).lower() for c in bars.columns]
+            required = {"high", "low", "close", "volume"}
+            if not required.issubset(bars.columns):
+                self.logger.warning(f"get_vwap: bar data missing columns for {symbol}")
+                return None
+
+            md = MarketData(
+                high=bars["high"],
+                low=bars["low"],
+                close=bars["close"],
+                volume=bars["volume"],
+            )
+            calc = VWAPCalculator(md, num_bands=num_bands)
+            series = calc.calculate()
+
+            # Return current (last) scalar values
+            result: dict[str, Any] = {}
+            for key, ser in series.items():
+                last = ser.iloc[-1]
+                result[key] = None if hasattr(last, "__float__") and last != last else float(last)
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Error computing VWAP for {symbol}: {e}")
+            return None
+
+    def get_volume_profile(
+        self,
+        symbol: str,
+        interval: str = "4h",
+        lookback_days: int = 10,
+        n_bins: int = 24,
+        value_area_pct: float = 0.70,
+    ) -> "VolumeProfileResult | None":
+        """
+        Compute a Volume Profile for *symbol*.
+
+        Fetches OHLCV bars via get_bars() then runs VolumeProfileCalculator.
+
+        Args:
+            symbol: Stock ticker.
+            interval: Bar interval (default '4h').
+            lookback_days: Bars window (default 10 days).
+            n_bins: Number of price bins (default 24).
+            value_area_pct: Value area fraction (default 0.70 = 70 %).
+
+        Returns:
+            VolumeProfileResult with poc, vah, val, bins DataFrame, or None.
+        """
+        try:
+            bars = self.get_bars(symbol, interval, lookback_days)
+            if bars is None or bars.empty:
+                return None
+
+            bars.columns = [str(c).lower() for c in bars.columns]
+            required = {"high", "low", "close", "volume"}
+            if not required.issubset(bars.columns):
+                self.logger.warning(f"get_volume_profile: bar data missing columns for {symbol}")
+                return None
+
+            md = MarketData(
+                high=bars["high"],
+                low=bars["low"],
+                close=bars["close"],
+                volume=bars["volume"],
+            )
+            calc = VolumeProfileCalculator(md, n_bins=n_bins, value_area_pct=value_area_pct)
+            return calc.get_profile()
+
+        except Exception as e:
+            self.logger.error(f"Error computing volume profile for {symbol}: {e}")
             return None
 
     def start_new_cycle(self):

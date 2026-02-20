@@ -382,6 +382,108 @@ executor = OrderExecutor(
 
 ---
 
+## Market Condition Screening
+
+Strategies that auto-scan for entries can gate plays through VWAP, Volume Profile, and
+Greeks-based conditions. These evaluators live in `strategy/shared/market_conditions.py`
+and are exported from `strategy/shared`.
+
+### Available Evaluators
+
+| Evaluator | Guards Against |
+|-----------|---------------|
+| `evaluate_vwap_condition` | Entering calls below VWAP / puts above VWAP; price too far from VWAP |
+| `evaluate_volume_profile_condition` | Entering outside value area; calls below POC / puts above POC |
+| `evaluate_greek_conditions` | Low/high delta; gamma squeeze; gamma fade; delta fade; parabolic extension |
+
+### Usage Pattern in `evaluate_new_plays()`
+
+```python
+from goldflipper.strategy.shared import (
+    evaluate_vwap_condition,
+    evaluate_volume_profile_condition,
+    evaluate_greek_conditions,
+)
+
+def evaluate_new_plays(self, plays):
+    plays_to_open = []
+    for play in plays:
+        symbol = play.get('symbol', '')
+        playbook = self.get_playbook_for_play(play)
+        cfg = playbook.option_swings_config  # or momentum_config, etc.
+
+        # VWAP screen
+        vwap_result = evaluate_vwap_condition(
+            self.market_data, symbol, play, cfg.vwap.to_dict()
+        )
+        if not vwap_result['passed']:
+            self.logger.info(f"VWAP screen failed for {symbol}: {vwap_result['reason']}")
+            continue
+
+        # Volume Profile screen
+        vp_result = evaluate_volume_profile_condition(
+            self.market_data, symbol, play, cfg.volume_profile.to_dict()
+        )
+        if not vp_result['passed']:
+            self.logger.info(f"VP screen failed for {symbol}: {vp_result['reason']}")
+            continue
+
+        # Greeks screen
+        greek_result = evaluate_greek_conditions(
+            self.market_data, symbol, play, cfg.greek_conditions.to_dict()
+        )
+        if not greek_result['passed']:
+            self.logger.info(f"Greek screen failed: {greek_result['flags']}")
+            continue
+
+        plays_to_open.append(play)
+    return plays_to_open
+```
+
+### Behaviour Guarantees
+
+- All evaluators return `passed=True` when data is unavailable (permissive by default),
+  so a data gap never silently blocks all trades.
+- Each evaluator respects an `enabled` flag — if `False`, returns `passed=True` immediately
+  without making any market data calls.
+- Results include rich context (`vwap`, `poc`, `delta`, `flags`, etc.) for logging.
+
+### Playbook Config Dataclasses
+
+`VWAPConfig`, `VolumeProfileConfig`, and `GreekConditionsConfig` in
+`strategy/playbooks/schema.py` are nested fields on `OptionSwingsConfig` and `MomentumConfig`.
+They default to `enabled: false` so existing playbooks are unaffected until you opt in.
+
+Configure them in your playbook YAML:
+
+```yaml
+option_swings_config:
+  vwap:
+    enabled: true
+    require_price_above_vwap: true   # CALL entries only
+    require_price_below_vwap: true   # PUT entries only
+    proximity_pct: 3.0               # Must be within ±3% of VWAP
+
+  volume_profile:
+    enabled: true
+    call_requires_above_poc: true
+    put_requires_below_poc: true
+
+  greek_conditions:
+    enabled: true
+    min_delta: 0.30
+    max_delta: 0.50
+    check_gamma_squeeze: true
+    gamma_squeeze_blocks_entry: false  # Log only, don't block
+    check_parabolic: true
+    parabolic_blocks_entry: true
+```
+
+See `strategy/playbooks/option_swings/pb_v3.yaml` and
+`strategy/playbooks/momentum/goldflipper_gap_move.yaml` for full annotated examples.
+
+---
+
 ## Playbook Support
 
 Strategies can use playbooks for configurable parameters:
