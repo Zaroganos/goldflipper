@@ -67,6 +67,9 @@ jobs:
                 enabled: false
               marketdataapp:
                 enabled: false
+            cache:
+              enabled: true
+              max_items: 1000
           
           logging:
             level: "ERROR"
