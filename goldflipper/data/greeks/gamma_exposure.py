@@ -172,7 +172,7 @@ class GammaExposureAnalyzer:
     def is_gamma_fade(
         self,
         atm_vs_avg_threshold: float = 0.5,
-        prev_analyzer: "GammaExposureAnalyzer | None" = None,
+        prev_analyzer: GammaExposureAnalyzer | None = None,
         historical_drop_threshold: float = 0.7,
     ) -> bool:
         """

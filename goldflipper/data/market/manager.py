@@ -4,10 +4,9 @@ from typing import Any
 
 import yaml
 
-from goldflipper.data.indicators.vwap import VWAPCalculator
 from goldflipper.data.indicators.base import MarketData
 from goldflipper.data.indicators.volume_profile import VolumeProfileCalculator, VolumeProfileResult
-
+from goldflipper.data.indicators.vwap import VWAPCalculator
 from goldflipper.utils.display import TerminalDisplay as display
 from goldflipper.utils.exe_utils import get_settings_path
 

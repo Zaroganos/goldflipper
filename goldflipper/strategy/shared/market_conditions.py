@@ -369,9 +369,9 @@ def evaluate_greek_conditions(
                 if bars is not None and not bars.empty:
                     bars.columns = [str(c).lower() for c in bars.columns]
                     if {"high", "low", "close", "volume"}.issubset(bars.columns):
+                        from goldflipper.data.greeks.gamma_exposure import detect_parabolic_move
                         from goldflipper.data.indicators.base import MarketData
                         from goldflipper.data.indicators.vwap import VWAPCalculator
-                        from goldflipper.data.greeks.gamma_exposure import detect_parabolic_move
 
                         md = MarketData(high=bars["high"], low=bars["low"], close=bars["close"], volume=bars["volume"])
                         calc = VWAPCalculator(md)
@@ -406,14 +406,17 @@ def evaluate_greek_conditions(
                     chain = market_data._try_providers("get_option_chain", symbol, expiration)
                     if chain:
                         import pandas as pd
+
                         from goldflipper.data.greeks.gamma_exposure import GammaExposureAnalyzer
 
                         calls = chain.get("calls", pd.DataFrame())
                         puts = chain.get("puts", pd.DataFrame())
                         if not calls.empty:
-                            calls = calls.copy(); calls["type"] = "call"
+                            calls = calls.copy()
+                            calls["type"] = "call"
                         if not puts.empty:
-                            puts = puts.copy(); puts["type"] = "put"
+                            puts = puts.copy()
+                            puts["type"] = "put"
                         chain_df = pd.concat([c for c in [calls, puts] if not c.empty], ignore_index=True)
 
                         if not chain_df.empty:
