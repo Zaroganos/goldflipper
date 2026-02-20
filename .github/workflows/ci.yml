@@ -55,6 +55,16 @@ jobs:
               enabled: false
             play_types: ["SIMPLE"]
           
+          momentum:
+            enabled: true
+            scan_interval: 60
+            indicators:
+              ttm_squeeze: true
+              ema_cross: true
+            entry_signals:
+              - squeeze_fire
+              - ema_crossover
+          
           market_data_providers:
             primary_provider: "yfinance"
             providers:
