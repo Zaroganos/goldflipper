@@ -71,27 +71,28 @@
                                      TODO: update exe_utils.py to redirect user data to
                                      %LOCALAPPDATA%\Goldflipper\ when installed per-machine.
         -->
-        <ui:WixUI Id="WixUI_Advanced" />
+        <UI>
+            <ui:WixUI Id="WixUI_Advanced" />
+            <Publish Dialog="ExitDialog"
+                     Control="Finish"
+                     Event="DoAction"
+                     Value="LaunchApplication"
+                     Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+        </UI>
 
         <!--
             Launch Setup on Exit:
             Adds a checkbox to the final "Finish" dialog to run the setup wizard.
-            We pass --skip-shortcut-option because the MSI already handles shortcuts.
+            We pass skip-shortcut-option because the MSI already handles shortcuts.
         -->
         <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Goldflipper Setup" />
         <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
 
         <CustomAction Id="LaunchApplication"
-                      FileKey="GoldflipperExe"
+                      FileRef="GoldflipperExe"
                       ExeCommand="--setup-only --skip-shortcut-option"
                       Execute="immediate"
                       Return="asyncNoWait" />
-
-        <ui:Publish Dialog="ExitDialog"
-                    Control="Finish"
-                    Event="DoAction"
-                    Value="LaunchApplication"
-                    Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
 
         <!-- Folder name used by WixUI_Advanced scope dialog to build install paths -->
         <Property Id="ApplicationFolderName" Value="Goldflipper" />
