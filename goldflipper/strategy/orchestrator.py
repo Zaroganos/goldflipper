@@ -110,6 +110,9 @@ class StrategyOrchestrator:
         self._enabled = False
         self._dry_run = False
 
+        # Capital manager (created in _initialize_resources, injected into strategies)
+        self._capital_manager: Any | None = None
+
         # Cycle tracking
         self._cycle_count = 0
         self._last_cycle_time: datetime | None = None
@@ -236,6 +239,12 @@ class StrategyOrchestrator:
             self._client = get_alpaca_client()
             self.logger.debug("Created Alpaca client instance")
 
+        # Create capital manager
+        from goldflipper.strategy.capital import CapitalManager
+
+        self._capital_manager = CapitalManager(self._client, self.config)
+        self.logger.debug("Created CapitalManager instance")
+
     def _load_strategies(self) -> None:
         """Discover and instantiate enabled strategies."""
         # Discover all registered strategies
@@ -250,6 +259,7 @@ class StrategyOrchestrator:
             try:
                 # Instantiate strategy with shared resources
                 strategy = strategy_class(config=self.config, market_data=self._market_data, brokerage_client=self._client)
+                strategy.capital_manager = self._capital_manager  # inject
 
                 if strategy.is_enabled():
                     self.strategies.append(strategy)
@@ -295,6 +305,10 @@ class StrategyOrchestrator:
             # Start new cache cycle for market data
             if self._market_data is not None:
                 self._market_data.start_new_cycle()
+
+            # Refresh capital manager account snapshot (once per cycle)
+            if self._capital_manager is not None:
+                self._capital_manager.refresh()
 
             # Notify strategies of cycle start
             for strategy in self.strategies:
@@ -547,6 +561,21 @@ class StrategyOrchestrator:
                     option_symbol = play.get("option_symbol", "")
                     contracts = play.get("contracts", 1)
                     entry_price = play.get("entry_point", {}).get("target_price", "N/A")
+
+                    # Capital gate — fires before dry-run check so both paths benefit
+                    if self._capital_manager is not None:
+                        from goldflipper.strategy.playbooks import load_playbook_for_play
+
+                        playbook = load_playbook_for_play(play)
+                        risk_config = playbook.risk if playbook else None
+                        allowed, reason = self._capital_manager.check_trade(play, risk_config)
+                        if self._dry_run:
+                            gate_status = "PASS" if allowed else "BLOCK"
+                            self.logger.info(f"[{name}] [DRY-RUN] Capital gate: {gate_status} for {symbol} ({reason})")
+                        if not allowed:
+                            if not self._dry_run:
+                                self.logger.warning(f"[{name}] Capital gate BLOCKED {symbol}: {reason}")
+                            continue
 
                     # Dry-run mode: log but don't execute
                     if self._dry_run:

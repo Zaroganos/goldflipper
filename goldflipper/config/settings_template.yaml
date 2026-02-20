@@ -124,6 +124,18 @@ strategy_orchestration:
   # Useful for testing when market is closed or validating configurations
 
 # ==========================================================================
+# Capital Management
+# ==========================================================================
+# Controls position sizing and capital allocation across all strategies.
+# RiskConfig in each playbook can tighten these limits on a per-playbook basis.
+capital_management:
+  enabled: true                          # Master switch; false = no capital checks performed
+  max_total_open_positions: 10           # Max simultaneous open positions across all strategies (null = unlimited)
+  max_capital_deployed_pct: 80.0         # Max % of account equity deployed at once (null = unlimited)
+  per_symbol_max_open_positions: 2       # Default max open positions per ticker symbol
+  buying_power_reserve_pct: 5.0          # Keep this % of buying power as a buffer
+
+# ==========================================================================
 # Individual Strategy Configurations
 # ==========================================================================
 

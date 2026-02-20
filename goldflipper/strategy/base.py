@@ -257,6 +257,7 @@ class BaseStrategy(ABC):
         self.logger = logging.getLogger(f"goldflipper.strategy.{self.get_name()}")
         self._enabled: bool | None = None
         self._last_cycle_time: datetime | None = None
+        self.capital_manager: Any | None = None  # Injected by orchestrator after init
 
     # =========================================================================
     # Abstract Methods - MUST be implemented by subclasses

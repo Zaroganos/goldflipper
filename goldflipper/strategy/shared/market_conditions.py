@@ -211,15 +211,17 @@ def evaluate_volume_profile_condition(
         above_poc = vp.price_above_poc(price)
         pct_from_poc = vp.pct_from_poc(price)
 
-        result.update({
-            "poc": round(vp.poc, 4),
-            "vah": round(vp.vah, 4),
-            "val": round(vp.val, 4),
-            "price": round(price, 4),
-            "in_value_area": in_va,
-            "above_poc": above_poc,
-            "pct_from_poc": round(pct_from_poc, 2),
-        })
+        result.update(
+            {
+                "poc": round(vp.poc, 4),
+                "vah": round(vp.vah, 4),
+                "val": round(vp.val, 4),
+                "price": round(price, 4),
+                "in_value_area": in_va,
+                "above_poc": above_poc,
+                "pct_from_poc": round(pct_from_poc, 2),
+            }
+        )
 
         trade_type = play.get("trade_type", "").upper()
 
@@ -350,6 +352,7 @@ def evaluate_greek_conditions(
                 entry_delta = play.get("logging", {}).get("delta_atOpen")
                 if entry_delta and float(entry_delta) != 0:
                     from goldflipper.data.greeks.gamma_exposure import detect_delta_fade
+
                     threshold = float(config.get("delta_fade_threshold", 0.15))
                     fade = detect_delta_fade(float(result["delta"]), float(entry_delta), threshold)
                     result["delta_fade_detected"] = fade
@@ -428,9 +431,7 @@ def evaluate_greek_conditions(
                                     squeeze = analyzer.is_gamma_squeeze()
                                     result["gamma_squeeze_detected"] = squeeze
                                     if squeeze:
-                                        result["flags"].append(
-                                            f"gamma_squeeze (near_gex={analyzer.near_spot_gex():.0f})"
-                                        )
+                                        result["flags"].append(f"gamma_squeeze (near_gex={analyzer.near_spot_gex():.0f})")
                                         if config.get("gamma_squeeze_blocks_entry", False):
                                             result["passed"] = False
 
@@ -438,10 +439,7 @@ def evaluate_greek_conditions(
                                     fade = analyzer.is_gamma_fade()
                                     result["gamma_fade_detected"] = fade
                                     if fade:
-                                        result["flags"].append(
-                                            f"gamma_fade (atm_γ={analyzer.atm_gamma():.5f}, "
-                                            f"avg_γ={analyzer.avg_gamma():.5f})"
-                                        )
+                                        result["flags"].append(f"gamma_fade (atm_γ={analyzer.atm_gamma():.5f}, avg_γ={analyzer.avg_gamma():.5f})")
                                         if config.get("gamma_fade_blocks_entry", False):
                                             result["passed"] = False
             except Exception as chain_exc:
