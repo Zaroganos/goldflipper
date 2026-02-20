@@ -3,7 +3,7 @@ import json
 import os
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, Literal, TypeVar, overload
+from typing import Any, Literal, overload
 
 # Import account-aware path utilities
 try:
@@ -13,11 +13,9 @@ try:
 except ImportError:
     USE_ACCOUNT_PATHS = False
 
-T = TypeVar("T")
-
 
 @overload
-def get_input(
+def get_input[T](
     prompt: str,
     type_cast: Callable[[str], T] = str,
     validation: Callable[[T], bool] | None = None,
@@ -27,7 +25,7 @@ def get_input(
 
 
 @overload
-def get_input(
+def get_input[T](
     prompt: str,
     type_cast: Callable[[str], T] = str,
     validation: Callable[[T], bool] | None = None,
@@ -36,7 +34,7 @@ def get_input(
 ) -> T | None: ...
 
 
-def get_input(
+def get_input[T](
     prompt: str,
     type_cast: Callable[[str], T] = str,
     validation: Callable[[T], bool] | None = None,

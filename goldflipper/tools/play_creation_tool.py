@@ -6,7 +6,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Literal, TypeVar, overload
+from typing import Any, Literal, overload
 
 import yaml
 
@@ -17,11 +17,9 @@ from goldflipper.utils.exe_utils import get_play_subdir, get_settings_path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-T = TypeVar("T")
-
 
 @overload
-def get_input(
+def get_input[T](
     prompt: str,
     input_type: Callable[[str], T] = str,
     validation: Callable[[T], bool] | None = None,
@@ -31,7 +29,7 @@ def get_input(
 
 
 @overload
-def get_input(
+def get_input[T](
     prompt: str,
     input_type: Callable[[str], T] = str,
     validation: Callable[[T], bool] | None = None,
@@ -40,7 +38,7 @@ def get_input(
 ) -> T | None: ...
 
 
-def get_input(
+def get_input[T](
     prompt: str,
     input_type: Callable[[str], T] = str,
     validation: Callable[[T], bool] | None = None,

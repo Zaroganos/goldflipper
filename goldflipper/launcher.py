@@ -12,7 +12,7 @@ from typing import Any, cast
 from goldflipper.utils.exe_utils import (
     debug_paths,
     get_config_dir,
-    get_executable_dir,
+#    get_executable_dir,
     get_settings_path,
     get_settings_template_path,
     is_frozen,
@@ -81,7 +81,7 @@ def _settings_path() -> Path:
 
 def _get_setup_marker_path() -> Path:
     """Get path to the setup completion marker file.
-    
+
     We store this in the config directory because the executable directory
     might be read-only (e.g. Program Files).
     """
@@ -388,10 +388,7 @@ def main(argv: list[str] | None = None) -> int:
     # Normal TUI launch flow
     settings_created = False
     if not args.skip_setup:
-        settings_created = _run_first_run_setup(
-            force=args.force_setup,
-            skip_shortcut_option=args.skip_shortcut_option
-        )
+        settings_created = _run_first_run_setup(force=args.force_setup, skip_shortcut_option=args.skip_shortcut_option)
 
     config_module = importlib.import_module("goldflipper.config.config")
     if settings_created:
