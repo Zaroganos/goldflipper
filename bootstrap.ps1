@@ -139,7 +139,7 @@ function Install-PythonIfMissing {
     Write-Section 'Python not found, attempting to install it...'
     $ok = Install-Program -Name 'python' -WingetId 'Python.Python.3.12' -ChocoId 'python'
     if (-not $ok) {
-        Write-Host 'Failed to install Python automatically. Please install Python and re-run.' -ForegroundColor Red
+        Write-Host 'Package `Python` failed to install automatically. Please install Python and re-run.' -ForegroundColor Red
         return $false
     }
     return $true
@@ -150,7 +150,7 @@ function Install-GitIfMissing {
     Write-Section 'Git not found, attempting to install it...'
     $ok = Install-Program -Name 'git' -WingetId 'Git.Git' -ChocoId 'git'
     if (-not $ok) {
-        Write-Host 'Failed to install Git automatically. Please install Git and re-run.' -ForegroundColor Red
+        Write-Host 'Package `Git` failed to install automatically. Please install Git manually and re-run.' -ForegroundColor Red
         return $false
     }
     return $true
@@ -158,16 +158,16 @@ function Install-GitIfMissing {
 
 function Install-UvIfMissing {
     if (Test-CommandExists -Name 'uv') { return $true }
-    Write-Section 'uv not found, attempting to install it...'
+    Write-Section 'Package `uv` not found, attempting to install it...'
     try {
         powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
     }
     catch {
-        Write-Host "Failed to install uv automatically: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "(!) Failed to install uv automatically: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
     if (-not (Test-CommandExists -Name 'uv')) {
-        Write-Host 'uv installation completed but the executable is still not available on PATH. Please restart the terminal or add $env:USERPROFILE\.cargo\bin to PATH.' -ForegroundColor Yellow
+        Write-Host '(!) Package `uv` has been installed, however the executable is still not available on PATH. Please restart the terminal, or add $env:USERPROFILE\.cargo\bin to PATH.' -ForegroundColor Yellow
         return $false
     }
     return $true
@@ -215,16 +215,16 @@ function Initialize-Settings {
     param([string]$RepoPath)
     # Always run first-run setup when installed via bootstrap
     # The setup wizard will detect existing settings and offer options
-    Write-Section 'Launching Goldflipper first-run setup wizard'
+    Write-Section 'Launching Goldflipper initial setup wizard'
     Push-Location $RepoPath
     try {
         uv run python -m goldflipper.first_run_setup
         if ($LASTEXITCODE -ne 0) {
-            Write-Host 'Setup wizard was cancelled or failed. Settings will be created from template when TUI starts if needed.' -ForegroundColor Yellow
+            Write-Host '(!) Setup wizard was cancelled or failed. Settings profile will be created from template when Goldflipper starts up if needed.' -ForegroundColor Yellow
         }
     } catch {
-        Write-Host "Error running setup wizard: $($_.Exception.Message)" -ForegroundColor Yellow
-        Write-Host 'Settings profile will be created from template when Goldflipper starts if needed.' -ForegroundColor Yellow
+        Write-Host "(!) Error running setup wizard: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host 'A settings profile will be created from the example template upon Goldflipper startup if missing.' -ForegroundColor Yellow
     } finally {
         Pop-Location
     }
@@ -243,10 +243,10 @@ function Start-App {
 }
 
 try {
-    Write-Section 'Goldflipper setup starting...'
-    if (-not (Install-GitIfMissing)) { throw 'Git is required but could not be installed.' }
-    if (-not (Install-PythonIfMissing)) { throw 'Python is required but could not be installed.' }
-    if (-not (Install-UvIfMissing)) { throw 'uv is required but could not be installed.' }
+    Write-Section 'Goldflipper setup starting ...'
+    if (-not (Install-GitIfMissing)) { throw 'Package `Git` is required but could not be installed.' }
+    if (-not (Install-PythonIfMissing)) { throw 'Package `Python` is required but could not be installed.' }
+    if (-not (Install-UvIfMissing)) { throw 'Package `uv` is required but could not be installed.' }
 
     Update-Repository -Path $InstallPath -Branch $Branch
     Initialize-UvEnvironment -RepoPath $InstallPath
@@ -255,11 +255,11 @@ try {
     if (-not $NoLaunch) {
         Start-App -RepoPath $InstallPath
     } else {
-        Write-Host "Setup complete. To launch later: `n`n  Push-Location `"$InstallPath`"`n  uv run goldflipper`n  Pop-Location`n" -ForegroundColor Green
+        Write-Host "Setup complete! To launch: `n`n  Push-Location `"$InstallPath`"`n  uv run goldflipper`n  Pop-Location`n" -ForegroundColor Green
     }
-    Write-Section 'Done'
+    Write-Section 'Finished'
 }
 catch {
-    Write-Host "Setup failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "(!) Setup failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }

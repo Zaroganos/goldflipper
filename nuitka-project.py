@@ -4,7 +4,8 @@ Nuitka project configuration for Goldflipper.
 Reference:
 https://nuitka.net/doc/nuitka-project-options.html
 
-CRITICAL FIX (2025-12-03):
+2025-12-03
+CRITICAL FIX:
 - Python modules must be in NUITKA_INCLUDE_PACKAGES (compiled into exe)
 - Only non-Python data files go in NUITKA_DATA_FILES
 - Using --include-data-dir for .py files makes them DATA, not executable!

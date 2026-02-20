@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "goldflipper"
-version = "0.2.9"
-description = "A semi-autonomous options trading system on Alpaca."
+version = "0.3.0"
+description = "The Goldflipper multistrategy options trading system"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 license = { text = "Proprietary" }
@@ -14,21 +14,21 @@ authors = [
 ]
 dependencies = [
     "alpaca-py>=0.43.2",
-    "yfinance>=1.0",
+    "yfinance>=1.2.0",
     "marketdata-sdk-py[pandas]>=1.1.0",
     "pandas>=2.3.3",
-    "pandas_market_calendars>=4.6.0",
-    "numpy>=2.0,<3.0",
+    "pandas_market_calendars>=4.6.1",
+    "numpy>=2.4.0,<3.0",
     "matplotlib>=3.10.0",
     "seaborn>=0.13.0",
     "scipy>=1.16.0",
     "ta>=0.11.0",
-    "textual>=6.7.0",
-    "psutil>=7.1.0",
+    "textual>=6.12.0",
+    "psutil>=7.2.0",
     "nest-asyncio>=1.6.0",
     "pywin32; sys_platform == 'win32'",
     "tkinterdnd2>=0.3.0",
-    "requests>=2.32.0",
+    "requests>=2.32.4",
     "charset-normalizer>=3.4.0",
     "urllib3>=2.5.0",
     "PyYAML>=6.0.3",
@@ -36,16 +36,16 @@ dependencies = [
     "colorama>=0.4.6",
     "rich>=14.0.0",
     "mplfinance>=0.12.10b0",
-    "XlsxWriter>=3.2.0",
-    "fastmcp>=2.0,<4.0",
+    "XlsxWriter>=3.2.8",
+    "fastmcp>=2.14.1,<4.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=9.0.1",
-    "ruff>=0.14.0",
-    "pyright>=1.1.407",
-    "nuitka>=2.0",
+    "pytest>=9.0.2",
+    "ruff>=0.15.0",
+    "pyright>=1.1.408",
+    "nuitka>=2.8",
 ]
 
 [project.scripts]

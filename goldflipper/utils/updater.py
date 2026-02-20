@@ -9,7 +9,7 @@ Expected version.json schema
 -----------------------------
 {
     "version":      "0.2.5",
-    "download_url": "https://nextcloud.example.com/.../goldflipper-0.2.5-x64.msi",
+    "download_url": "https://cloud.example.com/.../goldflipper-0.2.5-x64.msi",
     "notes":        "Brief human-readable release notes"
 }
 

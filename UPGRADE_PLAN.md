@@ -88,11 +88,14 @@ copy MANIFEST.in MANIFEST.in.backup  # if exists
 > **Status – 2025-12-08:** ✅ Completed. `pyproject.toml` created with all dependencies and tool configurations.
 
 ### 2.1 Install uv
-```powershell
-# Windows PowerShell
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-# Verify installation
+Windows PowerShell
+```powershell
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Verify installation
+```powershell
 uv --version
 ```
 
