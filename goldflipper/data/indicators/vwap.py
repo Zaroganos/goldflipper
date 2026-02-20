@@ -53,8 +53,6 @@ class VWAPCalculator(IndicatorCalculator):
 
     def _validate_inputs(self):
         """Override: require at least 2 bars (1 is not enough for bands)."""
-        if not all(isinstance(x, pd.Series) for x in [self.data.high, self.data.low, self.data.close, self.data.volume]):
-            raise ValueError("Price and volume data must be pandas Series")
         if len(self.data.close) < 2:
             raise ValueError("VWAP requires at least 2 bars")
 

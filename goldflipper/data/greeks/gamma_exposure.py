@@ -93,14 +93,14 @@ class GammaExposureAnalyzer:
         if missing:
             raise ValueError(f"GammaExposureAnalyzer: missing columns {missing}")
 
-        out["gamma"] = pd.to_numeric(out["gamma"], errors="coerce").fillna(0.0)
-        out["open_interest"] = pd.to_numeric(out["open_interest"], errors="coerce").fillna(0.0)
+        out["gamma"] = pd.to_numeric(out["gamma"], errors="coerce").fillna(0.0)  # type: ignore[union-attr]
+        out["open_interest"] = pd.to_numeric(out["open_interest"], errors="coerce").fillna(0.0)  # type: ignore[union-attr]
         out["strike"] = pd.to_numeric(out["strike"], errors="coerce")
 
         out["_is_call"] = out["type"].str.lower().isin(_CALL_TYPES)
         out["_is_put"] = out["type"].str.lower().isin(_PUT_TYPES)
         out["_gex"] = out["gamma"] * out["open_interest"] * 100.0
-        out["_signed_gex"] = out["_gex"] * out["_is_call"].map({True: 1, False: -1})
+        out["_signed_gex"] = out["_gex"] * out["_is_call"].map(lambda x: 1 if x else -1)
         return out
 
     # ------------------------------------------------------------------

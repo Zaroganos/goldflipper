@@ -106,7 +106,7 @@ class VolumeProfileResult:
             candidates = self.bins[self.bins["price_mid"] < price]
         if candidates.empty:
             return None
-        best_idx = candidates["volume"].idxmax()
+        best_idx = candidates["volume"].idxmax()  # type: ignore[union-attr]
         return float(candidates.loc[best_idx, "price_mid"])
 
 
@@ -142,8 +142,6 @@ class VolumeProfileCalculator(IndicatorCalculator):
 
     def _validate_inputs(self):
         """Override: only need OHLCV with at least 1 bar."""
-        if not all(isinstance(x, pd.Series) for x in [self.data.high, self.data.low, self.data.close, self.data.volume]):
-            raise ValueError("Price and volume data must be pandas Series")
         if len(self.data.close) < 1:
             raise ValueError("Volume Profile requires at least 1 bar")
 
@@ -284,7 +282,7 @@ class VolumeProfileCalculator(IndicatorCalculator):
             Dict with keys: poc, vah, val, bins_price_mid, bins_volume.
         """
         profile = self.get_profile()
-        return {
+        return {  # type: ignore[return-value]
             "poc": pd.Series([profile.poc]),
             "vah": pd.Series([profile.vah]),
             "val": pd.Series([profile.val]),

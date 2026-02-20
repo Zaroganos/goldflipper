@@ -1,6 +1,6 @@
 """Analytics and trade logging tools — summary stats, trade log queries, export."""
 
-from typing import Any, cast
+from typing import Any
 
 from goldflipper.mcp_server.server import mcp
 
@@ -60,7 +60,7 @@ def get_trade_log(limit: int = 50, strategy: str | None = None, symbol: str | No
 
     try:
         logger = _get_logger()
-        df = cast(pd.DataFrame, pd.read_csv(logger.csv_path))
+        df = pd.read_csv(logger.csv_path)
     except FileNotFoundError:
         return {"error": "Trade log file not found."}
     except Exception as e:
@@ -68,12 +68,12 @@ def get_trade_log(limit: int = 50, strategy: str | None = None, symbol: str | No
 
     # Apply filters
     if strategy and strategy != "All" and "strategy" in df.columns:
-        df = cast(pd.DataFrame, df.loc[df["strategy"] == strategy])
+        df = df.loc[df["strategy"] == strategy]
     if symbol and "symbol" in df.columns:
-        df = cast(pd.DataFrame, df.loc[df["symbol"] == symbol.upper()])
+        df = df.loc[df["symbol"] == symbol.upper()]
 
     # Take the most recent entries
-    df = cast(pd.DataFrame, df.tail(limit))
+    df = df.tail(limit)
 
     trades = []
     for _, row in df.iterrows():

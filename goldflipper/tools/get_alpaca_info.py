@@ -7,8 +7,6 @@ import json
 import logging
 from typing import Any, Protocol, cast
 
-from alpaca.trading.client import TradingClient
-
 from goldflipper.alpaca_client import get_alpaca_client
 from goldflipper.config.config import config
 from goldflipper.utils.display import TerminalDisplay as display
@@ -85,7 +83,7 @@ def get_order_info(order_id: str) -> dict[str, Any] | None:
         Optional[Dict]: Order information including status, filled quantity,
                        filled price, and other relevant details
     """
-    client = cast(TradingClient, get_alpaca_client())
+    client = get_alpaca_client()
     try:
         _, account_nickname = _get_active_account_context()
         order = cast(OrderData, client.get_order_by_id(order_id))
@@ -127,7 +125,7 @@ def get_position_info(symbol: str) -> dict[str, Any] | None:
         Optional[Dict]: Position information including quantity,
                        current price, and other relevant details
     """
-    client = cast(TradingClient, get_alpaca_client())
+    client = get_alpaca_client()
     try:
         position = cast(PositionData, client.get_open_position(symbol))
         return {
@@ -157,7 +155,7 @@ def get_all_orders(status: str = "open") -> dict[str, dict[str, Any]] | None:
     Returns:
         Optional[Dict]: Dictionary of order IDs mapping to their information
     """
-    client = cast(TradingClient, get_alpaca_client())
+    client = get_alpaca_client()
     try:
         # The new API doesn't use status as a parameter
         # Instead, we should filter the results after getting them
@@ -190,7 +188,7 @@ def get_all_positions() -> dict[str, dict[str, Any]] | None:
     Returns:
         Optional[Dict]: Dictionary of symbols mapping to their position information
     """
-    client = cast(TradingClient, get_alpaca_client())
+    client = get_alpaca_client()
     try:
         positions: list[PositionData] = cast(list[PositionData], list(client.get_all_positions()))
         return {
@@ -211,7 +209,7 @@ def get_all_positions() -> dict[str, dict[str, Any]] | None:
 
 def test_alpaca_connection() -> tuple[bool, str]:
     """Test the connection to the Alpaca API and return debug info."""
-    client = cast(TradingClient, get_alpaca_client())
+    client = get_alpaca_client()
     try:
         active_account, account_nickname = _get_active_account_context()
     except ValueError as config_error:

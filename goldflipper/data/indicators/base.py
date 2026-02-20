@@ -24,9 +24,6 @@ class IndicatorCalculator:
 
     def _validate_inputs(self):
         """Validate input parameters"""
-        if not all(isinstance(x, pd.Series) for x in [self.data.high, self.data.low, self.data.close, self.data.volume]):
-            raise ValueError("Price and volume data must be pandas Series")
-
         if len(self.data.close) < self.data.period:
             raise ValueError(f"Insufficient data points. Need at least {self.data.period} points")
 
