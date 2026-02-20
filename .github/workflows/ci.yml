@@ -23,6 +23,57 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
+      - name: Create test settings.yaml for CI
+        run: |
+          $testSettings = @"
+          # Minimal test configuration for CI environment
+          alpaca:
+            accounts:
+              paper_1:
+                enabled: true
+                nickname: "CI Test Paper 1"
+                api_key: 'TEST_API_KEY'
+                secret_key: 'TEST_SECRET_KEY'
+                base_url: 'https://paper-api.alpaca.markets/v2'
+            default_account: 'paper_1'
+            active_account: 'paper_1'
+          
+          strategy_orchestration:
+            enabled: true
+            mode: "sequential"
+            max_parallel_workers: 3
+            dry_run: true
+          
+          options_swings:
+            enabled: true
+            entry_order_types: ["market"]
+            TP-SL_types: ["STOCK_PRICE"]
+            Take_Profit:
+              multiple_TPs: false
+            SL_order_types: ["STOP"]
+            conditional_plays:
+              enabled: false
+            play_types: ["SIMPLE"]
+          
+          market_data_providers:
+            primary_provider: "yfinance"
+            providers:
+              yfinance:
+                enabled: true
+                cache:
+                  enabled: true
+                  max_age: 300
+              alpaca:
+                enabled: false
+              marketdataapp:
+                enabled: false
+          
+          logging:
+            level: "ERROR"
+            format: "%(asctime)s - %(levelname)s - %(message)s"
+          "@
+          $testSettings | Out-File -FilePath "goldflipper/config/settings.yaml" -Encoding utf8
+
       - name: Lint with Ruff
         run: uv run ruff check .
 
