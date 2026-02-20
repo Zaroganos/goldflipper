@@ -11,7 +11,7 @@
 
 Goldflipper Trading System
 
-<img width="1074" height="760" alt="Screenshot 2026-02-19 181208" src="https://github.com/user-attachments/assets/5eb5c068-8759-44c8-afde-067fdcd55f92" />
+![Screenshot of Goldflipper's main interface showing the trading dashboard](https://github.com/user-attachments/assets/5eb5c068-8759-44c8-afde-067fdcd55f92)
 
 ## Disclaimer
 
