@@ -27,7 +27,9 @@
       "Bash(pwsh -NoProfile -Command \"\\(irm ''https://cloud.zimerguz.net/s/goldflipper-bootstrap/download''\\)[0..3]\")",
       "Bash(curl:*)",
       "Bash(pwsh -NoProfile -File \"C:/Users/Iliya/Documents/GitHub/goldflipper_multistrat/goldflipper/scripts/_nc_test.ps1\")",
-      "Bash(pwsh -NoProfile -Command '$r = Invoke-WebRequest \"\"https://cloud.zimerguz.net/s/osCCAY2Gm3mNKPK/download?path=/&files=version.json\"\" -UseBasicParsing; Write-Host \"\"Status: $\\($r.StatusCode\\)\"\"; Write-Host \"\"CT: $\\($r.Headers[''Content-Type'']\\)\"\"; Write-Host \"\"Len: $\\($r.Content.Length\\)\"\"')"
+      "Bash(pwsh -NoProfile -Command '$r = Invoke-WebRequest \"\"https://cloud.zimerguz.net/s/osCCAY2Gm3mNKPK/download?path=/&files=version.json\"\" -UseBasicParsing; Write-Host \"\"Status: $\\($r.StatusCode\\)\"\"; Write-Host \"\"CT: $\\($r.Headers[''Content-Type'']\\)\"\"; Write-Host \"\"Len: $\\($r.Content.Length\\)\"\"')",
+      "Bash(python -m json.tool:*)",
+      "Bash(uv run ruff check:*)"
     ]
   }
 }

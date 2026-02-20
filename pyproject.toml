@@ -80,8 +80,16 @@ select = [
     "C4",
     "UP",
     "NPY201",
+    "PLE",   # pylint errors (real bugs: bad returns, invalid syntax, etc.)
+    "PLW",   # pylint warnings (real bugs: self-comparison, assert on tuple, etc.)
 ]
-ignore = []
+ignore = [
+    "PLW0603",  # global statement — intentional singleton pattern throughout codebase
+    "PLW0602",  # global without assignment — intentional (signals use of module-level var)
+    "PLW1510",  # subprocess.run without check= — scripts check returncode explicitly
+    "PLW2901",  # for-loop variable overwritten — common pandas / string-cleaning pattern
+    "PLW0108",  # lambda may be unnecessary — context-dependent; often needed for tkinter
+]
 
 [tool.ruff.lint.per-file-ignores]
 "goldflipper/chart/chart_viewer.py" = ["E402"]
