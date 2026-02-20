@@ -205,8 +205,8 @@ def find_signtool() -> Path | None:
     import shutil
 
     # Check PATH first
-    if shutil.which("signtool"):
-        return Path(shutil.which("signtool"))
+    if signtool_path := shutil.which("signtool"):
+        return Path(signtool_path)
 
     # Standard location
     kits_root = Path(r"C:\Program Files (x86)\Windows Kits\10\bin")

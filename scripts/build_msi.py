@@ -128,8 +128,8 @@ def _generate_installer_images() -> None:
 
 def _find_signtool() -> Path | None:
     """Locate signtool.exe (duplicated logic from build_nuitka.py)."""
-    if shutil.which("signtool"):
-        return Path(shutil.which("signtool"))
+    if signtool_path := shutil.which("signtool"):
+        return Path(signtool_path)
 
     kits_root = Path(r"C:\Program Files (x86)\Windows Kits\10\bin")
     if not kits_root.exists():
