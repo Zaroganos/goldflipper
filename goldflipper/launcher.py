@@ -12,7 +12,7 @@ from typing import Any, cast
 from goldflipper.utils.exe_utils import (
     debug_paths,
     get_config_dir,
-#    get_executable_dir,
+    #    get_executable_dir,
     get_settings_path,
     get_settings_template_path,
     is_frozen,
