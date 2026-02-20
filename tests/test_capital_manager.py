@@ -5,11 +5,11 @@ All tests use unittest.mock — no live Alpaca calls, no live filesystem access.
 """
 
 import json
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
 from goldflipper.strategy.capital import CapitalManager
-from goldflipper.strategy.playbooks.schema import RiskConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -292,7 +292,13 @@ def test_check_trade_blocked_by_risk_config_max_open():
     mgr = CapitalManager(None, config)
     mgr._load_active_plays = Mock(return_value=[{"symbol": "AAA"}, {"symbol": "BBB"}, {"symbol": "CCC"}])
 
-    risk_config = RiskConfig(max_open_plays=3)
+    risk_config = SimpleNamespace(
+        max_open_plays=3,
+        max_open_plays_per_symbol=None,
+        max_contracts_per_play=None,
+        max_capital_per_trade_fixed=None,
+        max_capital_per_trade_pct=None,
+    )
     play = _make_bto_play(symbol="SPY")
     allowed, reason = mgr.check_trade(play, risk_config)
 
