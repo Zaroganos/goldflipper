@@ -1,0 +1,23 @@
+services:
+  dashboard:
+    build: .
+    image: ${DASHBOARD_IMAGE:-goldflipper-dashboard:latest}
+    container_name: ${DASHBOARD_CONTAINER_NAME:-goldflipper-dashboard}
+    restart: ${DASHBOARD_RESTART_POLICY:-unless-stopped}
+
+    ports:
+      # Bind to localhost only — Apache reverse proxy handles external access
+      - "${DASHBOARD_BIND_ADDRESS:-127.0.0.1}:${DASHBOARD_HOST_PORT:-8501}:${DASHBOARD_CONTAINER_PORT:-8501}"
+
+    environment:
+      GOLDFLIPPER_DATA_DIR: ${GOLDFLIPPER_DATA_DIR:-/app/data}
+
+    volumes:
+      # Persistent data — shared with the host trading process
+      - ${HOST_DATA_DIR:-./data}:${CONTAINER_DATA_DIR:-/app/data}
+      - ${HOST_LOGS_DIR:-./logs}:${CONTAINER_LOGS_DIR:-/app/logs}
+      - ${HOST_PLAYS_DIR:-./goldflipper/plays}:${CONTAINER_PLAYS_DIR:-/app/goldflipper/plays}
+      - ${HOST_STATE_DIR:-./goldflipper/state}:${CONTAINER_STATE_DIR:-/app/goldflipper/state}
+
+      # Config file contains API keys — bind-mount read-only, never baked into image
+      - ${HOST_SETTINGS_FILE:-./goldflipper/config/settings.yaml}:${CONTAINER_SETTINGS_FILE:-/app/goldflipper/config/settings.yaml}:ro
