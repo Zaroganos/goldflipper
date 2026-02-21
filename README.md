@@ -1,7 +1,7 @@
 # Goldflipper
 
 [![CI](https://github.com/Zaroganos/goldflipper/actions/workflows/ci.yml/badge.svg)](https://github.com/Zaroganos/goldflipper/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.3.1-blue.svg)](https://github.com/Zaroganos/goldflipper/releases)
+[![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](https://github.com/Zaroganos/goldflipper/releases)
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows_10%20%7C%2011-lightgrey.svg)](docs/WINDOWS_INSTALLER.md)
