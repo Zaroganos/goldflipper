@@ -80,34 +80,36 @@ class FirstRunSetup:
         """Create UI for choosing custom data directory (exe mode only)."""
         from goldflipper.utils.exe_utils import get_default_data_directory
 
-        data_frame = tk.LabelFrame(self.main_frame, text="Data Directory", padx=10, pady=10)
+        data_frame = tk.LabelFrame(self.main_frame, text=" Data Directory ", font=("Arial", 10, "bold"), padx=15, pady=15, fg="#333333")
         data_frame.pack(fill="x", pady=10)
 
         # Get default location
         default_dir = str(get_default_data_directory())
 
         # Explanation
-        info_label = tk.Label(data_frame, text="Where should Goldflipper store data?\n(settings, plays, logs)", justify="left")
-        info_label.pack(pady=5)
+        info_label = tk.Label(data_frame, text="Choose where Goldflipper stores its configuration, plays, and logs.\nKeeping this next to the executable is recommended for portability.", justify="left", fg="#555555")
+        info_label.pack(anchor="w", pady=(0, 10))
 
         # Use default checkbox
         self.use_default_data_dir = tk.BooleanVar(value=True)
         default_check = tk.Checkbutton(
-            data_frame, text="Use default location (next to exe)", variable=self.use_default_data_dir, command=self._toggle_data_dir_entry
+            data_frame, text="Use default location (adjacent, in portable mode)", font=("Arial", 9, "bold"), variable=self.use_default_data_dir, command=self._toggle_data_dir_entry
         )
         default_check.pack(anchor="w", pady=2)
 
         # Show default path
-        default_path_label = tk.Label(data_frame, text=f"Default: {default_dir}", font=("Arial", 8), fg="gray")
-        default_path_label.pack(anchor="w", padx=20)
+        default_path_label = tk.Label(data_frame, text=f"Path: {default_dir}", font=("Consolas", 8), fg="gray")
+        default_path_label.pack(anchor="w", padx=25)
 
         # Custom directory selection frame
         self.data_dir_frame = tk.Frame(data_frame)
-        self.data_dir_frame.pack(fill="x", pady=5)
+        self.data_dir_frame.pack(fill="x", pady=(10, 0))
 
+        tk.Label(self.data_dir_frame, text="Custom Path:", fg="#555555").pack(side="left")
+        
         self.custom_data_dir = tk.StringVar()
         self.data_dir_entry = tk.Entry(self.data_dir_frame, textvariable=self.custom_data_dir, width=30)
-        self.data_dir_entry.pack(side="left", padx=5)
+        self.data_dir_entry.pack(side="left", padx=5, fill="x", expand=True)
         self.data_dir_entry.config(state="disabled")  # Disabled by default
 
         self.data_dir_browse_btn = tk.Button(self.data_dir_frame, text="Browse...", command=self._browse_data_directory, state="disabled")
@@ -128,8 +130,44 @@ class FirstRunSetup:
         if dir_path:
             self.custom_data_dir.set(dir_path)
 
+    def _open_settings_in_explorer(self):
+        """Open the folder containing settings.yaml with the file selected."""
+        path = os.path.normpath(self.settings_path)
+        if os.path.exists(path):
+            subprocess.run(["explorer", "/select,", path])
+        else:
+            messagebox.showerror("Error", "Settings file not found.")
+
+    def _reset_settings_handler(self):
+        """Handler for the reset settings button."""
+        if not messagebox.askyesno(
+            "Confirm Reset",
+            "This will backup your current settings file and replace it with the default template.\n\n"
+            "Your current settings will be saved as 'settings.yaml.old#'.\n\n"
+            "Continue?",
+        ):
+            return
+
+        try:
+            # create_settings_from_template handles backup automatically
+            self.create_settings_from_template()
+            if hasattr(self, "status_label"):
+                self.status_label.config(text="Settings reset to defaults!", fg="green")
+            messagebox.showinfo("Success", "Settings have been reset to defaults.\nYour previous settings were backed up.")
+
+            # Refresh UI
+            self.show_setup_ui()
+
+        except Exception as e:
+            if hasattr(self, "status_label"):
+                self.status_label.config(text=f"Reset failed: {e}", fg="red")
+            messagebox.showerror("Error", f"Failed to reset settings: {str(e)}")
+
     def show_setup_ui(self):
         """Show the main setup UI - works for both new and existing settings"""
+        # Update existence check
+        self.settings_exist = os.path.exists(self.settings_path)
+
         # Clear existing widgets except welcome message
         for widget in self.main_frame.winfo_children():
             if not isinstance(widget, tk.Label) or widget.cget("text") != "Goldflipper Setup Wizard":
@@ -138,8 +176,8 @@ class FirstRunSetup:
         # Shortcut creation checkbox (hidden if requested, e.g. during MSI install)
         self.create_shortcut_var = tk.BooleanVar(value=not self.skip_shortcut_option)
         if not self.skip_shortcut_option:
-            shortcut_check = tk.Checkbutton(self.main_frame, text="Create Desktop shortcut", variable=self.create_shortcut_var)
-            shortcut_check.pack(pady=5)
+            shortcut_check = tk.Checkbutton(self.main_frame, text="Create Desktop shortcut for quick access", variable=self.create_shortcut_var, font=("Arial", 10))
+            shortcut_check.pack(pady=5, anchor="w")
         else:
             # If skipping option, we definitely don't want to create it here either
             self.create_shortcut_var.set(False)
@@ -149,17 +187,41 @@ class FirstRunSetup:
             self._create_data_directory_ui()
 
         # Settings file frame
-        settings_frame = tk.LabelFrame(self.main_frame, text="Settings Configuration", padx=10, pady=10)
-        settings_frame.pack(fill="x", pady=10)
+        settings_frame = tk.LabelFrame(self.main_frame, text=" Configuration Settings ", font=("Arial", 10, "bold"), padx=15, pady=15, fg="#333333")
+        settings_frame.pack(fill="x", pady=15)
 
         # Show current settings status
         if self.settings_exist:
-            current_label = tk.Label(settings_frame, text=f"✓ Current settings: {self.settings_path}", fg="green", font=("Arial", 9))
-            current_label.pack(pady=2)
-            settings_label = tk.Label(settings_frame, text="To use a different settings file, select it below:")
+            status_frame = tk.Frame(settings_frame)
+            status_frame.pack(fill="x", pady=(0, 10))
+            
+            tk.Label(status_frame, text="✓ Configuration Found", fg="green", font=("Arial", 9, "bold")).pack(side="left")
+            tk.Label(status_frame, text="(Ready to launch)", fg="gray", font=("Arial", 9)).pack(side="left", padx=5)
+            
+            path_label = tk.Label(settings_frame, text=self.settings_path, fg="gray", font=("Consolas", 8), bg="#f5f5f5", relief="sunken", padx=5, pady=2, wraplength=480, justify="left")
+            path_label.pack(pady=(0, 15), fill="x")
+
+            # Action buttons frame with better styling
+            actions_frame = tk.Frame(settings_frame)
+            actions_frame.pack(fill="x", pady=5)
+
+            # Button A: Open in File Manager
+            open_btn = tk.Button(actions_frame, text="📂 Open in Folder", command=self._open_settings_in_explorer, bg="#f0f0f0", padx=10, pady=3)
+            open_btn.pack(side="left", padx=(0, 5), expand=True, fill="x")
+
+            # Button B: Reset to Defaults
+            reset_btn = tk.Button(actions_frame, text="♻ Reset to Template Defaults", command=self._reset_settings_handler, bg="#fff0f0", padx=10, pady=3)
+            reset_btn.pack(side="left", padx=(5, 0), expand=True, fill="x")
+            
+            tk.Label(settings_frame, text="* Resetting will backup your old config first.", font=("Arial", 8), fg="gray").pack(pady=(5, 0))
+
+            sep = tk.Frame(settings_frame, height=2, bd=1, relief="sunken")
+            sep.pack(fill="x", padx=5, pady=15)
+
+            settings_label = tk.Label(settings_frame, text="Replace settings file with a custom profile:", font=("Arial", 9), anchor="w")
         else:
             settings_label = tk.Label(settings_frame, text="Select an existing settings file (settings.yaml) or leave empty to generate a new one.")
-        settings_label.pack(pady=5)
+        settings_label.pack(pady=5, anchor="w", fill="x")
 
         # File selection frame
         self.file_frame = tk.Frame(settings_frame)
@@ -168,7 +230,7 @@ class FirstRunSetup:
         # File path entry
         self.file_path = tk.StringVar()
         self.file_entry = tk.Entry(self.file_frame, textvariable=self.file_path, width=30)
-        self.file_entry.pack(side="left", padx=5)
+        self.file_entry.pack(side="left", padx=5, fill="x", expand=True)
 
         # Browse button
         browse_btn = tk.Button(self.file_frame, text="Browse...", command=self.browse_file)
@@ -176,8 +238,8 @@ class FirstRunSetup:
 
         # Drag and drop (only if available)
         if self.dnd_available and self.DND_FILES:
-            drop_label = tk.Label(settings_frame, text="or drag and drop your settings.yaml file here")
-            drop_label.pack(pady=5)
+            drop_label = tk.Label(settings_frame, text="or drag and drop your settings.yaml file here", fg="gray")
+            drop_label.pack(pady=2)
             try:
                 dnd_entry = cast(Any, self.file_entry)
                 dnd_entry.drop_target_register(self.DND_FILES)
@@ -186,24 +248,32 @@ class FirstRunSetup:
                 print(f"[FirstRunSetup] Failed to register drag-and-drop: {e}")
         else:
             # No drag-and-drop available - just show browse instruction
-            drop_label = tk.Label(settings_frame, text="(use Browse button to select file)")
-            drop_label.pack(pady=5)
+            drop_label = tk.Label(settings_frame, text="(or browse to select file above)", fg="gray")
+            drop_label.pack(pady=2)
 
         # Note about creating from template
-        note_label = tk.Label(settings_frame, text="(Leave empty to create from template)", font=("Arial", 8), fg="gray")
-        note_label.pack(pady=2)
+        if not self.settings_exist:
+             note_label = tk.Label(settings_frame, text="(Leave empty to create from template)", font=("Arial", 8), fg="gray")
+             note_label.pack(pady=(0, 5))
+
+        # Status label (moved inside for better layout)
+        self.status_label = tk.Label(self.main_frame, text="", fg="blue", font=("Arial", 9))
+        self.status_label.pack(pady=(10, 0))
+
+        # Bottom separator
+        tk.Frame(self.main_frame, height=1, bd=1, relief="sunken").pack(fill="x", pady=15)
 
         # Button frame
         button_frame = tk.Frame(self.main_frame)
-        button_frame.pack(pady=20)
+        button_frame.pack(pady=10, fill="x")
 
-        # Continue button
-        continue_btn = tk.Button(button_frame, text="Continue", command=self.process_setup)
-        continue_btn.pack(side="left", padx=5)
+        # Continue button (large and distinct)
+        continue_btn = tk.Button(button_frame, text="Launch", command=self.process_setup, bg="#e1e1e1", font=("Arial", 10, "bold"), padx=20, pady=5)
+        continue_btn.pack(side="right", padx=5)
 
-        # Status label
-        self.status_label = tk.Label(self.main_frame, text="", fg="blue")
-        self.status_label.pack(pady=5)
+        # Quit button
+        quit_btn = tk.Button(button_frame, text="Exit", command=self.root.destroy, padx=10, pady=5)
+        quit_btn.pack(side="right", padx=10)
 
     def browse_file(self):
         file_path = filedialog.askopenfilename(title="Select settings.yaml", filetypes=[("YAML files", "*.yaml"), ("All files", "*.*")])

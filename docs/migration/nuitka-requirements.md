@@ -3,7 +3,8 @@
 ## Entry Point
 - Main module: `goldflipper/launcher.py`
 - Entry function: `main()`
-- CLI script: `goldflipper = goldflipper.launcher:main` (from `pyproject.toml`)
+- CLI script: `goldflipper = goldflipper.run:main` (from `pyproject.toml`) - Legacy entry point
+- **Note:** Launcher now uses orchestration for --trading-mode, but CLI still uses legacy run.py
 
 ## Build Mode
 - **Standalone + Onefile** - Single portable executable

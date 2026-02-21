@@ -387,8 +387,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # Normal TUI launch flow
     settings_created = False
+
+    # Implicitly force setup if setup-only is requested
+    force_setup = args.force_setup or args.setup_only
+
     if not args.skip_setup:
-        settings_created = _run_first_run_setup(force=args.force_setup, skip_shortcut_option=args.skip_shortcut_option)
+        settings_created = _run_first_run_setup(force=force_setup, skip_shortcut_option=args.skip_shortcut_option)
 
     config_module = importlib.import_module("goldflipper.config.config")
     if settings_created:
