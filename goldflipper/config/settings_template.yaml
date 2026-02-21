@@ -1,50 +1,53 @@
 # ==================================================
-# Goldflipper Configuration File - TEMPLATE
-#     last revised: 2025-12-09
+# Goldflipper Configuration File TEMPLATE
+#   revised 2026.02.20
 # ==================================================
-# This YAML `settings` file contains all configurable settings for the Goldflipper trading system.
-# All paths are relative to the project root directory unless specified as absolute.
+# This settings.yaml file configures settings for the Goldflipper trading system
 #
-# ===== GETTING STARTED =====
-# IMPORTANT SETUP INSTRUCTIONS:
-# 1. Save this file as "settings.yaml" in the same directory (the setup tool will do this for you).
-# 2. Replace all placeholder values (marked with YOUR_*) with your actual keys and values
+#   NB: directories
+#   - All paths are relative to the project root directory unless specified as absolute
+#
+# ===== GET STARTED =====
+#
+# IMPORTANT INSTRUCTIONS:
+# 1. Already done for you [X]: Save this file as "settings.yaml" in the same directory
+# 2. Fill in placeholder values (marked with YOUR_*) with your actual keys and values
 # 3. Review all settings and adjust the settings and default values according to your preferences
-# 4. Save your `settings.yaml` file when finished, or, press `save` if using the graphical settings tool.
+# 4. Save your `settings.yaml` file when finished, or press `save` if using the GUI.
 #
-# REQUIRED CHANGES:
-# - Alpaca API Keys:
+# REQUIRED:
+# - Brokerage [Alpaca] API Keys:
 #     - You must obtain API keys from Alpaca (https://app.alpaca.markets)
 #       and replace the placeholders in the alpaca.accounts section
-# - MarketDataApp API Key:
+# - Market Data Provider [MarketDataApp] API Key:
 #     - If you plan to use MarketDataApp as a data provider,
 #       replace the placeholder in market_data_providers.providers.marketdataapp.api_key
 #     - You can find how to obtain an API Key for a free tier plan called "Free Forever" at:
 #       (https://www.marketdata.app/docs/account/free-accounts)
 #
-# CONFIGURATION SECTIONS:
+# CONFIG SECTIONS:
 # - Alpaca API Settings: API keys and account configuration for Alpaca trading
-# - Strategy Settings: Configure options trading strategies
+# - Strategy Settings: Configure trading strategies
 # - Market Data Settings: Configure market data provider sources and display options
 # - Order Settings: Configure order execution parameters
-# - File Operations: Configure file paths for state based play management
+# - Filesystem Operations: Configure directory and file paths for state based play management
 # - Logging Configuration: Configure logging behavior
-# - Market Hours Settings: Configure market hours recognition
+# - Market Hours Settings: Configure market hours recognition and response
 #
-# For detailed documentation on all settings, please contact the Goldflipper Team for support.
+# For detailed documentation on all settings, please contact the Goldflipper author for support.
 #
 # ===== FINE TUNING =====
 #
 # Display Configuration Instructions:
 # To enable/disable columns in the option chain display:
-# 1. Under market_data.option_chain_display.default_columns:
+# 1. Under market data option chain display default columns:
 #    - Add or remove column names to show/hide basic option data
-#    - Available columns: strike, lastPrice, bid, ask, volume, impliedVolatility
+#    - Available columns: strike, lastPrice, bid, ask, volume, etc. - see docs
 #
-# 2. Under market_data.option_chain_display.greeks:
-#    - Set enabled: true/false to show/hide all Greeks
-#    - Under columns: add or remove specific Greeks to display
-#    - Available Greeks: delta, gamma, theta, vega, rho
+# 2. Under market data option chain display greeks:
+#    - Set enabled: true/false
+#    - Under columns: add or remove specific Greeks
+#    - Available Greeks: delta, gamma, theta, vega, rho, etc. - see docs
 #
 # Example:
 # market_data:
@@ -62,14 +65,15 @@
 
 ####################################################################################################
 # Alpaca API Settings
-####################################################################################################
-# IMPORTANT: Replace the placeholder API keys with your own Alpaca API credentials
+#
+# (!) Replace the placeholder API keys with your own Alpaca API credentials
 # Get your API keys from: https://app.alpaca.markets/paper/dashboard/overview
+
 alpaca:
   accounts:
     live:
       enabled: false
-      # Set to true only when you are ready to trade live, with real money
+      # Set to true ONLY when you are ready to trade live with real money
       nickname: "Live Trading"
       api_key: 'YOUR_LIVE_API_KEY'           # Replace with your live API key
       secret_key: 'YOUR_LIVE_SECRET_KEY'     # Replace with your live secret key
@@ -77,29 +81,29 @@ alpaca:
     paper_1:
       enabled: true
       nickname: "Paper 1"
-      api_key: 'YOUR_PAPER_API_KEY_1'        # Replace with your paper trading API key
-      secret_key: 'YOUR_PAPER_SECRET_KEY_1'  # Replace with your paper trading secret key
+      api_key: 'YOUR_PAPER_API_KEY_1'        # Replace with your paper API key
+      secret_key: 'YOUR_PAPER_SECRET_KEY_1'  # Replace with your paper secret key
       base_url: 'https://paper-api.alpaca.markets/v2'
     paper_2:
       enabled: true
       nickname: "Paper 2"
-      api_key: 'YOUR_PAPER_API_KEY_2'        # Replace with your paper trading API key (optional)
-      secret_key: 'YOUR_PAPER_SECRET_KEY_2'  # Replace with your paper trading secret key (optional)
+      api_key: 'YOUR_PAPER_API_KEY_2'        # Replace with your paper API key (optional)
+      secret_key: 'YOUR_PAPER_SECRET_KEY_2'  # Replace with your paper secret key (optional)
       base_url: 'https://paper-api.alpaca.markets/v2'
     paper_3:
       enabled: true
       nickname: "Paper 3"
-      api_key: 'YOUR_PAPER_API_KEY_3'        # Replace with your paper trading API key (optional)
-      secret_key: 'YOUR_PAPER_SECRET_KEY_3'  # Replace with your paper trading secret key (optional)
+      api_key: 'YOUR_PAPER_API_KEY_3'        # Replace with your paper API key (optional)
+      secret_key: 'YOUR_PAPER_SECRET_KEY_3'  # Replace with your paper secret key (optional)
       base_url: 'https://paper-api.alpaca.markets/v2'
-  default_account: 'paper_1'                 # Specify which account to use by default
-  active_account: 'paper_1'                  # Specify which account is currently active
+  default_account: 'paper_1'                 # Specify which account is default
+  active_account: 'paper_1'                  # Which account is currently active in system
 
 
-  
 ####################################################################################################
 # Data Paths (UNUSED)
-####################################################################################################
+#
+
 paths:
   data_dir: 'data'                # Main data directory
   raw_data_dir: 'data/raw'        # Raw market data storage
@@ -109,12 +113,12 @@ paths:
 
 ####################################################################################################
 # Strategy Settings
-####################################################################################################
+#
 # ==========================================================================
 # Multi-Strategy Orchestration
-# ==========================================================================
+# 
 # The orchestrator coordinates execution of multiple trading strategies.
-# NOTE: Orchestration is now required as the legacy mode has been removed.
+
 strategy_orchestration:
   # Possibly deprecated as there is no other ochestration mode at this time
   enabled: true                   # Master switch - REQUIRED enabled for system to run
@@ -125,9 +129,10 @@ strategy_orchestration:
 
 # ==========================================================================
 # Capital Management
-# ==========================================================================
+# 
 # Controls position sizing and capital allocation across all strategies.
 # RiskConfig in each playbook can tighten these limits on a per-playbook basis.
+
 capital_management:
   enabled: true                          # Master switch; false = no capital checks performed
   max_total_open_positions: 10           # Max simultaneous open positions across all strategies (null = unlimited)
@@ -137,7 +142,7 @@ capital_management:
 
 # ==========================================================================
 # Individual Strategy Configurations
-# ==========================================================================
+#
 
 options_swings:
   enabled: true
@@ -145,7 +150,7 @@ options_swings:
     - market
     - limit
 
-  TP-SL_types:                    # Types of take-profit and stop-loss to use
+  TP-SL_types:                    # Types of take-profit and stop-loss conditions to use
     - STOCK_PRICE
     - PREMIUM_PCT
     - STOCK_PRICE_PCT
@@ -174,7 +179,7 @@ options_swings:
   expiration_days: 14              # Default expiration in days for live plays
   entry_buffer: 0.05               # Entry price buffer for live plays (e.g., ±$0.01)
   take_profit_pct: 50.0            # Default take profit percentage
-  stop_loss_pct: 25.5              # Default stop loss percentage
+  stop_loss_pct: 25.0              # Default stop loss percentage
 
 # Options Spreads
 spreads:
@@ -186,15 +191,15 @@ spreads:
 
 # Automated Options Swings (Auto-generated plays from scanner)
 option_swings_auto:
-  enabled: false
+  enabled: true
   auto_entry: true                 # Automatically enter positions
   auto_exit: true                  # Automatically exit positions
-  risk_per_trade_pct: 2.0          # Max risk per trade as % of account
-  max_concurrent_positions: 5      # Maximum open positions
+  risk_per_trade_pct: 5.0          # Max risk per trade as % of account
+  max_concurrent_positions: 3      # Maximum open positions
 
 # Momentum Strategy (Gap plays, squeeze fires, etc.)
 momentum:
-  enabled: false
+  enabled: true
   scan_interval: 60                # Seconds between scans
   indicators:
     ttm_squeeze: true
@@ -205,7 +210,7 @@ momentum:
 
 # Sell Puts Strategy (Cash-secured puts / TastyTrade style)
 sell_puts:
-  enabled: false
+  enabled: true
   target_delta: 0.3                 # Target delta for put selection
   dte_range:                        # Days to expiration range
     - 30
@@ -215,16 +220,18 @@ sell_puts:
 
 ####################################################################################################
 # Trading Parameters * NOT USED, CONSIDER REMOVING *
-####################################################################################################
+#
+
 trading:
   default_symbol: 'SPY'              # Default trading symbol
   default_quantity: 1                # Default contract quantity
 
 ####################################################################################################
 # Market Data Settings
-####################################################################################################
+#
+
 market_data:
-  interval: "1m"                     # Data granularity (1m = 1 minute)
+  interval: "5m"                     # Data granularity (1m = 1 minute)
   period: "1d"                       # Data fetch period (1d = 1 day)
   
   # Option chain display settings
@@ -262,7 +269,8 @@ market_data:
 
 ####################################################################################################
 # Technical Indicators settings *CURRENTLY AVAILABLE BUT NOT USED*
-####################################################################################################
+#
+
 indicators:
   enabled: true
   ttm_squeeze:
@@ -288,21 +296,24 @@ indicators:
 
 ####################################################################################################
 # Strategy Settings
-####################################################################################################
+#
+
 entry_strategy:
   buffer: 0.25                       # Price buffer for entry points (default is ±$0.05)
 
 ####################################################################################################
-# Play Management (Position Management)
-####################################################################################################
+# Play (Position) Management)
+#
+
 monitoring:
   max_retries: 3                     # Maximum retry attempts for operations
-  retry_delay: 2                     # Delay between retries (seconds)
+  retry_delay: 5                     # Delay between retries (seconds)
   polling_interval: 30               # Time between play / position checks (seconds); CYCLE TIME
 
 ####################################################################################################
 # Trailing Stops Configuration (Feature Flags & Defaults)
-####################################################################################################
+#
+
 trailing:
   enabled: false                     # Master switch for trailing features
   activation_threshold_pct: 50.0     # Absolute gain since entry to activate trailing (premium or stock)
@@ -327,7 +338,8 @@ trailing:
 
 ####################################################################################################
 # Order Settings
-####################################################################################################
+#
+
 orders:
   limit_buy:                         # THIS WAS AUTO GENERATED, NOT USED ATM.
     price_buffer: 0.25               # Buffer for limit order prices (NOT USED)
@@ -343,8 +355,9 @@ orders:
 
 ####################################################################################################
 # File Operations
-####################################################################################################
-# Directories for play file management
+#
+# Directories for play file management - per account, as of multistrat release
+
 file_paths:
   plays_dir: "plays"                      # Root directory for all play files
   new_dir: "new"                          # New plays which are yet to meet an entry condition
@@ -355,11 +368,11 @@ file_paths:
   expired_dir: "expired"                  # Expired plays (did not enter position by expiration date(s))
   temp_dir: "temp"                        # Temporary play storage for OTO conditional plays
 
-
 ####################################################################################################  
 # Play Viewer Settings
-####################################################################################################
+#
 # Choose which folders to display in the play viewer, and in what order.
+
 viewer:
   enabled_folders:                      # Folders to display in the play viewer
     - new
@@ -380,7 +393,8 @@ viewer:
 
 ####################################################################################################
 # Logging Configuration
-####################################################################################################
+#
+
 logging:
   level: "INFO"                      # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
   format: "%(asctime)s - %(levelname)s - %(message)s"  # Log message format
@@ -396,9 +410,10 @@ logging:
 
 ####################################################################################################
 # Watchdog / Heartbeat System Settings (CURRENTLY DISABLED -- NEEDS WORK)
-####################################################################################################
+#
+
 watchdog:
-  enabled: false                    # Enable/disable the watchdog/heartbeat monitoring system
+  enabled: true                    # Enable/disable the watchdog/heartbeat monitoring system
   check_interval: 30                # Interval in seconds between health checks
   warning: "EXPERIMENTAL: The watchdog system is experimental and may cause unexpected
     behavior."
@@ -408,8 +423,9 @@ watchdog:
 
 ####################################################################################################
 # Startup Self-Tests Configuration
-####################################################################################################
+#
 # Self-tests run at system startup to verify connectivity and configuration
+
 startup_self_tests:
   enabled: true                       # Master switch for startup self-tests
   
@@ -424,19 +440,20 @@ startup_self_tests:
   # Individual test toggles (these are auto-enabled based on provider config if set to "auto")
   tests:
     alpaca_sdk:
-      enabled: true                   # Test Alpaca SDK connectivity
+      enabled: "auto"                   # Test Alpaca SDK connectivity
     alpaca_api:
-      enabled: true                   # Test Alpaca direct API connectivity
+      enabled: "auto"                   # Test Alpaca direct API connectivity
     marketdataapp:
       enabled: "auto"                 # "auto" = enabled if provider is enabled in config
     yfinance:
-      enabled: "auto"                 # "auto" = enabled if provider is enabled in config
+      enabled: true                 # "auto" = enabled if provider is enabled in config
     alpaca_market_data:
       enabled: "auto"                 # "auto" = enabled if provider is enabled in config
 
 ####################################################################################################
 # Market Hours Settings
-####################################################################################################
+#
+
 market_hours:
   enabled: true                     # Enable/disable market hours validation
   timezone: "America/New_York"      # Market timezone
@@ -451,7 +468,8 @@ market_hours:
 
 ####################################################################################################
 # Auto Play Creator Settings
-####################################################################################################
+#
+
 auto_play_creator:
   enabled: true                     # Enable/disable auto play creation
   order_types:                      # Types of orders to use
@@ -508,7 +526,8 @@ auto_play_creator:
 
 ####################################################################################################
 # Chart Viewer Settings
-####################################################################################################  
+#
+
 chart_viewer:
   indicators:
     enabled: true
@@ -546,7 +565,8 @@ chart_viewer:
 
 ####################################################################################################
 # Market Data Provider Settings
-####################################################################################################
+#
+
 market_data_providers:
   # Primary provider will be used as the main source for data
   primary_provider: "marketdataapp"  # Options: "alpaca", "yfinance", "marketdataapp"
@@ -554,14 +574,14 @@ market_data_providers:
   # Enable/disable specific providers
   providers:
     marketdataapp:
-      enabled: true
+      enabled: false
       cache:
         enabled: true
         max_age: 300  # 5 minutes
       api_key: "YOUR_MARKETDATAAPP_API_KEY"
       rate_limiting:
         enabled: true
-        max_requests: 45  # Keep below 50 for safety
+        max_requests: 99  # Keep below 100 for safety
         window_seconds: 60
         
     yfinance:
@@ -571,7 +591,7 @@ market_data_providers:
         max_age: 300
         
     alpaca:
-      enabled: true
+      enabled: false
       use_websocket: true  # Enable real-time data streaming
       websocket_symbols:  # Symbols to stream real-time data for
         - "SPY"
@@ -581,11 +601,11 @@ market_data_providers:
         enabled: true
         quotes_per_minute: 200  # Free tier limit
         buffer_percent: 10      # Stay 10% under limit to be safe
-        retry_after: 5         # Seconds to wait when limit hit
+        retry_after: 30         # Seconds to wait when limit hit
       cache:
         enabled: true
         strategy: "lru"        # Options: lru, fifo, none
-        max_size: 1000        # Maximum items in cache
+        max_size: 5000        # Maximum items in cache
         ttl:                  # Time-to-live in seconds
           quotes: 2           # Quote data expires quickly
           bars: 60           # Bar data can live longer
@@ -604,17 +624,17 @@ market_data_providers:
     
   # Historical data settings
   historical:
-    default_interval: "1m"
-    max_lookback_days: 7  # Maximum days of historical data to fetch
+    default_interval: "5m"
+    max_lookback_days: 14  # Maximum days of historical data to fetch
     
   # Real-time data settings
   realtime:
     update_interval: 5.0  # Seconds between real-time data updates
-    max_symbols: 100    # Maximum number of symbols to track simultaneously
+    max_symbols: 99    # Maximum number of symbols to track simultaneously
 
   fallback:
     enabled: true
-    order: ["marketdataapp", "yfinance"]  # Provider priority order
+    order: ["yfinance", "marketdataapp", "alpaca"]  # Provider priority order
     max_attempts: 2     # Maximum number of providers to try
     
   cache:
@@ -626,11 +646,11 @@ market_data_providers:
       stock_price: 5    # Seconds
       option_quote: 5   # Seconds
       
-
 ####################################################################################################
 # Watchlist Settings
-####################################################################################################
+#
 # List of ticker symbols that tools (like auto_play_creator) can use
+
 watchlist:
   - SPY
   - QQQ
@@ -645,10 +665,11 @@ watchlist:
 
 ####################################################################################################
 # MULTI-MARKET DATA DISPLAY SETTINGS
-####################################################################################################
+#
+
 market_data_display:
   option_chain:
-    available_columns:      # All possible columns
+    available_columns:
       basic:
         - Provider
         - symbol
@@ -723,7 +744,8 @@ market_data_display:
 
 ####################################################################################################
 # CSV Ingestor Settings -- not all settings are currently implemented
-####################################################################################################
+#
+
 csv_ingestor:
   open_after_creation: false  # Whether to automatically open created JSON files
   default_viewer: "explorer"      # Options: "code" (VSCode), "explorer" (File Explorer), "none"
@@ -746,13 +768,14 @@ csv_ingestor:
 
 ####################################################################################################
 # Update Checker
-####################################################################################################
+#
+
 update_check:
   # URL of the version.json manifest published by the release workflow.
   # Set this to your Nextcloud public share download URL once the n8n publishing
   # pipeline is configured.  Leave blank ("") to disable update checking.
   # Example: https://nextcloud.example.com/index.php/s/SHARETOKEN/download
-  url: ""
+  url: "https://cloud.zimerguz.net/s/abiXXKPsiHnzK4g/download"
 
   # Seconds to wait for the server before giving up.  Keep this low — a slow
   # or unreachable server should not delay the app startup experience.
