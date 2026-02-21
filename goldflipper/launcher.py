@@ -55,14 +55,14 @@ def _print_startup_debug() -> None:
         if not settings_path.exists():
             template_path = get_settings_template_path()
             print()
-            print("  NOTICE: settings.yaml not found - first-run setup will launch")
+            print("  NOTICE: Configuration settings.yaml not found - first-run setup will launch")
             print(f"  Template path: {template_path}")
             print(f"  Template exists: {template_path.exists()}")
             if not template_path.exists():
-                print("  ERROR: Cannot create settings - template file missing!")
+                print("  ERROR: Cannot create settings.yaml - settings template file missing!")
                 print("  This usually means the build didn't include the config data.")
     except Exception as e:
-        print(f"  ERROR getting debug paths: {e}")
+        print(f"  ERROR: Debug paths retrieval failed: {e}")
         import traceback
 
         traceback.print_exc()
@@ -105,7 +105,7 @@ def _run_first_run_setup(force: bool, skip_shortcut_option: bool = False) -> boo
 
     # Always print this check for debugging (visible in console)
     print(f"[Launcher] Settings file: {settings_file} (exists: {existed_before})")
-    print(f"[Launcher] Setup marker: {marker_file} (exists: {setup_done_before})")
+    print(f"[Launcher] Setup state marker: {marker_file} (exists: {setup_done_before})")
     print(f"[Launcher] force: {force}")
     print(f"[Launcher] skip_shortcut_option: {skip_shortcut_option}")
 

@@ -13,9 +13,7 @@ ascii_art = r"""
  ( `-' ;                                                 | |       | |
   `.__.                                                 (___)     (___)
 
-Welcome to Project Goldflipper.
-
-Starting up ...
+Welcome to Project Goldflipper
 """
 
 print(ascii_art)

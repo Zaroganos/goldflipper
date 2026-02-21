@@ -76,7 +76,7 @@ echo One or more checks failed.
 exit /b 1
 
 :build
-echo Building dev exe (fast mode - no LTO, no compression)...
+echo Building development exe (fast mode - no LTO, no compression) ...
 uv run python scripts/build_nuitka_dev.py %*
 goto end
 

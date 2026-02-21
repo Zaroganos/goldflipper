@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "goldflipper"
 version = "0.3.1"
-description = "The Goldflipper multistrategy options trading system"
+description = "Goldflipper multistrategy options trading system"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 license = { text = "Proprietary" }

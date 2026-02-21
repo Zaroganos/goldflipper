@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ "main", "multistrat" ]
+    branches: [ "multistrat" ]
   pull_request:
-    branches: [ "main", "multistrat" ]
+    branches: [ "multistrat" ]
 
 jobs:
   check:
