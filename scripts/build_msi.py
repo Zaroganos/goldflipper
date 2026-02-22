@@ -27,6 +27,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 try:
@@ -56,74 +57,120 @@ REQUIRED_WIX_EXTENSIONS = (
 # ---------------------------------------------------------------------------
 
 
-def _generate_gradient(width: int, height: int, start_color: tuple, end_color: tuple) -> Image.Image:
-    """Generate a vertical gradient image."""
-    base = Image.new("RGB", (width, height), start_color)
-    Image.new("RGB", (width, height), start_color)
-    bottom = Image.new("RGB", (width, height), end_color)
-    mask = Image.new("L", (width, height))
-    mask_data = []
-    for y in range(height):
-        mask_data.extend([int(255 * (y / height))] * width)
-    mask.putdata(mask_data)
-    base.paste(bottom, (0, 0), mask)
-    return base
-
-
 def _generate_installer_images() -> None:
-    """Generate installer banner and dialog bitmaps if missing."""
+    """
+    Generate (or regenerate) installer banner and dialog bitmaps.
+
+    Always overwrites existing files so design changes in this function are
+    immediately reflected on the next build — no manual deletion needed.
+
+    WiX dialog layout notes
+    -----------------------
+    WixUIDialogBmp (493×312) is used as the full-dialog background for the
+    Welcome and Finish dialogs.  WiX overlays a white panel over the RIGHT
+    portion (from ~x=135 DU ≈ 180 px).  The LEFT portion (~0-180 px) is the
+    visible image panel.
+
+    The ExitDialog optional-checkbox control is placed at X≈10 DU (left edge),
+    Y≈213 DU (≈284 px from top) — squarely in our image area.  WiX draws its
+    label text in the system foreground colour (typically black), so the image
+    background at that position must have enough contrast for dark text.
+
+    The footer gradient below y=160 ramps from near-black to medium gold
+    (#D4B000).  At y≈284 the background is approximately #AA8D00, giving a
+    black-text contrast ratio of ~5.1:1 (WCAG AA ✓).
+    """
     if not PIL_AVAILABLE:
         print("[WARN] Pillow not installed. Skipping installer image generation.")
         return
 
-    if BANNER_PATH.exists() and DIALOG_PATH.exists():
-        return
-
     print("[INFO] Generating installer images...")
 
-    # Goldflipper Brand Colors (Dark Blue/Gold theme)
-    # Dark Blue: #001f3f (0, 31, 63) -> #001122 (0, 17, 34)
-    start_color = (0, 31, 63)
-    end_color = (0, 10, 20)
-    text_color = (255, 215, 0)  # Gold
+    # ── Brand palette ─────────────────────────────────────────────────────────
+    BG = (8, 8, 8)  # near-black background
+    GOLD_HI = (255, 215, 0)  # #FFD700  — primary gold
+    GOLD_MID = (180, 145, 0)  # mid gold for accents / rules
+    GOLD_DIM = (55, 45, 0)  # very dark gold — subtle separators
+    GRAY_LT = (200, 200, 200)  # secondary text
+    GRAY_MID = (130, 130, 130)  # tertiary / dim text
+    GRAD_END = (212, 176, 0)  # #D4B000 — gradient target (footer, for contrast)
 
-    # 1. Top Banner (493 x 58)
-    if not BANNER_PATH.exists():
-        banner = _generate_gradient(493, 58, start_color, end_color)
-        draw = ImageDraw.Draw(banner)
-        # Simple text for now
-        try:
-            font = ImageFont.truetype("arial.ttf", 24)
-        except OSError:
-            font = None
+    def _font(*pairs: tuple[str, int]) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        for name, size in pairs:
+            try:
+                return ImageFont.truetype(name, size)
+            except OSError:
+                pass
+        return ImageFont.load_default()
 
-        text = "Goldflipper Setup"
-        draw.text((20, 15), text, fill=text_color, font=font)
-        banner.save(BANNER_PATH)
-        print(f"[INFO] Created {BANNER_PATH}")
+    # ── Banner  (493 × 58) ────────────────────────────────────────────────────
+    # Appears at the top of every inner dialog page (directory, features, etc.)
+    bw, bh = 493, 58
+    banner = Image.new("RGB", (bw, bh), BG)
+    d = ImageDraw.Draw(banner)
 
-    # 2. Dialog Background (493 x 312) - Left side is usually white in WixUI_InstallDir
-    # But WixUIDialogBmp covers the left panel of Welcome/Finish dialogs
-    if not DIALOG_PATH.exists():
-        dialog = _generate_gradient(493, 312, start_color, end_color)
-        draw = ImageDraw.Draw(dialog)
+    f_title = _font(("arialbd.ttf", 22), ("arial.ttf", 22), ("calibrib.ttf", 22))
+    f_sub = _font(("arial.ttf", 11), ("calibri.ttf", 11))
 
-        # Draw some "tech" lines or simple decoration
-        for i in range(0, 493, 20):
-            draw.line([(i, 0), (0, i)], fill=(0, 40, 80), width=1)
+    # Left gold accent bar
+    d.rectangle([(0, 0), (3, bh - 1)], fill=GOLD_HI)
+    # Bottom gold rule
+    d.rectangle([(0, bh - 2), (bw - 1, bh - 1)], fill=GOLD_HI)
+    # Top hairline (dark gold)
+    d.rectangle([(0, 0), (bw - 1, 0)], fill=GOLD_DIM)
 
-        try:
-            font_large = ImageFont.truetype("arial.ttf", 36)
-            font_small = ImageFont.truetype("arial.ttf", 14)
-        except OSError:
-            font_large = None
-            font_small = None
+    d.text((16, 9), "GOLDFLIPPER", fill=GOLD_HI, font=f_title)
+    d.text((16, 38), "Windows Installer", fill=GRAY_MID, font=f_sub)
 
-        draw.text((30, 130), "Goldflipper", fill=text_color, font=font_large)
-        draw.text((30, 180), "Multi-Strategy Options Trading", fill=(200, 200, 200), font=font_small)
+    banner.save(BANNER_PATH)
+    print(f"[INFO] Created {BANNER_PATH}")
 
-        dialog.save(DIALOG_PATH)
-        print(f"[INFO] Created {DIALOG_PATH}")
+    # ── Dialog BMP  (493 × 312) ───────────────────────────────────────────────
+    # Covers the full Welcome / Finish dialog background.
+    # Left panel (x 0-184): visible image area with branding + footer gradient.
+    # Right area (x 185-492): covered by WiX white panel — keep it dark/neutral.
+    dw, dh = 493, 312
+    LEFT = 185  # width of the visible left image panel
+    GRAD_Y = 160  # y at which the footer gradient begins
+
+    dialog = Image.new("RGB", (dw, dh), BG)
+    d = ImageDraw.Draw(dialog)
+
+    # Footer gradient in the left panel: y=GRAD_Y..dh-1, x=0..LEFT-1
+    # Ramps from near-black (BG) → medium gold (GRAD_END).
+    # Ensures WiX's dark checkbox text (~y=284) has ≥5:1 contrast.
+    for y in range(GRAD_Y, dh):
+        t = (y - GRAD_Y) / (dh - 1 - GRAD_Y)
+        r = int(BG[0] + t * (GRAD_END[0] - BG[0]))
+        g = int(BG[1] + t * (GRAD_END[1] - BG[1]))
+        b = int(BG[2] + t * (GRAD_END[2] - BG[2]))
+        d.line([(0, y), (LEFT - 1, y)], fill=(r, g, b))
+
+    # ── Borders & structural accents ──────────────────────────────────────────
+    # Top gold rule (1 px)
+    d.rectangle([(0, 0), (dw - 1, 0)], fill=GOLD_HI)
+    # Left gold accent bar (4 px, full height — drawn last so it's never hidden)
+    d.rectangle([(0, 0), (3, dh - 1)], fill=GOLD_HI)
+    # Thin gold rule at the gradient start — delineates branding from footer
+    d.rectangle([(4, GRAD_Y), (LEFT - 1, GRAD_Y + 1)], fill=GOLD_MID)
+    # Very subtle vertical separator: image panel ↔ content area
+    d.rectangle([(LEFT, 0), (LEFT, dh - 1)], fill=GOLD_DIM)
+
+    # ── Wordmark & taglines ───────────────────────────────────────────────────
+    f_logo = _font(("arialbd.ttf", 38), ("arial.ttf", 38))
+    f_tag = _font(("arial.ttf", 13), ("calibri.ttf", 13))
+    f_tiny = _font(("arial.ttf", 10), ("calibri.ttf", 10))
+
+    d.text((16, 36), "Goldflipper", fill=GOLD_HI, font=f_logo)
+    d.text((16, 90), "Multi-Strategy", fill=GRAY_LT, font=f_tag)
+    d.text((16, 107), "Options Trading", fill=GRAY_LT, font=f_tag)
+    d.text((16, 132), "Automated Trading System", fill=GRAY_MID, font=f_tiny)
+
+    # Short gold underline rule below tagline block
+    d.rectangle([(16, 152), (155, 153)], fill=GOLD_DIM)
+
+    dialog.save(DIALOG_PATH)
+    print(f"[INFO] Created {DIALOG_PATH}")
 
 
 def _find_signtool() -> Path | None:
@@ -161,10 +208,20 @@ def _sign_msi(msi_path: Path) -> None:
     if not ps_script.exists():
         return
 
+    # Prefer pwsh (PS7) to avoid PSModulePath contamination when this process is
+    # spawned from a PS7-parented shell (see GitHub PowerShell/PowerShell#18530).
+    # Fall back to powershell.exe (PS5.1) if pwsh is not installed.
+    pwsh = shutil.which("pwsh") or shutil.which("powershell")
+    if not pwsh:
+        print("[WARN] PowerShell not found. Skipping MSI signing.")
+        return
+
     try:
-        # Reuse existing cert setup logic
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps_script)], capture_output=True, text=True, check=True
+            [pwsh, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps_script)],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         lines = result.stdout.strip().splitlines()
         thumbprint = next((line.split(":")[-1].strip() for line in lines if "Certificate found:" in line), None)
@@ -175,9 +232,21 @@ def _sign_msi(msi_path: Path) -> None:
 
         cmd = [str(signtool), "sign", "/sha1", thumbprint, "/fd", "SHA256", "/t", "http://timestamp.digicert.com", str(msi_path)]
 
-        subprocess.run(cmd, check=True, capture_output=True)
+        sign_result = subprocess.run(cmd, capture_output=True, text=True)
+        if sign_result.returncode != 0:
+            print("[ERROR] signtool failed:")
+            if sign_result.stdout:
+                print(sign_result.stdout.rstrip())
+            if sign_result.stderr:
+                print(sign_result.stderr.rstrip())
+            raise subprocess.CalledProcessError(sign_result.returncode, cmd)
+
+        if sign_result.stdout:
+            print(sign_result.stdout.rstrip())
         print(f"[SUCCESS] Signed MSI: {msi_path.name}")
 
+    except subprocess.CalledProcessError as e:
+        print(f"[ERROR] MSI signing failed: {e}")
     except Exception as e:
         print(f"[ERROR] MSI signing failed: {e}")
 
@@ -189,12 +258,10 @@ def _read_version() -> str:
     MSI requires a version in X.Y.Z or X.Y.Z.W format (numeric only).
     Pre-release suffixes like '-beta' are stripped.
     """
-    text = PYPROJECT_PATH.read_text(encoding="utf-8")
-    match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
-    if not match:
-        raise ValueError("Could not find 'version' in pyproject.toml")
+    with PYPROJECT_PATH.open("rb") as f:
+        data = tomllib.load(f)
+    raw: str = data["project"]["version"]
 
-    raw = match.group(1)
     # Strip pre-release / build metadata (e.g. "0.2.5-beta" → "0.2.5")
     numeric = re.match(r"(\d+\.\d+\.\d+(?:\.\d+)?)", raw)
     if not numeric:

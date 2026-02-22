@@ -96,14 +96,25 @@ Write-Host ''
 $installType = 'msi'
 $deadline    = (Get-Date).AddSeconds(10)
 
+# Drain any keys buffered from prior Read-Host calls (e.g. the channel-selection
+# Enter) so they don't immediately trigger a false KeyAvailable hit.
+# [Console]::KeyAvailable is used instead of $Host.UI.RawUI.KeyAvailable because
+# the RawUI variant can return $true spuriously, causing ReadKey to block
+# indefinitely and prevent the default from being selected after the timeout.
+try { while ([Console]::KeyAvailable) { [Console]::ReadKey($true) | Out-Null } } catch { }
+
 while ((Get-Date) -lt $deadline) {
     $remaining = [math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
     Write-Host "`r  Choose [$(if ($manifest.portable_url) {'M/P'} else {'M'})] ($remaining`s -> MSI): " -NoNewline -ForegroundColor Cyan
-    if ($Host.UI.RawUI.KeyAvailable) {
-        $key = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-        if ($key.Character -match '^[Pp]$' -and $manifest.portable_url) {
-            $installType = 'portable'
-        }
+    $keyPressed = $false
+    try { $keyPressed = [Console]::KeyAvailable } catch { }
+    if ($keyPressed) {
+        try {
+            $key = [Console]::ReadKey($true)
+            if ($key.KeyChar -match '^[Pp]$' -and $manifest.portable_url) {
+                $installType = 'portable'
+            }
+        } catch { }
         break
     }
     Start-Sleep -Milliseconds 200

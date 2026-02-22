@@ -166,6 +166,52 @@ def get_executable_dir() -> Path:
         return Path(__file__).resolve().parent.parent.parent
 
 
+# =============================================================================
+# PER-MACHINE INSTALL DETECTION & USER DATA ROOT
+# =============================================================================
+
+_SYSTEM_DIRS: tuple[str, ...] = (
+    os.environ.get("ProgramFiles", r"C:\Program Files"),
+    os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+    os.environ.get("ProgramW6432", r"C:\Program Files"),
+)
+
+
+def _is_per_machine_install(exe_dir: Path) -> bool:
+    """Return True if the exe lives under a system directory (e.g. Program Files)."""
+    exe_str = str(exe_dir).lower()
+    return any(d and exe_str.startswith(d.lower()) for d in _SYSTEM_DIRS)
+
+
+_USER_DATA_ROOT: Path | None = None
+_USER_DATA_ROOT_CHECKED: bool = False
+
+
+def _get_user_data_root() -> Path:
+    """
+    User-writable data root directory (frozen/exe mode only).
+
+    Per-machine install (exe under Program Files): %LOCALAPPDATA%\\Goldflipper\\
+    Per-user install (exe anywhere else):          directory containing the exe.
+    """
+    global _USER_DATA_ROOT, _USER_DATA_ROOT_CHECKED
+
+    if _USER_DATA_ROOT_CHECKED:
+        return _USER_DATA_ROOT  # type: ignore[return-value]
+
+    _USER_DATA_ROOT_CHECKED = True
+    exe_path = sys.argv[0] if sys.argv else sys.executable
+    exe_dir = Path(exe_path).resolve().parent
+
+    if _is_per_machine_install(exe_dir):
+        local_app_data = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        _USER_DATA_ROOT = Path(local_app_data) / "Goldflipper"
+    else:
+        _USER_DATA_ROOT = exe_dir
+
+    return _USER_DATA_ROOT
+
+
 def get_application_dir() -> Path:
     """
     Get the application's base directory.
@@ -240,14 +286,7 @@ def get_config_dir() -> Path:
     if custom_data_dir:
         config_dir = custom_data_dir / "config"
     elif is_frozen():
-        # Config lives next to the exe for persistence.
-        # Use sys.argv[0] for actual exe location (NOT sys.executable which is python.exe in temp!)
-        # TODO (per-machine install): when installed to Program Files via the MSI "Everyone" option,
-        #   this path is read-only for non-admin users.  Proper fix: detect a per-machine install
-        #   (e.g. check if exe is under Program Files) and redirect to
-        #   %LOCALAPPDATA%\Goldflipper\ instead.  Same applies to get_plays_root() / get_logs_dir().
-        exe_path = sys.argv[0] if sys.argv else sys.executable
-        config_dir = Path(exe_path).resolve().parent / "config"
+        config_dir = _get_user_data_root() / "config"
     else:
         # From source: goldflipper/config
         return Path(__file__).resolve().parent.parent / "config"
@@ -321,10 +360,7 @@ def get_external_dir(dir_name: str) -> Path:
         Absolute path to the external directory.
     """
     if is_frozen():
-        # External dirs should be next to the exe
-        # Use sys.argv[0] for actual exe location (NOT sys.executable which is python.exe in temp!)
-        exe_path = sys.argv[0] if sys.argv else sys.executable
-        return Path(exe_path).resolve().parent / dir_name
+        return _get_user_data_root() / dir_name
     else:
         return get_package_root() / dir_name
 
@@ -488,9 +524,7 @@ def get_plays_root() -> Path:
     if custom_data_dir:
         plays_dir = custom_data_dir / "plays"
     elif is_frozen():
-        # Use sys.argv[0] for actual exe location (NOT sys.executable which is python.exe in temp!)
-        exe_path = sys.argv[0] if sys.argv else sys.executable
-        plays_dir = Path(exe_path).resolve().parent / "plays"
+        plays_dir = _get_user_data_root() / "plays"
     else:
         # From source: project_root/plays/
         plays_dir = get_package_root() / "plays"
@@ -622,9 +656,7 @@ def get_logs_dir() -> Path:
     if custom_data_dir:
         logs_dir = custom_data_dir / "logs"
     elif is_frozen():
-        # Use sys.argv[0] for actual exe location (NOT sys.executable which is python.exe in temp!)
-        exe_path = sys.argv[0] if sys.argv else sys.executable
-        logs_dir = Path(exe_path).resolve().parent / "logs"
+        logs_dir = _get_user_data_root() / "logs"
     else:
         logs_dir = get_package_root() / "logs"
 
@@ -654,9 +686,7 @@ def get_data_location_config_path() -> Path:
         Path to data_location.cfg
     """
     if is_frozen():
-        # Use sys.argv[0] for actual exe location (not sys.executable which is python.exe in temp)
-        exe_path = sys.argv[0] if sys.argv else sys.executable
-        return Path(exe_path).resolve().parent / "data_location.cfg"
+        return _get_user_data_root() / "data_location.cfg"
     else:
         return get_package_root() / "data_location.cfg"
 
@@ -735,8 +765,6 @@ def get_default_data_directory() -> Path:
         Path to default data directory.
     """
     if is_frozen():
-        # Use sys.argv[0] for actual exe location
-        exe_path = sys.argv[0] if sys.argv else sys.executable
-        return Path(exe_path).resolve().parent
+        return _get_user_data_root()
     else:
         return get_package_root()

@@ -26,8 +26,14 @@
         InstallerVersion="500"
         Compressed="yes">
 
-        <!-- Major upgrade: seamlessly replace older versions, block downgrades -->
+        <!-- Major upgrade: seamlessly replace older versions, block downgrades.
+             Schedule=afterInstallInitialize: old version is removed only after new files
+             are successfully written, preventing a broken state if an error occurs mid-install.
+             AllowSameVersionUpgrades: permits reinstalling the same version (useful for
+             repair and development testing). -->
         <MajorUpgrade
+            Schedule="afterInstallInitialize"
+            AllowSameVersionUpgrades="yes"
             DowngradeErrorMessage="A newer version of [ProductName] is already installed. Please uninstall it first." />
 
         <!-- Embed cabinet (single .msi file, no loose .cab) -->
@@ -40,6 +46,11 @@
         <!-- Add/Remove Programs URLs -->
         <Property Id="ARPURLINFOABOUT" Value="https://github.com/Zaroganos/goldflipper" />
         <Property Id="ARPHELPLINK" Value="https://github.com/Zaroganos/goldflipper/issues" />
+
+        <!-- Suppress Modify and Repair in Add/Remove Programs — neither mode is implemented,
+             so hiding them prevents confusing or broken workflows. -->
+        <Property Id="ARPNOMODIFY" Value="1" />
+        <Property Id="ARPNOREPAIR" Value="1" />
 
         <!--
             Close a running app instance before replacing files during install/upgrade.
@@ -64,16 +75,21 @@
                                      next to the exe, which is user-writable. FULLY SUPPORTED.
 
             Everyone  (per-machine): Installs to Program Files\Goldflipper\
-                                     Requires elevation. SCAFFOLD — app still writes user
-                                     data next to the exe (Program Files), which requires
-                                     admin rights to run. Non-admin users will get
-                                     "Access Denied" on first launch.
-                                     TODO: update exe_utils.py to redirect user data to
-                                     %LOCALAPPDATA%\Goldflipper\ when installed per-machine.
+                                     Requires elevation. exe_utils.py detects the Program Files
+                                     install location and redirects config/plays/logs to
+                                     %LOCALAPPDATA%\Goldflipper\ so non-admin users can write
+                                     their own data without elevation.
+        -->
+        <!--
+            Silent / enterprise deployment note:
+            When /qn is passed the scope dialog is skipped and WixAppFolder default (per-user)
+            is used.  To override the scope explicitly in an unattended install:
+              Per-user:    msiexec /i goldflipper.msi /qn MSIINSTALLPERUSER=1
+              Per-machine: msiexec /i goldflipper.msi /qn MSIINSTALLPERUSER=""
         -->
         <UI>
             <ui:WixUI Id="WixUI_Advanced" />
-            <Publish Dialog="ExitDialog"
+            <Publish Dialog="ExitDlg"
                      Control="Finish"
                      Event="DoAction"
                      Value="LaunchApplication"
@@ -119,7 +135,11 @@
             <ComponentGroupRef Id="StartMenuComponents" />
         </Feature>
 
-        <Feature Id="DesktopShortcutFeature" Title="Desktop Shortcut" Level="1"
+        <!-- Level="2": unchecked/opt-in by default in the installer UI.
+             The stable component GUID ensures idempotency across upgrades — the shortcut
+             target ([APPLICATIONFOLDER]goldflipper.exe) never changes between versions,
+             so no new shortcut is created if one already exists from a prior install. -->
+        <Feature Id="DesktopShortcutFeature" Title="Desktop Shortcut" Level="2"
                  Description="Create a shortcut on the Desktop.">
             <ComponentGroupRef Id="DesktopShortcutComponents" />
         </Feature>

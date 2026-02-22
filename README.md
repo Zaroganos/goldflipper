@@ -340,20 +340,20 @@ goldflipper/
 │   ├── old/                  # Archived plays
 │   └── temp/                 # Temporary/OSO plays
 ├── tools/                     # User-accessible toolkit
-│   ├── play_creator_gui.py   # Tkinter GUI play creator (NEW)
+│   ├── play_creator_gui.py   # Tkinter GUI play creator
 │   ├── auto_play_creator.py  # Multi-strategy play generation
-│   ├── play_csv_ingestion_multitool.py # Multi-strategy CSV import (NEW)
+│   ├── play_csv_ingestion_multitool.py # Multi-strategy CSV import
 │   ├── play_creation_tool.py # Interactive play creation (legacy)
-│   ├── play-edit-tool.py     # Advanced play editing with safety features
+│   ├── play-edit-tool.py     # Safe play editing
 │   ├── view_plays.py         # Play viewing and management
 │   ├── option_data_fetcher.py # Options data retrieval
-│   ├── system_status.py      # System health monitoring (enhanced)
+│   ├── system_status.py      # System health monitoring
 │   └── [multiple other tools] # JSON processing, etc.
 ├── utils/                     # General utility functions
 ├── watchdog/                  # System monitoring and health checks
 ├── state/                     # System state management and persistence
-├── strategy/                  # Multi-strategy system (NEW)
-│   ├── base.py               # BaseStrategy abstract class
+├── strategy/                  # Multi-strategy system
+│   ├── base.py               # Base Strategy abstract class
 │   ├── orchestrator.py       # StrategyOrchestrator
 │   ├── registry.py           # Strategy discovery
 │   ├── shared/               # Shared utilities (evaluation, orders, plays)
@@ -361,9 +361,6 @@ goldflipper/
 │   └── playbooks/            # Strategy configuration files
 ├── reference/                 # Reference materials and templates
 ├── docs/                      # Package documentation
-│   ├── MULTI_STRATEGY_IMPLEMENTATION.md # Full implementation guide
-│   ├── STRATEGY_DEVELOPMENT_GUIDE.md    # How to add strategies (NEW)
-│   └── DEPRECATED_CODE_CANDIDATES.md    # Migration notes (NEW)
 ├── src/                       # Windows Service code
 │   ├── service/              # Windows service integration
 │   └── state/                # State management components

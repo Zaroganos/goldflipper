@@ -135,6 +135,10 @@ Test files are in `tests/` with fixtures in `conftest.py`.
 - **Type Checker**: Pyright (basic mode)
 - Run `scripts\dev.bat check` before committing
 
+## Commit Style
+
+- Do NOT add `Co-Authored-By: Claude ...` lines to commits. Claude is a program, not a person, and cannot co-author code.
+
 ## Build Notes
 
 - Nuitka builds standalone Windows EXE to `dist/goldflipper.exe`

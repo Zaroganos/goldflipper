@@ -87,13 +87,25 @@ class FirstRunSetup:
         default_dir = str(get_default_data_directory())
 
         # Explanation
-        info_label = tk.Label(data_frame, text="Choose where Goldflipper stores its configuration, plays, and logs.\nKeeping this next to the executable is recommended for portability.", justify="left", fg="#555555")
+        info_label = tk.Label(
+            data_frame,
+            text=(
+                "Choose where Goldflipper stores its configuration, plays, and logs.\n"
+                "Keeping this next to the executable is recommended for portability."
+            ),
+            justify="left",
+            fg="#555555",
+        )
         info_label.pack(anchor="w", pady=(0, 10))
 
         # Use default checkbox
         self.use_default_data_dir = tk.BooleanVar(value=True)
         default_check = tk.Checkbutton(
-            data_frame, text="Use default location (adjacent, in portable mode)", font=("Arial", 9, "bold"), variable=self.use_default_data_dir, command=self._toggle_data_dir_entry
+            data_frame,
+            text="Use default location (adjacent, in portable mode)",
+            font=("Arial", 9, "bold"),
+            variable=self.use_default_data_dir,
+            command=self._toggle_data_dir_entry,
         )
         default_check.pack(anchor="w", pady=2)
 
@@ -106,7 +118,7 @@ class FirstRunSetup:
         self.data_dir_frame.pack(fill="x", pady=(10, 0))
 
         tk.Label(self.data_dir_frame, text="Custom Path:", fg="#555555").pack(side="left")
-        
+
         self.custom_data_dir = tk.StringVar()
         self.data_dir_entry = tk.Entry(self.data_dir_frame, textvariable=self.custom_data_dir, width=30)
         self.data_dir_entry.pack(side="left", padx=5, fill="x", expand=True)
@@ -176,7 +188,9 @@ class FirstRunSetup:
         # Shortcut creation checkbox (hidden if requested, e.g. during MSI install)
         self.create_shortcut_var = tk.BooleanVar(value=not self.skip_shortcut_option)
         if not self.skip_shortcut_option:
-            shortcut_check = tk.Checkbutton(self.main_frame, text="Create Desktop shortcut for quick access", variable=self.create_shortcut_var, font=("Arial", 10))
+            shortcut_check = tk.Checkbutton(
+                self.main_frame, text="Create Desktop shortcut for quick access", variable=self.create_shortcut_var, font=("Arial", 10)
+            )
             shortcut_check.pack(pady=5, anchor="w")
         else:
             # If skipping option, we definitely don't want to create it here either
@@ -194,11 +208,22 @@ class FirstRunSetup:
         if self.settings_exist:
             status_frame = tk.Frame(settings_frame)
             status_frame.pack(fill="x", pady=(0, 10))
-            
+
             tk.Label(status_frame, text="✓ Configuration Found", fg="green", font=("Arial", 9, "bold")).pack(side="left")
             tk.Label(status_frame, text="(Ready to launch)", fg="gray", font=("Arial", 9)).pack(side="left", padx=5)
-            
-            path_label = tk.Label(settings_frame, text=self.settings_path, fg="gray", font=("Consolas", 8), bg="#f5f5f5", relief="sunken", padx=5, pady=2, wraplength=480, justify="left")
+
+            path_label = tk.Label(
+                settings_frame,
+                text=self.settings_path,
+                fg="gray",
+                font=("Consolas", 8),
+                bg="#f5f5f5",
+                relief="sunken",
+                padx=5,
+                pady=2,
+                wraplength=480,
+                justify="left",
+            )
             path_label.pack(pady=(0, 15), fill="x")
 
             # Action buttons frame with better styling
@@ -210,9 +235,11 @@ class FirstRunSetup:
             open_btn.pack(side="left", padx=(0, 5), expand=True, fill="x")
 
             # Button B: Reset to Defaults
-            reset_btn = tk.Button(actions_frame, text="♻ Reset to Template Defaults", command=self._reset_settings_handler, bg="#fff0f0", padx=10, pady=3)
+            reset_btn = tk.Button(
+                actions_frame, text="♻ Reset to Template Defaults", command=self._reset_settings_handler, bg="#fff0f0", padx=10, pady=3
+            )
             reset_btn.pack(side="left", padx=(5, 0), expand=True, fill="x")
-            
+
             tk.Label(settings_frame, text="* Resetting will backup your old config first.", font=("Arial", 8), fg="gray").pack(pady=(5, 0))
 
             sep = tk.Frame(settings_frame, height=2, bd=1, relief="sunken")
@@ -253,8 +280,8 @@ class FirstRunSetup:
 
         # Note about creating from template
         if not self.settings_exist:
-             note_label = tk.Label(settings_frame, text="(Leave empty to create from template)", font=("Arial", 8), fg="gray")
-             note_label.pack(pady=(0, 5))
+            note_label = tk.Label(settings_frame, text="(Leave empty to create from template)", font=("Arial", 8), fg="gray")
+            note_label.pack(pady=(0, 5))
 
         # Status label (moved inside for better layout)
         self.status_label = tk.Label(self.main_frame, text="", fg="blue", font=("Arial", 9))
